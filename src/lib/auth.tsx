@@ -2,7 +2,10 @@ import type { ReactNode } from 'react'
 import { createContext, useContext, useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from './supabase'
+import { supabase } from '@/lib/supabase'
+import { ROUTES } from '@/config/routes'
+import { site } from '@/content/site'
+import { getPostAuthRoute, isSetupComplete, isSetupEnforced } from '@/lib/setup-storage'
 
 type AuthState = {
   session: Session | null
@@ -45,10 +48,10 @@ export function useAuth() {
 
 function FullScreenLoader() {
   return (
-    <div className="flex min-h-svh items-center justify-center bg-white">
+    <div className="flex min-h-svh items-center justify-center bg-background">
       <div className="flex animate-pulse items-center gap-3">
-        <span className="h-6 w-6 rounded-[7px] bg-brand" aria-hidden="true" />
-        <span className="text-xl font-bold tracking-tight text-neutral-900">RoundFlow</span>
+        <span className="h-6 w-6 rounded-lg bg-primary" aria-hidden="true" />
+        <span className="text-xl font-semibold tracking-tight text-foreground">{site.name}</span>
       </div>
     </div>
   )
@@ -57,13 +60,24 @@ function FullScreenLoader() {
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <FullScreenLoader />
-  if (!session) return <Navigate to="/login" replace />
+  if (!session) return <Navigate to={ROUTES.login} replace />
   return <>{children}</>
 }
 
 export function GuestRoute({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <FullScreenLoader />
-  if (session) return <Navigate to="/dashboard" replace />
+  if (session) return <Navigate to={getPostAuthRoute()} replace />
+  return <>{children}</>
+}
+
+/** Protected route that only allows users who have not finished setup. */
+export function SetupRoute({ children }: { children: ReactNode }) {
+  const { session, loading } = useAuth()
+  if (loading) return <FullScreenLoader />
+  if (isSetupEnforced()) {
+    if (!session) return <Navigate to={ROUTES.login} replace />
+    if (isSetupComplete()) return <Navigate to={ROUTES.dashboard} replace />
+  }
   return <>{children}</>
 }

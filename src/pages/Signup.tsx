@@ -1,8 +1,12 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import AuthLayout from '../components/AuthLayout'
-import { supabase } from '../lib/supabase'
+import { Link } from 'react-router-dom'
+import AuthLayout from '@/components/AuthLayout'
+import { AuthEmailLinkNotice } from '@/components/AuthEmailLinkNotice'
+import { supabase } from '@/lib/supabase'
+import { ROUTES } from '@/config/routes'
+import { authContent } from '@/content/auth'
+import { site } from '@/content/site'
 import {
   AuthTabs,
   Field,
@@ -10,11 +14,10 @@ import {
   GoogleButton,
   OrDivider,
   PrimaryButton,
-  inputClass,
-} from '../components/ui'
+  Input,
+} from '@/components/ui'
 
 export default function Signup() {
-  const navigate = useNavigate()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [companyName, setCompanyName] = useState('')
@@ -24,6 +27,35 @@ export default function Signup() {
   const [error, setError] = useState<string | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [googleError, setGoogleError] = useState<string | null>(null)
+  const [magicLinkSent, setMagicLinkSent] = useState(false)
+  const [resendMessage, setResendMessage] = useState<string | null>(null)
+
+  async function sendSignupLink(showMessage = true) {
+    setLoading(true)
+    setError(null)
+    setResendMessage(null)
+
+    try {
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: fullName, company_name: companyName },
+          emailRedirectTo: `${window.location.origin}${ROUTES.setupWizard}`,
+        },
+      })
+
+      if (signUpError) {
+        setError(signUpError.message)
+        return false
+      }
+
+      if (showMessage) setResendMessage(authContent.signupMagicLink.sent)
+      return true
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -35,44 +67,39 @@ export default function Signup() {
       return
     }
 
-    setLoading(true)
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, company_name: companyName },
-        emailRedirectTo: `${window.location.origin}/`,
-      },
-    })
-
-    if (signUpError) {
-      setLoading(false)
-      setError(signUpError.message)
-      return
-    }
-
-    if (data.session) {
-      // Email confirmation disabled: session is live, GuestRoute
-      // redirects to /dashboard on the next render.
-      return
-    }
-
-    navigate('/verify-otp', { state: { email } })
+    const sent = await sendSignupLink(false)
+    if (sent) setMagicLinkSent(true)
   }
 
   async function handleGoogle() {
     setGoogleError(null)
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/dashboard` },
+      options: { redirectTo: `${window.location.origin}${ROUTES.dashboard}` },
     })
     if (oauthError) setGoogleError(oauthError.message)
   }
 
   return (
     <AuthLayout>
-      <h2 className="text-[32px] font-bold tracking-tight text-neutral-900">Get started free</h2>
-      <p className="mt-2 text-[15px] text-neutral-500">Create your RoundFlow account</p>
+      {magicLinkSent ? (
+        <AuthEmailLinkNotice
+          title={authContent.signupMagicLink.title}
+          subtitle={authContent.signupMagicLink.subtitle}
+          email={email}
+          actionLabel={authContent.signupMagicLink.action}
+          resendLabel={authContent.signupMagicLink.resend}
+          loading={loading}
+          error={error}
+          sentMessage={resendMessage}
+          onResend={() => {
+            void sendSignupLink()
+          }}
+        />
+      ) : (
+        <>
+      <h2 className="text-[32px] font-semibold tracking-tight text-foreground">{authContent.signup.title}</h2>
+      <p className="mt-2 text-[15px] text-muted">{authContent.signup.subtitle}</p>
 
       <div className="mt-8">
         <AuthTabs active="signup" />
@@ -80,71 +107,76 @@ export default function Signup() {
 
       <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
         <Field label="Full name">
-          <input
+          <Input
             type="text"
             required
             autoComplete="name"
             placeholder="Enter your full name"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className={inputClass}
           />
         </Field>
 
         <Field label="Work email">
-          <input
+          <Input
             type="email"
             required
             autoComplete="email"
             placeholder="jane@company.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className={inputClass}
           />
         </Field>
 
         <Field label="Company name">
-          <input
+          <Input
             type="text"
             autoComplete="organization"
             placeholder="Your business name"
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
-            className={inputClass}
           />
         </Field>
 
         <Field label="Password">
-          <input
+          <Input
             type="password"
             required
             autoComplete="new-password"
             placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={inputClass}
           />
         </Field>
 
         <Field label="Confirm Password" error={confirmError}>
-          <input
+          <Input
             type="password"
             required
             autoComplete="new-password"
             placeholder="••••••••"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className={inputClass}
           />
         </Field>
 
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-muted">
           By signing up you agree to our{' '}
-          <a href="#" className="font-medium text-neutral-700 underline underline-offset-2">
+          <a
+            href={site.legal.termsHref}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="font-medium text-foreground underline underline-offset-2"
+          >
             Terms
           </a>{' '}
           &{' '}
-          <a href="#" className="font-medium text-neutral-700 underline underline-offset-2">
+          <a
+            href={site.legal.privacyHref}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="font-medium text-foreground underline underline-offset-2"
+          >
             Privacy Policy
           </a>
         </p>
@@ -165,15 +197,17 @@ export default function Signup() {
         </div>
       </div>
 
-      <p className="mt-8 text-center text-[15px] text-neutral-500">
+      <p className="mt-8 text-center text-[15px] text-muted">
         Already have an account?{' '}
         <Link
-          to="/login"
-          className="font-semibold text-neutral-900 underline underline-offset-2 transition-colors hover:text-neutral-600"
+          to={ROUTES.login}
+          className="font-semibold text-foreground underline underline-offset-2 transition-colors hover:text-muted"
         >
           Log in
         </Link>
       </p>
+        </>
+      )}
     </AuthLayout>
   )
 }

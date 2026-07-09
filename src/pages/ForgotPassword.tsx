@@ -1,29 +1,40 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import AuthLayout from '../components/AuthLayout'
-import { supabase } from '../lib/supabase'
-import { Field, FieldError, PrimaryButton, inputClass } from '../components/ui'
+import AuthLayout from '@/components/AuthLayout'
+import { AuthEmailLinkNotice } from '@/components/AuthEmailLinkNotice'
+import { supabase } from '@/lib/supabase'
+import { ROUTES } from '@/config/routes'
+import { authContent } from '@/content/auth'
+import { Field, FieldError, Input, PrimaryButton } from '@/components/ui'
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
+  const [resendMessage, setResendMessage] = useState<string | null>(null)
 
   async function sendResetLink() {
     setError(null)
-    setSent(false)
+    setResendMessage(null)
     setLoading(true)
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    })
-    setLoading(false)
-    if (resetError) {
-      setError(resetError.message)
-      return
+
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}${ROUTES.resetPassword}`,
+      })
+
+      if (resetError) {
+        setError(resetError.message)
+        return
+      }
+
+      setSent(true)
+      if (sent) setResendMessage(authContent.resetMagicLink.sent)
+    } finally {
+      setLoading(false)
     }
-    setSent(true)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -33,27 +44,40 @@ export default function ForgotPassword() {
 
   return (
     <AuthLayout>
-      <Link to="/login" className="text-[15px] text-neutral-500 transition-colors hover:text-neutral-700">
+      {sent ? (
+        <AuthEmailLinkNotice
+          title={authContent.resetMagicLink.title}
+          subtitle={authContent.resetMagicLink.subtitle}
+          email={email}
+          actionLabel={authContent.resetMagicLink.action}
+          resendLabel={authContent.resetMagicLink.resend}
+          loading={loading}
+          error={error}
+          sentMessage={resendMessage}
+          onResend={() => {
+            void sendResetLink()
+          }}
+        />
+      ) : (
+        <>
+      <Link to={ROUTES.login} className="text-[15px] text-muted transition-colors hover:text-foreground">
         &larr; Back to log in
       </Link>
 
-      <h2 className="mt-6 text-[32px] font-bold tracking-tight text-neutral-900">
-        Forgot password?
+      <h2 className="mt-6 text-[32px] font-semibold tracking-tight text-foreground">
+        {authContent.forgotPassword.title}
       </h2>
-      <p className="mt-2 max-w-xs text-[15px] text-neutral-500">
-        Enter your work email and we'll send you a reset link.
-      </p>
+      <p className="mt-2 max-w-xs text-[15px] text-muted">{authContent.forgotPassword.subtitle}</p>
 
       <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
         <Field label="Work email">
-          <input
+          <Input
             type="email"
             required
             autoComplete="email"
             placeholder="jane@company.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className={inputClass}
           />
         </Field>
 
@@ -62,25 +86,22 @@ export default function ForgotPassword() {
             {loading ? 'Sending…' : 'Send reset link'}
           </PrimaryButton>
           {error ? <FieldError message={error} /> : null}
-          {sent ? (
-            <p className="mt-2 animate-fade-in text-sm text-green-600">
-              Reset link sent to {email}. Check your inbox.
-            </p>
-          ) : null}
         </div>
       </form>
 
-      <p className="mt-6 text-center text-sm text-neutral-500">
+      <p className="mt-6 text-center text-sm text-muted">
         Didn't receive an email? Check your spam folder or{' '}
         <button
           type="button"
           onClick={sendResetLink}
           disabled={loading || !email}
-          className="font-medium text-neutral-900 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="font-medium text-foreground underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
         >
           resend
         </button>
       </p>
+        </>
+      )}
     </AuthLayout>
   )
 }
