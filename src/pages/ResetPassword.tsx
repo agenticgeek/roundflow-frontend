@@ -1,9 +1,11 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import AuthLayout from '../components/AuthLayout'
-import { supabase } from '../lib/supabase'
-import { Field, FieldError, PasswordInput, PrimaryButton } from '../components/ui'
+import AuthLayout from '@/components/AuthLayout'
+import { supabase } from '@/lib/supabase'
+import { ROUTES } from '@/config/routes'
+import { authContent } from '@/content/auth'
+import { Field, FieldError, PasswordInput, PrimaryButton } from '@/components/ui'
 
 type Strength = {
   score: 0 | 1 | 2 | 3
@@ -21,12 +23,12 @@ function getStrength(password: string): Strength {
   const hasExtra = password.length >= 12 && (/[A-Z]/.test(password) || /[^A-Za-z0-9]/.test(password))
 
   if (!longEnough || !hasNumber) {
-    return { score: 1, label: 'Weak', barColor: 'bg-red-500', textColor: 'text-red-600' }
+    return { score: 1, label: 'Weak', barColor: 'bg-danger', textColor: 'text-danger' }
   }
   if (!hasExtra) {
-    return { score: 2, label: 'Good', barColor: 'bg-green-600', textColor: 'text-green-700' }
+    return { score: 2, label: 'Good', barColor: 'bg-success', textColor: 'text-success' }
   }
-  return { score: 3, label: 'Strong', barColor: 'bg-green-600', textColor: 'text-green-700' }
+  return { score: 3, label: 'Strong', barColor: 'bg-success', textColor: 'text-success' }
 }
 
 export default function ResetPassword() {
@@ -56,30 +58,29 @@ export default function ResetPassword() {
     }
 
     setLoading(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password })
-    if (updateError) {
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password })
+      if (updateError) {
+        setError(updateError.message)
+        return
+      }
+
+      navigate(ROUTES.dashboard, { replace: true })
+    } finally {
       setLoading(false)
-      setError(updateError.message)
-      return
     }
-    // Drop the recovery session so the user lands on a clean login screen
-    // instead of being bounced straight into the dashboard.
-    await supabase.auth.signOut()
-    navigate('/login', { replace: true })
   }
 
   return (
     <AuthLayout>
-      <Link to="/login" className="text-[15px] text-neutral-500 transition-colors hover:text-neutral-700">
+      <Link to={ROUTES.login} className="text-[15px] text-muted transition-colors hover:text-foreground">
         &larr; Back
       </Link>
 
-      <h2 className="mt-6 text-[32px] font-bold tracking-tight text-neutral-900">
-        Set new password
+      <h2 className="mt-6 text-[32px] font-semibold tracking-tight text-foreground">
+        {authContent.resetPassword.title}
       </h2>
-      <p className="mt-2 text-[15px] text-neutral-500">
-        Your new password must be at least 8 characters and include a number.
-      </p>
+      <p className="mt-2 text-[15px] text-muted">{authContent.resetPassword.subtitle}</p>
 
       <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
         <div>
@@ -96,7 +97,7 @@ export default function ResetPassword() {
             {[1, 2, 3].map((segment) => (
               <span
                 key={segment}
-                className={`h-1 flex-1 rounded-full transition-colors duration-300 ${segment <= strength.score ? strength.barColor : 'bg-neutral-200'}`}
+                className={`h-1 flex-1 rounded-full transition-colors duration-300 ${segment <= strength.score ? strength.barColor : 'bg-border'}`}
               />
             ))}
           </div>
@@ -125,15 +126,15 @@ export default function ResetPassword() {
         </div>
       </form>
 
-      <p className="mt-5 flex items-center justify-center gap-2 text-sm text-neutral-500">
-        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-green-600" aria-hidden="true">
+      <p className="mt-5 flex items-center justify-center gap-2 text-sm text-muted">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-success" aria-hidden="true">
           <path
             fillRule="evenodd"
             d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.707-9.293a1 1 0 0 0-1.414-1.414L9 10.586 7.707 9.293a1 1 0 0 0-1.414 1.414l2 2a1 1 0 0 0 1.414 0l4-4Z"
             clipRule="evenodd"
           />
         </svg>
-        You'll be redirected to log in after reset.
+        You'll be redirected to the dashboard after reset.
       </p>
     </AuthLayout>
   )
