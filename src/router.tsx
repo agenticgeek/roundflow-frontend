@@ -9,15 +9,15 @@ import Dashboard from '@/pages/Dashboard'
 import RoundPlanner from '@/pages/RoundPlanner'
 import PropertyDetail from '@/pages/PropertyDetail'
 import TodaysWork from '@/pages/TodaysWork'
+import Customers from '@/pages/Customers'
+import DebtPayment from '@/pages/DebtPayment'
+import Settings from '@/pages/Settings'
 import { AppModulePlaceholder } from '@/pages/AppModulePlaceholder'
 import SetupWizard from '@/pages/SetupWizard'
 
 const placeholderModules = [
-  { path: ROUTES.customers, moduleId: 'customers' },
-  { path: ROUTES.debtPayment, moduleId: 'debt-payment' },
   { path: ROUTES.reportsHistory, moduleId: 'reports-history' },
   { path: ROUTES.complaints, moduleId: 'complaints' },
-  { path: ROUTES.settings, moduleId: 'settings' },
   { path: ROUTES.technicians, moduleId: 'technicians' },
 ] as const
 
@@ -61,6 +61,30 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <TodaysWork />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.customers,
+    element: (
+      <ProtectedRoute>
+        <Customers />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.settings,
+    element: (
+      <ProtectedRoute>
+        <Settings />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.debtPayment,
+    element: (
+      <ProtectedRoute>
+        <DebtPayment />
       </ProtectedRoute>
     ),
   },

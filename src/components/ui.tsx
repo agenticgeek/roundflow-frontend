@@ -5,6 +5,15 @@ import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
 import { usePasswordVisibility } from '@/hooks/use-password-visibility'
 import { cn } from '@/lib/utils'
+import type { DropdownSize as InputSize } from '@/components/ui/dropdown'
+
+export { MultiSelect, Select } from '@/components/ui/dropdown'
+export type {
+  DropdownOption as SelectOption,
+  DropdownSize,
+  DropdownSize as InputSize,
+  SelectProps,
+} from '@/components/ui/dropdown'
 
 const { ui } = authContent
 
@@ -15,8 +24,6 @@ const inputSizeClass = {
   default: 'px-4 py-3 text-[15px]',
   sm: 'px-3.5 py-2 text-sm',
 } as const
-
-export type InputSize = keyof typeof inputSizeClass
 
 export function Field({
   label,
@@ -158,36 +165,6 @@ export const PasswordInput = forwardRef<
   Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>
 >(function PasswordInput(props, ref) {
   return <Input ref={ref} type="password" {...props} />
-})
-
-export interface SelectOption {
-  value: string
-  label: string
-}
-
-export interface SelectProps extends Omit<InputHTMLAttributes<HTMLSelectElement>, 'children'> {
-  options: SelectOption[]
-  inputSize?: InputSize
-}
-
-/** Styled select matching Input appearance. */
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
-  { options, className, inputSize = 'default', ...props },
-  ref,
-) {
-  return (
-    <select
-      ref={ref}
-      className={cn(inputClass, inputSizeClass[inputSize], 'appearance-none bg-background', className)}
-      {...props}
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  )
 })
 
 /** Styled textarea matching Input appearance. */

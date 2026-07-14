@@ -1,0 +1,38 @@
+import { useState } from 'react'
+import { Navigate, useNavigate } from 'react-router-dom'
+import { supabase } from '@/lib/supabase'
+import { ROUTES } from '@/config/routes'
+import { isSetupComplete, isSetupEnforced } from '@/lib/setup-storage'
+import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
+import { AppShell } from '@/components/app/AppShell'
+import { SettingsScreen } from '@/components/settings/SettingsScreen'
+
+export default function Settings() {
+  const navigate = useNavigate()
+  const [signingOut, setSigningOut] = useState(false)
+  const quickActions = useAppQuickActions()
+
+  if (isSetupEnforced() && !isSetupComplete()) {
+    return <Navigate to={ROUTES.setupWizard} replace />
+  }
+
+  async function handleSignOut() {
+    setSigningOut(true)
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      navigate(ROUTES.login, { replace: true })
+    }
+  }
+
+  return (
+    <AppShell
+      quickActions={quickActions}
+      onSignOut={handleSignOut}
+      signingOut={signingOut}
+      mainMaxWidthClass="max-w-7xl"
+    >
+      <SettingsScreen />
+    </AppShell>
+  )
+}
