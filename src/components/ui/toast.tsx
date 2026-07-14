@@ -93,7 +93,7 @@ function ToastViewport({
           role="status"
           aria-live="polite"
           className={cn(
-            'pointer-events-auto flex w-full max-w-lg items-start justify-between gap-4 bg-foreground px-6 py-4 text-primary-foreground shadow-xl',
+            'pointer-events-auto flex w-full max-w-lg items-start justify-between gap-4 bg-primary px-6 py-4 text-primary-foreground shadow-xl',
             toast.description ? 'rounded-2xl' : 'items-center rounded-full py-3',
             toast.exiting ? 'animate-toast-out' : 'animate-toast-in',
           )}
@@ -101,7 +101,7 @@ function ToastViewport({
           <div className="min-w-0">
             <p className="text-sm font-semibold sm:text-base">{toast.message}</p>
             {toast.description ? (
-              <p className="mt-1 text-xs font-normal text-primary-foreground/80 sm:text-sm">
+              <p className="mt-1 text-xs font-normal text-primary-foreground/85 sm:text-sm">
                 {toast.description}
               </p>
             ) : null}
@@ -110,7 +110,7 @@ function ToastViewport({
             type="button"
             aria-label={site.ui.closeDialog}
             onClick={() => onDismiss(toast.id)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-primary-foreground/80 transition-colors hover:bg-primary-foreground/10 hover:text-primary-foreground"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-primary-foreground/85 transition-colors hover:bg-primary-foreground/15 hover:text-primary-foreground"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
               <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 1 0-1.06-1.06L10 8.94 6.28 5.22Z" />

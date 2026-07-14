@@ -1,109 +1,189 @@
-import { useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
-import type { PropertyDetailRecord, PropertyDetailTabId } from '@/content/property-detail'
+import { useState } from 'react'
+import type { CustomerPropertyRecord } from '@/content/customers'
+import type { PropertyDetailRecord, PropertyDetailTabId, PropertyPlanStatus } from '@/content/property-detail'
 import { propertyDetailContent } from '@/content/property-detail'
-import { ROUTES } from '@/config/routes'
+import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
+import { EditCustomerRecordModal } from '@/components/property-detail/EditCustomerRecordModal'
+import { PauseServiceModal } from '@/components/property-detail/PauseServiceModal'
+import { SendPropertyMessageModal } from '@/components/property-detail/SendPropertyMessageModal'
+import {
+  NotesRiskTab,
+  PaymentsTab,
+  TabPlaceholder,
+  VisitHistoryTab,
+} from '@/components/property-detail/PropertyDetailTabs'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
-import { PanelCard } from '@/components/dashboard/DashboardControls'
-import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
+import { dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
 
 interface PropertyDetailScreenProps {
   property: PropertyDetailRecord
-  onSendMessage?: () => void
-  onPauseService?: () => void
+  customerRecord?: CustomerPropertyRecord | null
+  onBack: () => void
+}
+
+const cardClass = 'rounded-lg border border-border bg-card shadow-sm'
+
+const serviceStatusClass: Record<PropertyDetailRecord['serviceStatus'], string> = {
+  active: 'bg-success/10 text-success',
+  paused: 'bg-muted/15 text-muted',
+  unassigned: 'bg-warning-surface text-warning',
+  hold: 'bg-danger/10 text-danger',
 }
 
 const paymentStatusClass: Record<PropertyDetailRecord['paymentStatus'], string> = {
   paid: 'text-success',
-  hold: 'text-warning',
-  pending: 'text-primary',
+  hold: 'text-danger',
+  pending: 'text-warning',
 }
 
-/** Customer/property detail — summary, tabs, and overview content. */
+const propertyDetailActionClass = cn(
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90',
+  dashboardPressableClass,
+)
+
+const propertyDetailOutlineActionClass = cn(
+  'inline-flex items-center justify-center gap-2 rounded-lg border border-warning px-4 py-2 text-sm font-semibold text-warning transition-colors hover:bg-warning-surface',
+  dashboardPressableClass,
+)
+
+/** Customer/property detail — summary cards, tabs, and overview content. */
 export function PropertyDetailScreen({
   property,
-  onSendMessage,
-  onPauseService,
+  customerRecord = null,
+  onBack,
 }: PropertyDetailScreenProps) {
-  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<PropertyDetailTabId>('overview')
-  const { actions, statusLabels, summary, tabs, overview, placeholders } = propertyDetailContent
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [pauseOpen, setPauseOpen] = useState(false)
+  const [messageOpen, setMessageOpen] = useState(false)
+  const { actions, assignment, statusLabels, paymentStatusLabels, summary, summaryCards, tabs, overview } =
+    propertyDetailContent
 
-  function handleBack() {
-    navigate(ROUTES.roundPlanner, { state: { view: 'list' } })
-  }
+  const isUnassigned =
+    Boolean(property.needsAssignment) ||
+    property.serviceStatus === 'unassigned' ||
+    property.planStatus === 'pending'
+
+  const isActive = property.serviceStatus === 'active' && !isUnassigned
+  const roundLabel =
+    property.assignedRound !== '—' && property.assignedRound !== 'Not Assigned'
+      ? property.assignedRound
+      : property.roundLabel
+
+  const paymentStatusLabel = isUnassigned ? '—' : paymentStatusLabels[property.paymentStatus]
+  const outstandingBalance = isUnassigned ? '—' : property.outstandingBalance
+  const paymentMethod = isUnassigned ? '—' : property.paymentMethod
+  const issuesCount = isUnassigned ? '—' : String(property.issuesCount)
 
   return (
-    <div className="space-y-5">
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <button
-              type="button"
-              onClick={handleBack}
-              aria-label={propertyDetailContent.backLabel}
-              className="mt-1 rounded-lg p-2 text-muted transition-colors hover:bg-surface hover:text-foreground"
-            >
-              <DashboardIcon name="arrow-left" className="h-5 w-5" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                {property.customerName}
-              </h1>
-              <p className="mt-1 text-sm text-muted">{property.shortAddress}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                  {statusLabels[property.serviceStatus]}
-                </span>
-                <span className="inline-flex rounded-full bg-surface px-3 py-1 text-xs font-semibold text-muted">
-                  {property.roundLabel}
-                </span>
-              </div>
-            </div>
+    <div className="space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label={propertyDetailContent.backLabel}
+            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground"
+          >
+            <DashboardIcon name="arrow-left" className="h-5 w-5" />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              {property.customerName}
+            </h1>
+            <p className="mt-0.5 text-sm text-muted">{property.shortAddress}</p>
           </div>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <ActionButton icon="edit" label={actions.edit} />
-            <ActionButton icon="pause" label={actions.pauseService} onClick={onPauseService} />
-            <ActionButton icon="message" label={actions.sendMessage} onClick={onSendMessage} />
-          </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span
+            className={cn(
+              'inline-flex rounded-full px-3 py-1 text-xs font-semibold',
+              isActive ? 'bg-accent-surface text-accent' : serviceStatusClass[property.serviceStatus],
+            )}
+          >
+            {statusLabels[property.serviceStatus]}
+          </span>
+          {isActive && roundLabel !== '—' ? (
+            <span className="inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              {roundLabel}
+            </span>
+          ) : null}
+          <ActionButton icon="edit" label={actions.edit} onClick={() => setEditOpen(true)} />
+          {isActive ? (
+            <button type="button" onClick={() => setPauseOpen(true)} className={propertyDetailOutlineActionClass}>
+              <DashboardIcon name="pause" className="h-4 w-4" />
+              {actions.pauseService}
+            </button>
+          ) : null}
+          <ActionButton icon="message" label={actions.sendMessage} onClick={() => setMessageOpen(true)} />
         </div>
       </header>
 
-      <PanelCard interactive={false} className="bg-card p-5 sm:p-6">
-        <div className="grid gap-6 md:grid-cols-2">
-          <SummaryColumn
-            rows={[
-              [summary.propertyType, property.propertyType],
-              [summary.frequency, property.frequency],
-              [summary.price, property.price],
-              [summary.cleanMethod, property.cleanMethod],
-              [summary.nextDue, property.nextDue],
-              [summary.lastCompleted, property.lastCompleted],
-              [summary.assignedRound, property.assignedRound],
-              [summary.technician, property.technician],
-            ]}
-          />
-          <SummaryColumn
-            rows={[
-              [
-                summary.paymentStatus,
-                statusLabels[property.paymentStatus],
-                paymentStatusClass[property.paymentStatus],
-              ],
-              [summary.outstandingBalance, property.outstandingBalance],
-              [summary.paymentMethod, property.paymentMethod],
-              [summary.lastPayment, property.lastPayment],
-              [summary.issuesCount, String(property.issuesCount)],
-              [summary.nextVisitStatus, property.nextVisitStatus],
-            ]}
-          />
+      {isUnassigned ? (
+        <div
+          className={cn(
+            cardClass,
+            'flex flex-col gap-4 border-accent/25 bg-accent-surface px-5 py-4 sm:flex-row sm:items-center sm:justify-between',
+          )}
+        >
+          <div className="flex gap-3">
+            <DashboardIcon name="info" className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">{assignment.title}</p>
+              <p className="mt-0.5 text-sm text-muted">{assignment.description}</p>
+            </div>
+          </div>
+          <button type="button" className={cn(propertyDetailActionClass, 'shrink-0')} onClick={() => setAssignOpen(true)}>
+            {assignment.action}
+          </button>
         </div>
-      </PanelCard>
+      ) : null}
 
-      <section className="space-y-4">
-        <div className="border-b border-border">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SummaryCard title={summaryCards.propertyInformation}>
+          <SummaryRow label={summary.propertyType} value={property.propertyType} />
+          <SummaryRow label={summary.frequency} value={property.frequency} />
+          <SummaryRow label={summary.price} value={property.price} />
+          <SummaryRow label={summary.cleanMethod} value={property.cleanMethod} />
+          <SummaryRow
+            label={summary.nextDue}
+            value={property.nextDue}
+            valueClass={isUnassigned ? 'text-warning' : undefined}
+          />
+          {!isUnassigned ? (
+            <SummaryRow label={summary.lastCompleted} value={property.lastCompleted} />
+          ) : null}
+          <SummaryRow label={summary.assignedRound} value={property.assignedRound} />
+          <SummaryRow label={summary.technician} value={property.technician} />
+        </SummaryCard>
+
+        <SummaryCard title={summaryCards.paymentStatus}>
+          <SummaryRow
+            label={summary.paymentStatus}
+            value={paymentStatusLabel}
+            valueClass={
+              paymentStatusLabel === '—' ? undefined : paymentStatusClass[property.paymentStatus]
+            }
+          />
+          <SummaryRow label={summary.outstandingBalance} value={outstandingBalance} />
+          <SummaryRow label={summary.paymentMethod} value={paymentMethod} />
+          {!isUnassigned ? (
+            <SummaryRow label={summary.lastPayment} value={property.lastPayment} />
+          ) : null}
+          <SummaryRow label={summary.issuesCount} value={issuesCount} />
+          <SummaryRow
+            label={summary.nextVisitStatus}
+            value={property.nextVisitStatus}
+            valueClass={isUnassigned ? 'text-warning' : undefined}
+          />
+        </SummaryCard>
+      </div>
+
+      <section className={cn(cardClass, 'overflow-hidden')}>
+        <div className="border-b border-border px-6 pt-1">
           <div className="flex gap-6 overflow-x-auto">
             {tabs.map((tab) => {
               const active = activeTab === tab.id
@@ -114,9 +194,9 @@ export function PropertyDetailScreen({
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'shrink-0 border-b-2 pb-3 text-sm font-semibold transition-colors',
+                    'shrink-0 border-b-2 px-0.5 py-3.5 text-sm font-semibold transition-colors',
                     active
-                      ? 'border-primary text-primary'
+                      ? 'border-foreground text-foreground'
                       : 'border-transparent text-muted hover:text-foreground',
                   )}
                 >
@@ -127,27 +207,37 @@ export function PropertyDetailScreen({
           </div>
         </div>
 
-        {activeTab === 'overview' ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <InfoCard title={overview.propertyDetails.title}>
-              <InfoRow label={overview.propertyDetails.fullAddress} value={property.fullAddress} />
-              <InfoRow label={overview.propertyDetails.propertyType} value={property.propertyType} />
-              <InfoRow label={overview.propertyDetails.accessNotes} value={property.accessNotes} />
-              <InfoRow label={overview.propertyDetails.riskNotes} value={property.riskNotes} />
-            </InfoCard>
-
-            <InfoCard title={overview.contact.title}>
-              <ContactRow icon="user" label={overview.contact.name} value={property.customerName} />
-              <ContactRow icon="phone" label={overview.contact.phone} value={property.phone} />
-              <ContactRow icon="mail" label={overview.contact.email} value={property.email} />
-            </InfoCard>
-          </div>
-        ) : (
-          <PanelCard interactive={false} className="bg-card p-6 text-sm text-muted">
-            {placeholders[activeTab]}
-          </PanelCard>
-        )}
+        <div className="p-6">
+          {activeTab === 'overview' ? (
+            <>
+              <h2 className="text-base font-semibold text-foreground">{overview.propertyDetails.title}</h2>
+              <dl className="mt-5 grid gap-6 sm:grid-cols-2">
+                <OverviewField label={overview.propertyDetails.fullAddress} value={property.fullAddress} />
+                <OverviewField label={overview.propertyDetails.propertyType} value={property.propertyType} />
+              </dl>
+            </>
+          ) : activeTab === 'service-plan' ? (
+            <ServicePlanTab
+              property={property}
+              isUnassigned={isUnassigned}
+              onAssign={() => setAssignOpen(true)}
+            />
+          ) : activeTab === 'visit-history' ? (
+            <VisitHistoryTab property={property} />
+          ) : activeTab === 'payments' ? (
+            <PaymentsTab property={property} />
+          ) : activeTab === 'notes-risk' ? (
+            <NotesRiskTab property={property} />
+          ) : activeTab === 'photos' ? (
+            <TabPlaceholder label={activeTab} />
+          ) : null}
+        </div>
       </section>
+
+      <AssignToRoundModal open={assignOpen} record={customerRecord} onClose={() => setAssignOpen(false)} />
+      <EditCustomerRecordModal open={editOpen} property={property} onClose={() => setEditOpen(false)} />
+      <PauseServiceModal open={pauseOpen} property={property} onClose={() => setPauseOpen(false)} />
+      <SendPropertyMessageModal open={messageOpen} property={property} onClose={() => setMessageOpen(false)} />
     </div>
   )
 }
@@ -162,70 +252,119 @@ function ActionButton({
   onClick?: () => void
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(dashboardCtaClass, 'gap-2')}
-    >
+    <button type="button" onClick={onClick} className={propertyDetailActionClass}>
       <DashboardIcon name={icon} className="h-4 w-4" />
       {label}
     </button>
   )
 }
 
-function SummaryColumn({
-  rows,
+function SummaryCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <article className={cn(cardClass, 'p-6')}>
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
+      <dl className="mt-5 space-y-3.5">{children}</dl>
+    </article>
+  )
+}
+
+function SummaryRow({
+  label,
+  value,
+  valueClass,
 }: {
-  rows: [string, string, string?][]
+  label: string
+  value: string
+  valueClass?: string
 }) {
   return (
-    <dl className="space-y-3 text-sm">
-      {rows.map(([label, value, valueClass]) => (
-        <div key={label} className="grid grid-cols-[minmax(0,11rem)_1fr] gap-3">
-          <dt className="text-muted">{label}</dt>
-          <dd className={cn('font-medium text-foreground', valueClass)}>{value}</dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
-
-function InfoCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <PanelCard interactive={false} className="bg-card p-5 sm:p-6">
-      <h2 className="text-lg font-medium text-foreground">{title}</h2>
-      <dl className="mt-4 space-y-3">{children}</dl>
-    </PanelCard>
-  )
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid gap-1 sm:grid-cols-[minmax(0,10rem)_1fr] sm:gap-3">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="text-sm font-medium text-foreground">{value}</dd>
+    <div className="flex items-center justify-between gap-4 text-sm">
+      <dt className="text-muted">{label}</dt>
+      <dd className={cn('font-semibold text-foreground', valueClass)}>{value}</dd>
     </div>
   )
 }
 
-function ContactRow({
-  icon,
+function OverviewField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-sm font-semibold text-foreground">{label}</dt>
+      <dd className="mt-1.5 text-sm text-foreground">{value}</dd>
+    </div>
+  )
+}
+
+const planStatusClass: Record<PropertyPlanStatus, string> = {
+  active: 'bg-success/10 text-success',
+  pending: 'bg-warning-surface text-warning-foreground',
+  paused: 'bg-muted/15 text-muted',
+  hold: 'bg-danger/10 text-danger',
+}
+
+function ServicePlanTab({
+  property,
+  isUnassigned,
+  onAssign,
+}: {
+  property: PropertyDetailRecord
+  isUnassigned: boolean
+  onAssign: () => void
+}) {
+  const { servicePlan, planStatusLabels, assignment } = propertyDetailContent
+  const planStatus = property.planStatus ?? (isUnassigned ? 'pending' : 'active')
+  const roundAssignment = isUnassigned ? servicePlan.notAssigned : property.assignedRound
+  const serviceType = property.serviceType ?? servicePlan.defaultServiceType
+  const showAssignButton =
+    isUnassigned || planStatus === 'pending' || property.serviceStatus === 'unassigned'
+
+  return (
+    <>
+      <h2 className="text-base font-semibold text-foreground">{servicePlan.title}</h2>
+      <dl className="mt-5 grid gap-6 sm:grid-cols-2">
+        <ServicePlanField label={servicePlan.frequency} value={property.frequency} />
+        <ServicePlanField label={servicePlan.serviceType} value={serviceType} />
+        <div>
+          <dt className="text-sm font-semibold text-foreground">{servicePlan.roundAssignment}</dt>
+          <dd className={cn('mt-1.5 text-sm', isUnassigned ? 'text-warning' : 'text-foreground')}>
+            {roundAssignment}
+          </dd>
+          {showAssignButton ? (
+            <button type="button" className={cn(propertyDetailActionClass, 'mt-4')} onClick={onAssign}>
+              {assignment.action}
+            </button>
+          ) : null}
+        </div>
+        <div>
+          <dt className="text-sm font-semibold text-foreground">{servicePlan.planStatus}</dt>
+          <dd className="mt-1.5">
+            <span
+              className={cn(
+                'inline-flex rounded-md px-2 py-0.5 text-xs font-semibold',
+                planStatusClass[planStatus],
+              )}
+            >
+              {planStatusLabels[planStatus]}
+            </span>
+          </dd>
+        </div>
+      </dl>
+    </>
+  )
+}
+
+function ServicePlanField({
   label,
   value,
+  valueClass,
 }: {
-  icon: string
   label: string
   value: string
+  valueClass?: string
 }) {
   return (
-    <div className="flex items-start gap-3">
-      <span className="mt-0.5 text-primary">
-        <DashboardIcon name={icon} className="h-4 w-4" />
-      </span>
-      <div className="min-w-0">
-        <dt className="text-sm text-muted">{label}</dt>
-        <dd className="text-sm font-medium text-foreground">{value}</dd>
-      </div>
+    <div>
+      <dt className="text-sm font-semibold text-foreground">{label}</dt>
+      <dd className={cn('mt-1.5 text-sm text-foreground', valueClass)}>{value}</dd>
     </div>
   )
 }
@@ -238,16 +377,12 @@ export function PropertyDetailNotFound({ onBack }: PropertyDetailNotFoundProps) 
   const { notFound } = propertyDetailContent
 
   return (
-    <PanelCard interactive={false} className="bg-card p-8 text-center">
+    <article className={cn(cardClass, 'p-8 text-center')}>
       <h1 className="text-2xl font-semibold text-foreground">{notFound.title}</h1>
       <p className="mt-2 text-sm text-muted">{notFound.description}</p>
-      <button
-        type="button"
-        onClick={onBack}
-        className={cn(dashboardCtaClass, 'mt-6')}
-      >
+      <button type="button" onClick={onBack} className={cn(propertyDetailActionClass, 'mt-6')}>
         {notFound.action}
       </button>
-    </PanelCard>
+    </article>
   )
 }

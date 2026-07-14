@@ -9,12 +9,15 @@ export interface SidePanelProps {
   onClose: () => void
   title: string
   subtitle?: string
+  /** Optional badge rendered beside the title (e.g. status chip). */
+  titleBadge?: ReactNode
   children: ReactNode
   footer?: ReactNode
   closeLabel?: string
   widthClass?: string
   className?: string
   bodyClassName?: string
+  footerClassName?: string
 }
 
 /**
@@ -31,12 +34,14 @@ export function SidePanel({
   onClose,
   title,
   subtitle,
+  titleBadge,
   children,
   footer,
   closeLabel = site.ui.closeDialog,
   widthClass = 'max-w-md',
   className,
   bodyClassName,
+  footerClassName,
 }: SidePanelProps) {
   const titleId = useId()
 
@@ -78,9 +83,12 @@ export function SidePanel({
         )}
       >
         <header className="shrink-0 border-b border-border px-5 py-4 pr-14">
-          <h2 id={titleId} className="text-lg font-medium tracking-tight text-foreground">
-            {title}
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 id={titleId} className="text-lg font-semibold tracking-tight text-foreground">
+              {title}
+            </h2>
+            {titleBadge}
+          </div>
           {subtitle ? <p className="mt-0.5 text-sm text-muted">{subtitle}</p> : null}
         </header>
 
@@ -106,7 +114,12 @@ export function SidePanel({
         </div>
 
         {footer ? (
-          <footer className="relative z-10 shrink-0 border-t border-border bg-background px-5 py-4 shadow-[0_-10px_30px_rgba(10,10,10,0.08)]">
+          <footer
+            className={cn(
+              'relative z-10 shrink-0 border-t border-border bg-background px-5 py-4 shadow-[0_-10px_30px_rgba(10,10,10,0.08)]',
+              footerClassName,
+            )}
+          >
             {footer}
           </footer>
         ) : null}

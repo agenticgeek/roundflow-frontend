@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
-import { propertyDetailContent, getPropertyDetail } from '@/content/property-detail'
+import { getCustomerRecordByPropertyId } from '@/content/customers'
+import { getPropertyDetail } from '@/content/property-detail'
 import { isSetupComplete, isSetupEnforced } from '@/lib/setup-storage'
 import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
 import { AppShell } from '@/components/app/AppShell'
@@ -13,10 +14,12 @@ import {
 
 export default function PropertyDetail() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { propertyId } = useParams()
   const [signingOut, setSigningOut] = useState(false)
   const quickActions = useAppQuickActions()
   const property = getPropertyDetail(propertyId)
+  const customerRecord = propertyId ? getCustomerRecordByPropertyId(propertyId) : null
 
   if (isSetupEnforced() && !isSetupComplete()) {
     return <Navigate to={ROUTES.setupWizard} replace />
@@ -32,18 +35,12 @@ export default function PropertyDetail() {
   }
 
   function handleBack() {
+    if (location.state?.from === 'customers') {
+      navigate(ROUTES.customers)
+      return
+    }
+
     navigate(ROUTES.roundPlanner, { state: { view: 'list' } })
-  }
-
-  function handlePauseService() {
-    const { pauseServiceToast } = propertyDetailContent
-
-    navigate(ROUTES.roundPlanner, {
-      state: {
-        view: 'list',
-        toast: pauseServiceToast,
-      },
-    })
   }
 
   return (
@@ -56,8 +53,8 @@ export default function PropertyDetail() {
       {property ? (
         <PropertyDetailScreen
           property={property}
-          onSendMessage={quickActions.openBulkMessageModal}
-          onPauseService={handlePauseService}
+          customerRecord={customerRecord}
+          onBack={handleBack}
         />
       ) : (
         <PropertyDetailNotFound onBack={handleBack} />
