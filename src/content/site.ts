@@ -1,6 +1,12 @@
 export interface SiteContent {
   name: string
-  logo: { src: string; alt: string }
+  logo: {
+    /** Colored wordmark for light backgrounds. */
+    src: string
+    /** Colored wordmark for dark backgrounds (keeps teal accents). */
+    darkSrc: string
+    alt: string
+  }
   favicon: string
   footerText: string
   legal: { termsHref: string; privacyHref: string }
@@ -13,6 +19,7 @@ export const site = {
   name: 'RoundFlow',
   logo: {
     src: '/assets/logo_roundflow.svg',
+    darkSrc: '/assets/logo_roundflow_dark.svg',
     alt: 'RoundFlow',
   },
   favicon: '/favicon.svg',

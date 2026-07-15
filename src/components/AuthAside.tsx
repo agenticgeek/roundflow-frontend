@@ -25,7 +25,7 @@ export function AuthAside() {
 
   return (
     <aside className="flex flex-col bg-sidebar px-6 py-6 text-sidebar-foreground sm:px-10 lg:sticky lg:top-0 lg:h-svh lg:w-[38.5%] lg:shrink-0 lg:px-14 lg:py-10 xl:px-16 2xl:px-20">
-      <Brand asLink={false} inverse className="h-10" />
+      <Brand asLink={false} inverse className="h-14 w-auto sm:h-16" />
 
       <div className="mt-10 mb-4 flex flex-1 flex-col justify-center lg:my-0">
         <TypewriterLines

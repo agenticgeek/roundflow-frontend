@@ -3,7 +3,7 @@ import { ROUTES } from '@/config/routes'
 import { site } from '@/content/site'
 import { cn } from '@/lib/utils'
 
-/** Brand logo — SVG wordmark from public/assets. `inverse` for dark panels (auth aside). */
+/** Brand logo — SVG wordmark from public/assets. `inverse` uses the dark-bg colored asset. */
 export function Brand({
   className,
   asLink = true,
@@ -15,9 +15,9 @@ export function Brand({
 }) {
   const logo = (
     <img
-      src={site.logo.src}
+      src={inverse ? site.logo.darkSrc : site.logo.src}
       alt={site.logo.alt}
-      className={cn('h-8 w-auto', inverse && 'brightness-0 invert', className)}
+      className={cn('h-8 w-auto', className)}
     />
   )
 

@@ -10,25 +10,25 @@ export interface DropdownOption {
 }
 
 const dropdownSizeClass = {
-  default: 'px-4 py-2.5 text-[15px]',
-  sm: 'px-3.5 py-2 text-sm',
+  default: 'min-h-11 px-4 py-2.5 text-[15px]',
+  sm: 'min-h-10 px-3.5 py-2.5 text-sm',
 } as const
 
 export type DropdownSize = keyof typeof dropdownSizeClass
 
 export const dropdownTriggerClass =
-  'flex w-full items-center justify-between gap-3 rounded-lg border border-foreground/90 bg-card text-left font-medium text-foreground shadow-sm transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:cursor-not-allowed disabled:opacity-60'
+  'flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-card text-left font-medium text-foreground shadow-sm transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60'
 
 export const dropdownMenuClass =
-  'overflow-hidden rounded-lg border border-border bg-card py-1 shadow-lg'
+  'overflow-hidden rounded-xl border border-border bg-card py-1.5 shadow-lg'
 
 function DropdownCheckbox({ checked }: { checked: boolean }) {
   return (
     <span
       aria-hidden="true"
       className={cn(
-        'flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-foreground/80 bg-card',
-        checked && 'border-foreground bg-foreground text-background',
+        'flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-border bg-card',
+        checked && 'border-primary bg-primary text-primary-foreground',
       )}
     >
       {checked ? (
@@ -79,6 +79,8 @@ function DropdownItem({
   onSelect: () => void
   divider?: boolean
 }) {
+  const [primary, secondary] = splitDropdownLabel(label)
+
   return (
     <button
       type="button"
@@ -86,14 +88,29 @@ function DropdownItem({
       aria-selected={checked}
       onClick={onSelect}
       className={cn(
-        'flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent-surface/70',
-        divider && 'border-b border-border/70 last:border-b-0',
+        'flex w-full items-start gap-3 px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent-surface/70',
+        divider && 'border-b border-border/60 last:border-b-0',
       )}
     >
-      <DropdownCheckbox checked={checked} />
-      <span>{label}</span>
+      <span className="mt-0.5">
+        <DropdownCheckbox checked={checked} />
+      </span>
+      <span className="min-w-0 flex-1 leading-snug">
+        <span className="block">{primary}</span>
+        {secondary ? (
+          <span className="mt-0.5 block text-xs font-normal text-muted">{secondary}</span>
+        ) : null}
+      </span>
     </button>
   )
+}
+
+/** Split labels like "Week 1 · 6–10 May" into a title + muted date line. */
+function splitDropdownLabel(label: string): [string, string | null] {
+  const separator = ' · '
+  const index = label.indexOf(separator)
+  if (index === -1) return [label, null]
+  return [label.slice(0, index), label.slice(index + separator.length)]
 }
 
 interface DropdownMenuPosition {
@@ -140,8 +157,8 @@ function DropdownMenuPortal({
       setPosition({
         top: openUpward ? rect.top - Math.min(menuHeight, maxHeight) - 6 : rect.bottom + 6,
         left: rect.left,
-        width: rect.width,
-        maxHeight: Math.max(maxHeight, 120),
+        width: Math.max(rect.width, 220),
+        maxHeight: Math.max(maxHeight, 140),
       })
     }
 

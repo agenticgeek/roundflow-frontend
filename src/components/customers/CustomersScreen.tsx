@@ -147,7 +147,7 @@ export function CustomersScreen() {
             value={roundId}
             onChange={(event) => setRoundId(event.target.value)}
             options={[...customersContent.filters.round.options]}
-            className="min-w-36"
+            className="min-w-36 border-accent/25 bg-accent-surface shadow-none"
           />
           <MultiSelect
             inputSize="sm"
@@ -157,7 +157,7 @@ export function CustomersScreen() {
             value={statusIds}
             onChange={setStatusIds}
             options={[...customersContent.filters.status.options]}
-            className="min-w-36"
+            className="min-w-36 border-accent/25 bg-accent-surface shadow-none"
           />
         </div>
       </div>
