@@ -90,7 +90,7 @@ export function Modal({
         type="button"
         aria-label={closeLabel}
         onClick={onClose}
-        className="absolute inset-0 bg-foreground/50"
+        className="absolute inset-0 animate-fade-in bg-foreground/50"
       />
 
       <div

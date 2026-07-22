@@ -38,9 +38,9 @@ export function DashboardBarChart({
   const { rootRef, tooltip, showTooltip, hideTooltip } = useChartHover()
 
   return (
-    <div ref={rootRef} data-chart-root className="relative h-44">
+    <div ref={rootRef} data-chart-root className="relative h-44 overflow-visible">
       <ChartTooltip tooltip={tooltip} />
-      <div className="flex h-36 items-end gap-6 border-l border-border/60 border-b border-border/60 px-4">
+      <div className="flex h-36 items-end gap-6 overflow-visible border-l border-border/60 border-b border-border/60 px-4">
         {data.map((item) => (
           <div key={item.label} className="flex h-full flex-1 items-end">
             <button
@@ -84,7 +84,7 @@ export function DashboardLineChart({
     .join(' ')
 
   return (
-    <div ref={rootRef} data-chart-root className="relative h-44">
+    <div ref={rootRef} data-chart-root className="relative h-44 overflow-visible pt-2">
       <ChartTooltip tooltip={tooltip} />
       <svg viewBox={`0 0 ${width} ${height}`} className="h-36 w-full overflow-visible">
         <polyline fill="none" stroke="currentColor" strokeWidth="3" points={points} className="text-success" />
@@ -125,9 +125,9 @@ export function DashboardIssueChart({ data }: { data: readonly IssueBar[] }) {
   ]
 
   return (
-    <div ref={rootRef} data-chart-root className="relative h-44">
+    <div ref={rootRef} data-chart-root className="relative h-44 overflow-visible">
       <ChartTooltip tooltip={tooltip} />
-      <div className="flex h-36 items-end gap-6 border-l border-border/60 border-b border-border/60 px-4">
+      <div className="flex h-36 items-end gap-6 overflow-visible border-l border-border/60 border-b border-border/60 px-4">
         {data.map((item) => (
           <div key={item.label} className="flex h-full flex-1 items-end justify-center gap-1.5">
             {series.map((bar) => (

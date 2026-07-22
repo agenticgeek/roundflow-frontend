@@ -1,159 +1,140 @@
-import { useMemo, useState } from 'react'
-import type {
-  SettingsBusinessProfile,
-  SettingsPaymentSetup,
-  SettingsRoundSettings,
-  SettingsSectionId,
-  SettingsServiceArea,
-  SettingsServiceCatalogue,
-  SettingsSmsTemplates,
-  SettingsTechnicianManagement,
-} from '@/content/settings'
+import { useMemo, useState, type ReactNode } from 'react'
+import type { SettingsSectionId } from '@/content/settings'
 import { settingsContent } from '@/content/settings'
 import { setupWizardContent } from '@/content/setup-wizard'
-import type { CatalogueService, MessageTemplate, ServiceArea, Technician } from '@/types/setup-wizard'
+import type { CatalogueService } from '@/types/setup-wizard'
+import {
+  useBusinessProfile,
+  useConnectPayment,
+  useCreateService,
+  useCreateServiceArea,
+  useCreateTechnician,
+  useDeleteService,
+  useDeleteServiceArea,
+  useDeleteTechnician,
+  useMessageTemplates,
+  usePaymentSettings,
+  useRoundSettings,
+  useServiceAreas,
+  useServices,
+  useTechnicians,
+  useUpdateBusinessProfile,
+  useUpdatePaymentSettings,
+  useUpdateRoundSettings,
+  useUpdateService,
+  useUpdateTechnician,
+} from '@/features/settings/hooks/useSettings'
+import {
+  catalogueServiceToInput,
+  settingsBusinessFromForm,
+  settingsBusinessToForm,
+  settingsPaymentFromForm,
+  settingsPaymentToForm,
+  settingsRoundFromForm,
+  settingsRoundToForm,
+  settingsServiceAreasToRows,
+  settingsServicesToCatalogue,
+  settingsTechniciansToRows,
+  type SettingsBusinessForm,
+  type SettingsPaymentForm,
+  type SettingsRoundForm,
+  type SettingsServiceAreaRow,
+  type SettingsTechnicianRow,
+} from '@/features/settings/lib/mappers'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError } from '@/lib/errors'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Field, FieldError, Input, Select, Toggle } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
-import { MultiToggleButtons } from '@/components/setup-wizard/MultiToggleButtons'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
-import { EditTemplateModal } from '@/components/setup-wizard/EditTemplateModal'
 import { useToast } from '@/components/ui/toast'
-import { cn, formatCurrency, interpolateTemplate, truncateTemplateBody } from '@/lib/utils'
+import {
+  SettingsFormSkeleton,
+  SettingsPaymentSkeleton,
+  SettingsServiceAreasSkeleton,
+  SettingsServicesSkeleton,
+  SettingsSmsSkeleton,
+  SettingsTechniciansSkeleton,
+} from '@/components/settings/SettingsSkeletons'
+import { cn, formatCurrency } from '@/lib/utils'
 
 const cardClass = 'rounded-lg border border-border bg-card shadow-sm'
-
 const settingsSelectClass = 'rounded-lg border-accent/25 bg-accent-surface'
 
-function getInitialBusinessProfile(): SettingsBusinessProfile {
-  const { defaults } = setupWizardContent.businessProfile
-
-  return {
-    businessName: defaults.businessName,
-    businessPhone: defaults.businessPhone,
-    businessEmail: defaults.businessEmail,
-    serviceArea: defaults.serviceArea,
-    workingDays: [...defaults.workingDays],
-    timezone: defaults.timezone,
-    currency: defaults.currency,
-  }
+function SectionError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className={cn(cardClass, 'p-6 text-sm')}>
+      <p className="text-foreground">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-3 font-semibold text-primary underline underline-offset-2"
+      >
+        Retry
+      </button>
+    </div>
+  )
 }
 
-function getInitialPaymentSetup(): SettingsPaymentSetup {
-  return { ...setupWizardContent.paymentSetup.defaults }
+function MutationGate({
+  canMutate,
+  children,
+  className,
+}: {
+  canMutate: boolean
+  children: ReactNode
+  className?: string
+}) {
+  if (canMutate) return <>{children}</>
+  return (
+    <div className={className} title="You don't have permission to edit settings">
+      <div className="pointer-events-none opacity-60">{children}</div>
+    </div>
+  )
 }
 
-function getInitialRoundSettings(): SettingsRoundSettings {
-  const { defaults } = setupWizardContent.roundSettings
-  return {
-    ...defaults,
-    cleanMethods: [...defaults.cleanMethods],
-  }
-}
-
-function getInitialSmsTemplates(): SettingsSmsTemplates {
-  return {
-    templates: setupWizardContent.smsTemplates.defaults.templates.map((template) => ({
-      ...template,
-    })),
-  }
-}
-
-function getInitialTechnicianManagement(): SettingsTechnicianManagement {
-  return {
-    technicians: setupWizardContent.technicianManagement.defaults.technicians.map((technician) => ({
-      ...technician,
-    })),
-  }
-}
-
-function getInitialServiceArea(): SettingsServiceArea {
-  return {
-    areas: setupWizardContent.serviceArea.defaults.areas.map((area) => ({
-      ...area,
-      postcodeSectors: [...area.postcodeSectors],
-    })),
-  }
-}
-
-function getInitialServiceCatalogue(): SettingsServiceCatalogue {
-  return {
-    services: setupWizardContent.serviceCatalogue.defaults.services.map((service) => ({
-      ...service,
-    })),
-  }
-}
-
-/** Settings module — sidebar navigation and section panels. */
+/** Settings module — sidebar navigation and section panels backed by the API. */
 export function SettingsScreen() {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('business-profile')
-  const [businessProfile, setBusinessProfile] = useState<SettingsBusinessProfile>(getInitialBusinessProfile)
-  const [paymentSetup, setPaymentSetup] = useState<SettingsPaymentSetup>(getInitialPaymentSetup)
-  const [roundSettings, setRoundSettings] = useState<SettingsRoundSettings>(getInitialRoundSettings)
-  const [smsTemplates, setSmsTemplates] = useState<SettingsSmsTemplates>(getInitialSmsTemplates)
-  const [technicianManagement, setTechnicianManagement] = useState<SettingsTechnicianManagement>(
-    getInitialTechnicianManagement,
-  )
-  const [serviceArea, setServiceArea] = useState<SettingsServiceArea>(getInitialServiceArea)
-  const [serviceCatalogue, setServiceCatalogue] = useState<SettingsServiceCatalogue>(
-    getInitialServiceCatalogue,
-  )
-  const [editing, setEditing] = useState(false)
-
-  function handleSectionChange(section: SettingsSectionId) {
-    setActiveSection(section)
-    setEditing(false)
-  }
+  const { canMutate } = useAppBootstrap()
 
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{settingsContent.title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          {settingsContent.title}
+        </h1>
         <p className="mt-1 max-w-3xl text-sm text-muted">{settingsContent.subtitle}</p>
+        {!canMutate ? (
+          <p className="mt-2 text-sm text-muted">
+            You can view settings, but only admins and managers can make changes.
+          </p>
+        ) : null}
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <SettingsSidebar activeSection={activeSection} onSelect={handleSectionChange} />
+        <SettingsSidebar
+          activeSection={activeSection}
+          onSelect={setActiveSection}
+        />
 
-        <div>
+        <div key={activeSection} className="animate-wizard-step">
           {activeSection === 'business-profile' ? (
-            <BusinessProfilePanel
-              values={businessProfile}
-              editing={editing}
-              onChange={setBusinessProfile}
-              onEdit={() => setEditing(true)}
-            />
+            <BusinessProfilePanel canMutate={canMutate} />
           ) : activeSection === 'payment-setup' ? (
-            <PaymentSetupPanel
-              values={paymentSetup}
-              editing={editing}
-              onChange={setPaymentSetup}
-              onEdit={() => setEditing(true)}
-            />
+            <PaymentSetupPanel canMutate={canMutate} />
           ) : activeSection === 'round-settings' ? (
-            <RoundSettingsPanel
-              values={roundSettings}
-              editing={editing}
-              onChange={setRoundSettings}
-              onEdit={() => setEditing(true)}
-            />
+            <RoundSettingsPanel canMutate={canMutate} />
           ) : activeSection === 'sms-templates' ? (
-            <SmsTemplatesPanel values={smsTemplates} onChange={setSmsTemplates} />
+            <SmsTemplatesPanel />
           ) : activeSection === 'technician-management' ? (
-            <TechnicianManagementPanel
-              values={technicianManagement}
-              onChange={setTechnicianManagement}
-            />
+            <TechnicianManagementPanel canMutate={canMutate} />
           ) : activeSection === 'service-area' ? (
-            <ServiceAreasPanel values={serviceArea} onChange={setServiceArea} />
+            <ServiceAreasPanel canMutate={canMutate} />
           ) : (
-            <ServiceCataloguePanel values={serviceCatalogue} onChange={setServiceCatalogue} />
+            <ServiceCataloguePanel canMutate={canMutate} />
           )}
-
-          <div className="mt-4 flex justify-end">
-            <SaveChangesButton onSave={() => setEditing(false)} />
-          </div>
         </div>
       </div>
     </div>
@@ -169,11 +150,12 @@ function SettingsSidebar({
 }) {
   return (
     <nav className={cn(cardClass, 'h-fit p-4')}>
-      <p className="px-2 text-sm font-semibold text-foreground">{settingsContent.sidebarTitle}</p>
+      <p className="px-2 text-sm font-semibold text-foreground">
+        {settingsContent.sidebarTitle}
+      </p>
       <ul className="mt-3 space-y-1">
         {settingsContent.sections.map((section) => {
           const active = activeSection === section.id
-
           return (
             <li key={section.id}>
               <button
@@ -197,51 +179,152 @@ function SettingsSidebar({
   )
 }
 
-function BusinessProfilePanel({
-  values,
+function PanelHeader({
+  icon,
+  heading,
+  subheading,
   editing,
-  onChange,
+  canMutate,
   onEdit,
 }: {
-  values: SettingsBusinessProfile
+  icon: string
+  heading: string
+  subheading: string
   editing: boolean
-  onChange: (values: SettingsBusinessProfile) => void
+  canMutate: boolean
   onEdit: () => void
 }) {
-  const { businessProfile } = settingsContent
-  const { fields, days, timezones, currencies } = setupWizardContent.businessProfile
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-border pb-5">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-surface text-accent">
+          <DashboardIcon name={icon} className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="text-base font-semibold text-foreground">{heading}</h2>
+          <p className="mt-0.5 text-sm text-muted">{subheading}</p>
+        </div>
+      </div>
+      {!editing && canMutate ? (
+        <button
+          type="button"
+          onClick={onEdit}
+          className={cn(dashboardCtaClass, 'px-4 py-2 text-sm')}
+        >
+          {settingsContent.actions.edit}
+        </button>
+      ) : null}
+    </div>
+  )
+}
 
-  function updateField<K extends keyof SettingsBusinessProfile>(
-    key: K,
-    value: SettingsBusinessProfile[K],
-  ) {
-    onChange({ ...values, [key]: value })
+function SaveBar({
+  onSave,
+  onCancel,
+  pending,
+  disabled,
+}: {
+  onSave: () => void
+  onCancel: () => void
+  pending: boolean
+  disabled?: boolean
+}) {
+  return (
+    <div className="mt-6 flex justify-end gap-2">
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={pending}
+        className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-60"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={pending || disabled}
+        className={cn(dashboardCtaClass, 'disabled:cursor-not-allowed disabled:opacity-60')}
+      >
+        {pending ? 'Saving…' : settingsContent.actions.save}
+      </button>
+    </div>
+  )
+}
+
+function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
+  const query = useBusinessProfile()
+  const update = useUpdateBusinessProfile()
+  const { showToast } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<SettingsBusinessForm | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  if (query.isPending) return <SettingsFormSkeleton />
+  if (query.isError) {
+    return (
+      <SectionError
+        message="Could not load business profile."
+        onRetry={() => query.refetch()}
+      />
+    )
   }
+
+  const values = draft ?? settingsBusinessToForm(query.data)
+
+  function updateField<K extends keyof SettingsBusinessForm>(
+    key: K,
+    value: SettingsBusinessForm[K],
+  ) {
+    setDraft({ ...values, [key]: value })
+  }
+
+  function startEdit() {
+    setDraft(settingsBusinessToForm(query.data))
+    setEditing(true)
+    setFormError(null)
+  }
+
+  function cancelEdit() {
+    setDraft(null)
+    setEditing(false)
+    setFormError(null)
+  }
+
+  async function save() {
+    if (!canMutate) return
+    setFormError(null)
+    try {
+      await update.mutateAsync(settingsBusinessFromForm(values))
+      setDraft(null)
+      setEditing(false)
+      showToast(settingsContent.toasts.saved)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) {
+        setFormError(error.message)
+        return
+      }
+      throw error
+    }
+  }
+
+  const { fields, timezones, currencies } = setupWizardContent.businessProfile
 
   return (
     <article className={cn(cardClass, 'p-6')}>
-      <div className="flex items-start justify-between gap-4 border-b border-border pb-5">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-surface text-accent">
-            <DashboardIcon name="file" className="h-5 w-5" />
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">{businessProfile.heading}</h2>
-            <p className="mt-0.5 text-sm text-muted">{businessProfile.subheading}</p>
-          </div>
-        </div>
-        {!editing ? (
-          <button type="button" onClick={onEdit} className={cn(dashboardCtaClass, 'px-4 py-2 text-sm')}>
-            {settingsContent.actions.edit}
-          </button>
-        ) : null}
-      </div>
+      <PanelHeader
+        icon="file"
+        heading={settingsContent.businessProfile.heading}
+        subheading={settingsContent.businessProfile.subheading}
+        editing={editing}
+        canMutate={canMutate}
+        onEdit={startEdit}
+      />
 
       <div className="mt-6 space-y-5">
         <Field label={fields.businessName.label} required labelWeight="medium">
           <Input
             value={values.businessName}
-            onChange={(event) => updateField('businessName', event.target.value)}
+            onChange={(e) => updateField('businessName', e.target.value)}
             placeholder={fields.businessName.placeholder}
             readOnly={!editing}
             className={cn(!editing && 'bg-surface')}
@@ -253,18 +336,17 @@ function BusinessProfilePanel({
             <Input
               type="tel"
               value={values.businessPhone}
-              onChange={(event) => updateField('businessPhone', event.target.value)}
+              onChange={(e) => updateField('businessPhone', e.target.value)}
               placeholder={fields.businessPhone.placeholder}
               readOnly={!editing}
               className={cn(!editing && 'bg-surface')}
             />
           </Field>
-
           <Field label={fields.businessEmail.label} required labelWeight="medium">
             <Input
               type="email"
               value={values.businessEmail}
-              onChange={(event) => updateField('businessEmail', event.target.value)}
+              onChange={(e) => updateField('businessEmail', e.target.value)}
               placeholder={fields.businessEmail.placeholder}
               readOnly={!editing}
               className={cn(!editing && 'bg-surface')}
@@ -272,78 +354,123 @@ function BusinessProfilePanel({
           </Field>
         </div>
 
-        <Field label={fields.serviceArea.label} required labelWeight="medium">
-          <Input
-            value={values.serviceArea}
-            onChange={(event) => updateField('serviceArea', event.target.value)}
-            placeholder={fields.serviceArea.placeholder}
-            readOnly={!editing}
-            className={cn(!editing && 'bg-surface')}
-          />
-        </Field>
-
-        <Field label={fields.workingDays.label} labelWeight="medium">
-          <div className={cn(!editing && 'pointer-events-none')}>
-            <DaySelector
-              days={days}
-              selected={values.workingDays}
-              onChange={(workingDays) => updateField('workingDays', workingDays)}
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field label={fields.companyNumber.label} labelWeight="medium">
+            <Input
+              value={values.companyNumber}
+              onChange={(e) => updateField('companyNumber', e.target.value)}
+              placeholder={fields.companyNumber.placeholder}
+              readOnly={!editing}
+              className={cn(!editing && 'bg-surface')}
             />
-          </div>
-        </Field>
+          </Field>
+          <Field label={fields.vatNumber.label} labelWeight="medium">
+            <Input
+              value={values.vatNumber}
+              onChange={(e) => updateField('vatNumber', e.target.value)}
+              placeholder={fields.vatNumber.placeholder}
+              readOnly={!editing}
+              className={cn(!editing && 'bg-surface')}
+            />
+          </Field>
+        </div>
 
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label={fields.timezone.label} labelWeight="medium">
             <Select
               value={values.timezone}
-              onChange={(event) => updateField('timezone', event.target.value)}
+              onChange={(e) => updateField('timezone', e.target.value)}
               options={timezones}
               disabled={!editing}
               className={settingsSelectClass}
             />
           </Field>
-
           <Field label={fields.currency.label} labelWeight="medium">
             <Select
               value={values.currency}
-              onChange={(event) => updateField('currency', event.target.value)}
+              onChange={(e) => updateField('currency', e.target.value)}
               options={currencies}
               disabled={!editing}
               className={settingsSelectClass}
             />
           </Field>
         </div>
+
+        {formError ? <FieldError message={formError} /> : null}
       </div>
+
+      {editing ? (
+        <SaveBar
+          onSave={save}
+          onCancel={cancelEdit}
+          pending={update.isPending}
+        />
+      ) : null}
     </article>
   )
 }
 
-function PaymentSetupPanel({
-  values,
-  editing,
-  onChange,
-  onEdit,
-}: {
-  values: SettingsPaymentSetup
-  editing: boolean
-  onChange: (values: SettingsPaymentSetup) => void
-  onEdit: () => void
-}) {
-  const { paymentSetup: panelCopy } = settingsContent
-  const { paymentSetup } = setupWizardContent
-  const { providers, settings, status } = paymentSetup
+function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
+  const query = usePaymentSettings()
+  const update = useUpdatePaymentSettings()
+  const connect = useConnectPayment()
   const { showToast } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<SettingsPaymentForm | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
-  function updateField<K extends keyof SettingsPaymentSetup>(
-    key: K,
-    value: SettingsPaymentSetup[K],
-  ) {
-    onChange({ ...values, [key]: value })
+  if (query.isPending) return <SettingsPaymentSkeleton />
+  if (query.isError) {
+    return (
+      <SectionError
+        message="Could not load payment settings."
+        onRetry={() => query.refetch()}
+      />
+    )
   }
 
-  function handleConnect(providerId: 'gocardless' | 'stripe') {
-    if (providerId === 'gocardless') updateField('goCardlessConnected', true)
-    if (providerId === 'stripe') updateField('stripeConnected', true)
+  const values = draft ?? settingsPaymentToForm(query.data)
+  const { providers, settings, status } = setupWizardContent.paymentSetup
+
+  function updateField<K extends keyof SettingsPaymentForm>(
+    key: K,
+    value: SettingsPaymentForm[K],
+  ) {
+    setDraft({ ...values, [key]: value })
+  }
+
+  function startEdit() {
+    setDraft(settingsPaymentToForm(query.data))
+    setEditing(true)
+    setFormError(null)
+  }
+
+  function cancelEdit() {
+    setDraft(null)
+    setEditing(false)
+    setFormError(null)
+  }
+
+  async function save() {
+    if (!canMutate) return
+    setFormError(null)
+    try {
+      await update.mutateAsync(settingsPaymentFromForm(values))
+      setDraft(null)
+      setEditing(false)
+      showToast(settingsContent.toasts.saved)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) {
+        setFormError(error.message)
+        return
+      }
+      throw error
+    }
+  }
+
+  async function handleConnect(providerId: 'gocardless' | 'stripe') {
+    if (!canMutate) return
+    await connect.mutateAsync(providerId)
     showToast(providerId === 'gocardless' ? 'GoCardless connected' : 'Stripe connected')
   }
 
@@ -354,27 +481,18 @@ function PaymentSetupPanel({
 
   return (
     <article className={cn(cardClass, 'p-6')}>
-      <div className="flex items-start justify-between gap-4 border-b border-border pb-5">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-surface text-accent">
-            <DashboardIcon name="card" className="h-5 w-5" />
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">{panelCopy.heading}</h2>
-            <p className="mt-0.5 text-sm text-muted">{panelCopy.subheading}</p>
-          </div>
-        </div>
-        {!editing ? (
-          <button type="button" onClick={onEdit} className={cn(dashboardCtaClass, 'px-4 py-2 text-sm')}>
-            {settingsContent.actions.edit}
-          </button>
-        ) : null}
-      </div>
+      <PanelHeader
+        icon="card"
+        heading={settingsContent.paymentSetup.heading}
+        subheading={settingsContent.paymentSetup.subheading}
+        editing={editing}
+        canMutate={canMutate}
+        onEdit={startEdit}
+      />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         {providers.map((provider) => {
           const connected = connectionMap[provider.id]
-
           return (
             <div key={provider.id} className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-start justify-between gap-3">
@@ -391,32 +509,32 @@ function PaymentSetupPanel({
                   {connected ? status.connected : status.notConnected}
                 </span>
               </div>
-
-              <button
-                type="button"
-                onClick={() => handleConnect(provider.id)}
-                disabled={connected}
-                className={cn(
-                  'mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-all duration-200',
-                  'hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60',
-                )}
-              >
-                <ExternalLinkIcon />
-                {provider.connectLabel}
-              </button>
+              <MutationGate canMutate={canMutate}>
+                <button
+                  type="button"
+                  onClick={() => handleConnect(provider.id)}
+                  disabled={connected || connect.isPending}
+                  className={cn(
+                    'mt-4 inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors',
+                    connected
+                      ? 'cursor-not-allowed border-border text-muted'
+                      : 'border-primary/30 text-primary hover:bg-accent-surface',
+                  )}
+                >
+                  {provider.connectLabel}
+                </button>
+              </MutationGate>
             </div>
           )
         })}
       </div>
 
-      <div className="mt-8 space-y-5">
-        <h3 className="text-base font-semibold text-foreground">{settings.heading}</h3>
-
+      <div className={cn('mt-6 space-y-5', !editing && 'pointer-events-none')}>
         <Field label={settings.defaultPaymentRule.label} labelWeight="medium">
           <Select
             value={values.defaultPaymentRule}
-            onChange={(event) => updateField('defaultPaymentRule', event.target.value)}
-            options={paymentSetup.paymentRules}
+            onChange={(e) => updateField('defaultPaymentRule', e.target.value)}
+            options={[...setupWizardContent.paymentSetup.paymentRules]}
             disabled={!editing}
             className={settingsSelectClass}
           />
@@ -427,13 +545,11 @@ function PaymentSetupPanel({
             <p className="text-sm font-semibold text-foreground">{settings.vatApplicable.label}</p>
             <p className="mt-0.5 text-sm text-muted">{settings.vatApplicable.description}</p>
           </div>
-          <div className={cn(!editing && 'pointer-events-none opacity-70')}>
-            <Toggle
-              checked={values.vatApplicable}
-              onChange={(vatApplicable) => updateField('vatApplicable', vatApplicable)}
-              ariaLabel={settings.vatApplicable.label}
-            />
-          </div>
+          <Toggle
+            checked={values.vatApplicable}
+            onChange={(vatApplicable) => updateField('vatApplicable', vatApplicable)}
+            ariaLabel={settings.vatApplicable.label}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-4">
@@ -441,59 +557,87 @@ function PaymentSetupPanel({
             <p className="text-sm font-semibold text-foreground">{settings.debtHoldEnabled.label}</p>
             <p className="mt-0.5 text-sm text-muted">{settings.debtHoldEnabled.description}</p>
           </div>
-          <div className={cn(!editing && 'pointer-events-none opacity-70')}>
-            <Toggle
-              checked={values.debtHoldEnabled}
-              onChange={(debtHoldEnabled) => updateField('debtHoldEnabled', debtHoldEnabled)}
-              ariaLabel={settings.debtHoldEnabled.label}
-            />
-          </div>
+          <Toggle
+            checked={values.debtHoldEnabled}
+            onChange={(debtHoldEnabled) => updateField('debtHoldEnabled', debtHoldEnabled)}
+            ariaLabel={settings.debtHoldEnabled.label}
+          />
         </div>
+
+        {formError ? <FieldError message={formError} /> : null}
       </div>
+
+      {editing ? (
+        <SaveBar onSave={save} onCancel={cancelEdit} pending={update.isPending} />
+      ) : null}
     </article>
   )
 }
 
-function RoundSettingsPanel({
-  values,
-  editing,
-  onChange,
-  onEdit,
-}: {
-  values: SettingsRoundSettings
-  editing: boolean
-  onChange: (values: SettingsRoundSettings) => void
-  onEdit: () => void
-}) {
-  const { roundSettings: panelCopy } = settingsContent
-  const { roundSettings } = setupWizardContent
-  const { fields } = roundSettings
+function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
+  const query = useRoundSettings()
+  const update = useUpdateRoundSettings()
+  const { showToast } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<SettingsRoundForm | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
-  function updateField<K extends keyof SettingsRoundSettings>(
-    key: K,
-    value: SettingsRoundSettings[K],
-  ) {
-    onChange({ ...values, [key]: value })
+  if (query.isPending) return <SettingsFormSkeleton fields={2} />
+  if (query.isError) {
+    return (
+      <SectionError
+        message="Could not load round settings."
+        onRetry={() => query.refetch()}
+      />
+    )
+  }
+
+  const values = draft ?? settingsRoundToForm(query.data)
+  const { fields, recurringCycles, days } = {
+    fields: setupWizardContent.roundSettings.fields,
+    recurringCycles: setupWizardContent.roundSettings.recurringCycles,
+    days: setupWizardContent.businessProfile.days,
+  }
+
+  function startEdit() {
+    setDraft(settingsRoundToForm(query.data))
+    setEditing(true)
+    setFormError(null)
+  }
+
+  function cancelEdit() {
+    setDraft(null)
+    setEditing(false)
+    setFormError(null)
+  }
+
+  async function save() {
+    if (!canMutate) return
+    setFormError(null)
+    try {
+      await update.mutateAsync(settingsRoundFromForm(values))
+      setDraft(null)
+      setEditing(false)
+      showToast(settingsContent.toasts.saved)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) {
+        setFormError(error.message)
+        return
+      }
+      throw error
+    }
   }
 
   return (
     <article className={cn(cardClass, 'p-6')}>
-      <div className="flex items-start justify-between gap-4 border-b border-border pb-5">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-surface text-accent">
-            <DashboardIcon name="refresh" className="h-5 w-5" />
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">{panelCopy.heading}</h2>
-            <p className="mt-0.5 text-sm text-muted">{panelCopy.subheading}</p>
-          </div>
-        </div>
-        {!editing ? (
-          <button type="button" onClick={onEdit} className={cn(dashboardCtaClass, 'px-4 py-2 text-sm')}>
-            {settingsContent.actions.edit}
-          </button>
-        ) : null}
-      </div>
+      <PanelHeader
+        icon="refresh"
+        heading={settingsContent.roundSettings.heading}
+        subheading={settingsContent.roundSettings.subheading}
+        editing={editing}
+        canMutate={canMutate}
+        onEdit={startEdit}
+      />
 
       <div className={cn('mt-6 space-y-6', !editing && 'pointer-events-none')}>
         <div>
@@ -503,16 +647,15 @@ function RoundSettingsPanel({
             aria-label={fields.recurringCycle.label}
             className="grid grid-cols-2 gap-2 sm:grid-cols-4"
           >
-            {roundSettings.recurringCycles.map((option) => {
+            {recurringCycles.map((option) => {
               const active = values.recurringCycle === option.id
-
               return (
                 <button
                   key={option.id}
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  onClick={() => updateField('recurringCycle', option.id)}
+                  onClick={() => setDraft({ ...values, recurringCycle: option.id })}
                   className={cn(
                     'rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150',
                     active
@@ -527,229 +670,100 @@ function RoundSettingsPanel({
           </div>
         </div>
 
-        <div>
-          <p className="mb-2.5 text-sm font-medium text-muted">{fields.cleanMethods.label}</p>
-          <MultiToggleButtons
-            ariaLabel={fields.cleanMethods.label}
-            options={roundSettings.cleanMethods}
-            value={values.cleanMethods}
-            onChange={(cleanMethods) => updateField('cleanMethods', cleanMethods)}
+        <Field label={setupWizardContent.businessProfile.fields.workingDays.label} labelWeight="medium">
+          <DaySelector
+            days={days}
+            selected={values.workingDays}
+            onChange={(workingDays) => setDraft({ ...values, workingDays })}
           />
-        </div>
+        </Field>
 
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold text-foreground">{fields.autoGenerateVisits.label}</p>
-            <p className="mt-0.5 text-sm text-muted">{fields.autoGenerateVisits.description}</p>
-          </div>
-          <Toggle
-            checked={values.autoGenerateVisits}
-            onChange={(autoGenerateVisits) => updateField('autoGenerateVisits', autoGenerateVisits)}
-            ariaLabel={fields.autoGenerateVisits.label}
-          />
-        </div>
-
-        <div>
-          <p className="text-sm font-semibold text-foreground">{fields.reminderTiming.label}</p>
-          <p className="mt-0.5 text-sm text-muted">{fields.reminderTiming.description}</p>
-          <Select
-            className={cn('mt-3', settingsSelectClass)}
-            value={values.reminderTiming}
-            onChange={(event) => updateField('reminderTiming', event.target.value)}
-            options={[...roundSettings.reminderTimings]}
-            disabled={!editing}
-          />
-        </div>
-
-        <div>
-          <p className="text-sm font-semibold text-foreground">{fields.reminderTimeOfDay.label}</p>
-          <p className="mt-0.5 text-sm text-muted">{fields.reminderTimeOfDay.description}</p>
-          <Select
-            className={cn('mt-3', settingsSelectClass)}
-            value={values.reminderTimeOfDay}
-            onChange={(event) => updateField('reminderTimeOfDay', event.target.value)}
-            options={[...roundSettings.reminderTimesOfDay]}
-            disabled={!editing}
-          />
-        </div>
+        {formError ? <FieldError message={formError} /> : null}
       </div>
+
+      {editing ? (
+        <SaveBar onSave={save} onCancel={cancelEdit} pending={update.isPending} />
+      ) : null}
     </article>
   )
 }
 
-function SmsTemplatesPanel({
-  values,
-  onChange,
-}: {
-  values: SettingsSmsTemplates
-  onChange: (values: SettingsSmsTemplates) => void
-}) {
-  const { smsTemplates: panelCopy } = settingsContent
-  const { labels, channelLabels, previewVariables } = setupWizardContent.smsTemplates
-  const [selectedId, setSelectedId] = useState(values.templates[0]?.id ?? '')
-  const [editOpen, setEditOpen] = useState(false)
+function SmsTemplatesPanel() {
+  const query = useMessageTemplates()
+  const templates = setupWizardContent.smsTemplates.defaults.templates
 
-  const { showToast } = useToast()
-
-  const selectedTemplate = useMemo(
-    () => values.templates.find((template) => template.id === selectedId) ?? values.templates[0],
-    [values.templates, selectedId],
-  )
-
-  const previewText = useMemo(() => {
-    if (!selectedTemplate) return ''
-    return interpolateTemplate(selectedTemplate.body, previewVariables)
-  }, [previewVariables, selectedTemplate])
-
-  if (!selectedTemplate) return null
-
-  const previewLabel =
-    selectedTemplate.channel === 'whatsapp' ? labels.whatsappMessage : labels.smsMessage
-
-  function saveTemplate(updated: MessageTemplate) {
-    onChange({
-      templates: values.templates.map((template) =>
-        template.id === updated.id ? updated : template,
-      ),
-    })
-    showToast(settingsContent.toasts.templateUpdated)
-  }
+  if (query.isPending) return <SettingsSmsSkeleton />
 
   return (
-    <>
-      <article className={cn(cardClass, 'p-6')}>
-        <div className="flex items-start gap-3 border-b border-border pb-5">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-surface text-accent">
-            <DashboardIcon name="message" className="h-5 w-5" />
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">{panelCopy.heading}</h2>
-            <p className="mt-0.5 text-sm text-muted">{panelCopy.subheading}</p>
-          </div>
+    <article className={cn(cardClass, 'p-6')}>
+      <div className="flex items-start gap-3 border-b border-border pb-5">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-surface text-accent">
+          <DashboardIcon name="message" className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="text-base font-semibold text-foreground">
+            {settingsContent.smsTemplates.heading}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted">
+            {settingsContent.smsTemplates.subheading}
+          </p>
         </div>
+      </div>
 
-        <div className="mt-6 grid gap-5 lg:grid-cols-3 lg:gap-6">
-          <div className="lg:col-span-1">
-            <p className="mb-2 text-sm font-semibold text-foreground">{labels.templates}</p>
-            <ul className="space-y-2">
-              {values.templates.map((template) => {
-                const active = template.id === selectedTemplate.id
+      <div className="mt-6 rounded-xl border border-primary/20 bg-accent-surface px-4 py-3 text-sm text-foreground">
+        Message templates are managed in GoHighLevel for now.
+        {query.data?.reason ? ` ${query.data.reason}` : null}
+        {' '}Editing here is disabled until the messaging API ships.
+      </div>
 
-                return (
-                  <li key={template.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedId(template.id)}
-                      className={cn(
-                        'w-full rounded-xl border px-3.5 py-2.5 text-left transition-colors duration-150',
-                        active
-                          ? 'border-primary bg-accent-surface'
-                          : 'border-primary/25 bg-accent-surface/50 hover:border-primary/40 hover:bg-accent-surface',
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-sm font-semibold text-foreground">{template.name}</span>
-                        <span className="shrink-0 rounded-md bg-primary px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-primary-foreground uppercase">
-                          {channelLabels[template.channel]}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 truncate text-xs text-muted">
-                        {truncateTemplateBody(template.body, 48)}
-                      </p>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-
-          <div className="lg:col-span-2">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-foreground">{labels.preview}</p>
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary transition-opacity hover:opacity-80"
-              >
-                <DashboardIcon name="edit" className="h-3.5 w-3.5" />
-                {labels.edit}
-              </button>
-            </div>
-
-            <div className="min-h-[14rem] rounded-xl border border-border bg-card p-5">
-              <p className="text-xs text-muted">{previewLabel}</p>
-              <p className="mt-3 text-sm leading-relaxed text-foreground">{previewText}</p>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <EditTemplateModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        template={selectedTemplate}
-        onSave={saveTemplate}
-      />
-    </>
+      <ul className="mt-5 space-y-2">
+        {templates.map((template) => (
+          <li
+            key={template.id}
+            className="rounded-xl border border-border bg-card px-4 py-3"
+          >
+            <p className="text-sm font-semibold text-foreground">{template.name}</p>
+            <p className="mt-1 text-sm text-muted line-clamp-2">{template.body}</p>
+          </li>
+        ))}
+      </ul>
+    </article>
   )
 }
 
-interface NewTechnicianForm {
-  fullName: string
-  mobile: string
-  email: string
-  role: string
-  defaultArea: string
-}
-
-function emptyTechnicianForm(): NewTechnicianForm {
-  return {
-    fullName: '',
-    mobile: '',
-    email: '',
-    role: '',
-    defaultArea: '',
-  }
-}
-
-function TechnicianManagementPanel({
-  values,
-  onChange,
-}: {
-  values: SettingsTechnicianManagement
-  onChange: (values: SettingsTechnicianManagement) => void
-}) {
-  const { technicianManagement: panelCopy } = settingsContent
-  const { technicianManagement } = setupWizardContent
-  const { addForm, columns, appStatusLabels, roleOptions, actions } = technicianManagement
+function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
+  const query = useTechnicians()
+  const create = useCreateTechnician()
+  const update = useUpdateTechnician()
+  const remove = useDeleteTechnician()
   const { showToast } = useToast()
+  const { addForm, columns, appStatusLabels, roleOptions, actions, addTechnician: addTechnicianLabel } =
+    setupWizardContent.technicianManagement
 
-  const [showAddForm, setShowAddForm] = useState(true)
-  const [form, setForm] = useState<NewTechnicianForm>(emptyTechnicianForm)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [form, setForm] = useState({ fullName: '', mobile: '', role: '' })
   const [formError, setFormError] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
-  const roleLabels = useMemo(
-    () => Object.fromEntries(roleOptions.filter((option) => option.value).map((option) => [option.value, option.label])),
-    [roleOptions],
+  const technicians = useMemo(
+    () => settingsTechniciansToRows(query.data),
+    [query.data],
   )
 
-  function openForm() {
-    setShowAddForm(true)
-    setForm(emptyTechnicianForm())
-    setFormError(null)
+  if (query.isPending) return <SettingsTechniciansSkeleton />
+  if (query.isError) {
+    return (
+      <SectionError
+        message="Could not load technicians."
+        onRetry={() => query.refetch()}
+      />
+    )
   }
 
-  function closeForm() {
-    setShowAddForm(false)
-    setForm(emptyTechnicianForm())
-    setFormError(null)
-  }
-
-  function addTechnician() {
+  async function addTechnicianSubmit() {
+    if (!canMutate) return
     const fullName = form.fullName.trim()
     const mobile = form.mobile.trim()
-
     if (!fullName) {
       setFormError(addForm.validation.nameRequired)
       return
@@ -758,31 +772,30 @@ function TechnicianManagementPanel({
       setFormError(addForm.validation.mobileRequired)
       return
     }
-
-    onChange({
-      technicians: [
-        ...values.technicians,
-        {
-          id: `tech-${Date.now()}`,
-          fullName,
-          mobile,
-          email: form.email.trim(),
-          role: form.role,
-          defaultArea: form.defaultArea.trim(),
-          appStatus: 'active',
-        },
-      ],
+    setFormError(null)
+    await create.mutateAsync({
+      name: fullName,
+      phone: mobile,
+      role: form.role || undefined,
+      active: true,
     })
-    closeForm()
+    setForm({ fullName: '', mobile: '', role: '' })
+    setShowAddForm(false)
     showToast(settingsContent.toasts.technicianAdded)
   }
 
-  function deleteTechnician(id: string) {
-    onChange({
-      technicians: values.technicians.filter((technician) => technician.id !== id),
-    })
+  async function handleRemoveOrDeactivate(technician: SettingsTechnicianRow) {
+    if (!canMutate) return
+    if (technician.profileId) {
+      await update.mutateAsync({ id: technician.id, input: { active: false } })
+    } else {
+      await remove.mutateAsync(technician.id)
+    }
     setOpenMenuId(null)
   }
+
+  const pending =
+    create.isPending || update.isPending || remove.isPending
 
   return (
     <article className={cn(cardClass, 'p-6')}>
@@ -792,240 +805,142 @@ function TechnicianManagementPanel({
             <DashboardIcon name="technicians" className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-foreground">{panelCopy.heading}</h2>
-            <p className="mt-0.5 text-sm text-muted">{panelCopy.subheading}</p>
+            <h2 className="text-base font-semibold text-foreground">
+              {settingsContent.technicianManagement.heading}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted">
+              {settingsContent.technicianManagement.subheading}
+            </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={openForm}
-          className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2 text-sm')}
-        >
-          <DashboardIcon name="plus" className="h-4 w-4" />
-          {technicianManagement.addTechnician}
-        </button>
+        <MutationGate canMutate={canMutate}>
+          <button
+            type="button"
+            onClick={() => setShowAddForm(true)}
+            disabled={pending}
+            className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2 text-sm')}
+          >
+            <DashboardIcon name="plus" className="h-4 w-4" />
+            {addTechnicianLabel}
+          </button>
+        </MutationGate>
       </div>
 
       <div className="mt-6 space-y-5">
-        {showAddForm ? (
+        {showAddForm && canMutate ? (
           <div className="rounded-xl border border-primary/20 bg-accent-surface p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-foreground">{addForm.title}</h3>
-
-            <div className="mt-4 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={addForm.fields.fullName.label} required labelWeight="medium" size="sm">
-                  <Input
-                    inputSize="sm"
-                    value={form.fullName}
-                    onChange={(event) => {
-                      setForm((prev) => ({ ...prev, fullName: event.target.value }))
-                      if (formError) setFormError(null)
-                    }}
-                    placeholder={addForm.fields.fullName.placeholder}
-                    className="rounded-lg bg-card"
-                    autoFocus
-                  />
-                </Field>
-
-                <Field label={addForm.fields.mobile.label} required labelWeight="medium" size="sm">
-                  <Input
-                    inputSize="sm"
-                    type="tel"
-                    value={form.mobile}
-                    onChange={(event) => {
-                      setForm((prev) => ({ ...prev, mobile: event.target.value }))
-                      if (formError) setFormError(null)
-                    }}
-                    placeholder={addForm.fields.mobile.placeholder}
-                    className="rounded-lg bg-card"
-                  />
-                </Field>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={addForm.fields.email.label} labelWeight="medium" size="sm">
-                  <Input
-                    inputSize="sm"
-                    type="email"
-                    value={form.email}
-                    onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                    placeholder={addForm.fields.email.placeholder}
-                    className="rounded-lg bg-card"
-                  />
-                </Field>
-
-                <Field
-                  label={
-                    <>
-                      {addForm.fields.role.label}{' '}
-                      <span className="font-normal text-muted">{addForm.fields.role.optional}</span>
-                    </>
-                  }
-                  labelWeight="medium"
-                  size="sm"
-                >
-                  <Select
-                    inputSize="sm"
-                    value={form.role}
-                    onChange={(event) => setForm((prev) => ({ ...prev, role: event.target.value }))}
-                    options={[...roleOptions]}
-                    className={cn(settingsSelectClass, 'bg-card')}
-                  />
-                </Field>
-              </div>
-
-              <Field label={addForm.fields.defaultArea.label} labelWeight="medium" size="sm">
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field label={addForm.fields.fullName.label} required labelWeight="medium" size="sm">
                 <Input
                   inputSize="sm"
-                  value={form.defaultArea}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, defaultArea: event.target.value }))
-                  }
-                  placeholder={addForm.fields.defaultArea.placeholder}
+                  value={form.fullName}
+                  onChange={(e) => setForm((p) => ({ ...p, fullName: e.target.value }))}
+                  placeholder={addForm.fields.fullName.placeholder}
                   className="rounded-lg bg-card"
                 />
               </Field>
-
-              {formError ? <FieldError message={formError} size="sm" /> : null}
-
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={addTechnician}
-                  className={cn(dashboardCtaClass, 'px-4 py-2 text-sm')}
-                >
-                  {addForm.actions.confirm}
-                </button>
-                <button
-                  type="button"
-                  onClick={closeForm}
-                  className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-surface"
-                >
-                  {addForm.actions.cancel}
-                </button>
-              </div>
+              <Field label={addForm.fields.mobile.label} required labelWeight="medium" size="sm">
+                <Input
+                  inputSize="sm"
+                  type="tel"
+                  value={form.mobile}
+                  onChange={(e) => setForm((p) => ({ ...p, mobile: e.target.value }))}
+                  placeholder={addForm.fields.mobile.placeholder}
+                  className="rounded-lg bg-card"
+                />
+              </Field>
+              <Field label={addForm.fields.role.label} labelWeight="medium" size="sm">
+                <Select
+                  inputSize="sm"
+                  value={form.role}
+                  onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
+                  options={[...roleOptions]}
+                  className={cn(settingsSelectClass, 'bg-card')}
+                />
+              </Field>
+            </div>
+            {formError ? <FieldError message={formError} size="sm" /> : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={addTechnicianSubmit}
+                disabled={create.isPending}
+                className={cn(dashboardCtaClass, 'px-4 py-2 text-sm disabled:opacity-60')}
+              >
+                {create.isPending ? 'Adding…' : addForm.actions.confirm}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddForm(false)
+                  setFormError(null)
+                }}
+                className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold"
+              >
+                {addForm.actions.cancel}
+              </button>
             </div>
           </div>
         ) : null}
 
         <div className="overflow-hidden rounded-xl border border-border">
-          <div className="hidden grid-cols-[1.4fr_1fr_1fr_0.9fr_0.9fr_3rem] gap-4 border-b border-border bg-surface/80 px-4 py-2.5 text-xs font-medium tracking-wide text-muted uppercase sm:grid">
+          <div className="hidden grid-cols-[1.4fr_1fr_1fr_0.9fr_3rem] gap-4 border-b border-border bg-surface/80 px-4 py-2.5 text-xs font-medium tracking-wide text-muted uppercase sm:grid">
             <span>{columns.name}</span>
             <span>{columns.phone}</span>
             <span>{columns.role}</span>
-            <span>{panelCopy.columns.defaultArea}</span>
             <span>{columns.appStatus}</span>
-            <span className="sr-only">{columns.actions}</span>
+            <span />
           </div>
-
           <ul className="divide-y divide-border">
-            {values.technicians.map((technician) => (
-              <TechnicianRow
+            {technicians.map((technician) => (
+              <li
                 key={technician.id}
-                technician={technician}
-                roleLabel={
-                  technician.role ? (roleLabels[technician.role] ?? technician.role) : '—'
-                }
-                statusLabel={appStatusLabels[technician.appStatus]}
-                menuOpen={openMenuId === technician.id}
-                deleteLabel={actions.delete}
-                moreOptionsLabel={actions.moreOptions}
-                onToggleMenu={() =>
-                  setOpenMenuId((current) => (current === technician.id ? null : technician.id))
-                }
-                onDelete={() => deleteTechnician(technician.id)}
-              />
+                className="grid gap-3 px-4 py-3 sm:grid-cols-[1.4fr_1fr_1fr_0.9fr_3rem] sm:items-center"
+              >
+                <span className="font-semibold text-foreground">{technician.displayName}</span>
+                <span className="text-sm text-muted">{technician.phone || '—'}</span>
+                <span className="text-sm text-muted">{technician.role || '—'}</span>
+                <span className="text-sm text-muted">
+                  {appStatusLabels[technician.appStatus]}
+                </span>
+                <div className="relative justify-self-end">
+                  {canMutate && technician.appStatus !== 'inactive' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenMenuId((id) =>
+                            id === technician.id ? null : technician.id,
+                          )
+                        }
+                        className="rounded-md p-1 text-muted hover:bg-surface"
+                        aria-label={actions.moreOptions}
+                        disabled={pending}
+                      >
+                        ···
+                      </button>
+                      {openMenuId === technician.id ? (
+                        <div className="absolute right-0 z-10 mt-1 min-w-[9rem] rounded-lg border border-border bg-card p-1 shadow-md">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveOrDeactivate(technician)}
+                            className="w-full rounded-md px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
+                          >
+                            {technician.profileId ? 'Deactivate' : actions.delete}
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              </li>
             ))}
           </ul>
         </div>
       </div>
     </article>
   )
-}
-
-function TechnicianRow({
-  technician,
-  roleLabel,
-  statusLabel,
-  menuOpen,
-  deleteLabel,
-  moreOptionsLabel,
-  onToggleMenu,
-  onDelete,
-}: {
-  technician: Technician
-  roleLabel: string
-  statusLabel: string
-  menuOpen: boolean
-  deleteLabel: string
-  moreOptionsLabel: string
-  onToggleMenu: () => void
-  onDelete: () => void
-}) {
-  return (
-    <li className="grid gap-3 px-4 py-3.5 sm:grid-cols-[1.4fr_1fr_1fr_0.9fr_0.9fr_3rem] sm:items-center sm:gap-4">
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-foreground">{technician.fullName}</p>
-        {technician.email ? (
-          <p className="mt-0.5 truncate text-xs text-muted">{technician.email}</p>
-        ) : null}
-      </div>
-
-      <p className="text-sm text-foreground">{technician.mobile}</p>
-      <p className="text-sm text-foreground">{roleLabel}</p>
-      <p className="text-sm text-foreground">{technician.defaultArea || '—'}</p>
-
-      <div>
-        <span
-          className={cn(
-            'inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold',
-            technician.appStatus === 'active' && 'bg-success/10 text-success',
-            technician.appStatus === 'inactive' && 'bg-surface text-muted',
-            technician.appStatus === 'pending' && 'bg-primary/10 text-primary',
-          )}
-        >
-          {statusLabel}
-        </span>
-      </div>
-
-      <div className="relative flex justify-end">
-        <button
-          type="button"
-          aria-label={moreOptionsLabel}
-          onClick={onToggleMenu}
-          className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground"
-        >
-          <DashboardIcon name="more-vertical" className="h-4 w-4" />
-        </button>
-
-        {menuOpen ? (
-          <div className="absolute top-full right-0 z-10 mt-1 min-w-[7rem] rounded-lg border border-border bg-card py-1 shadow-lg">
-            <button
-              type="button"
-              onClick={onDelete}
-              className="w-full px-3 py-1.5 text-left text-sm text-danger transition-colors hover:bg-surface"
-            >
-              {deleteLabel}
-            </button>
-          </div>
-        ) : null}
-      </div>
-    </li>
-  )
-}
-
-interface NewAreaForm {
-  name: string
-  postcodeSectors: string
-  notes: string
-}
-
-function emptyAreaForm(): NewAreaForm {
-  return {
-    name: '',
-    postcodeSectors: '',
-    notes: '',
-  }
 }
 
 function parsePostcodeSectors(value: string): string[] {
@@ -1035,56 +950,33 @@ function parsePostcodeSectors(value: string): string[] {
     .filter(Boolean)
 }
 
-function linkedRoundLabelsForArea(areaName: string): string[] {
-  const { assignRound } = setupWizardContent
-  const dayLabels = Object.fromEntries(
-    assignRound.roundDays.filter((day) => day.value).map((day) => [day.value, day.label]),
-  )
-
-  const assignment = assignRound.defaults.assignments.find(
-    (item) => item.areaName.toLowerCase() === areaName.toLowerCase(),
-  )
-
-  if (!assignment) return []
-
-  return assignment.linkedRounds.map((round) => {
-    const dayLabel = dayLabels[round.day] ?? round.day
-    return `${assignment.areaName} ${dayLabel}`
-  })
-}
-
-function ServiceAreasPanel({
-  values,
-  onChange,
-}: {
-  values: SettingsServiceArea
-  onChange: (values: SettingsServiceArea) => void
-}) {
-  const { serviceArea: panelCopy } = settingsContent
-  const { serviceArea } = setupWizardContent
-  const { addForm, actions } = serviceArea
+function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
+  const query = useServiceAreas()
+  const create = useCreateServiceArea()
+  const remove = useDeleteServiceArea()
   const { showToast } = useToast()
+  const { addForm, actions } = setupWizardContent.serviceArea
 
-  const [showAddForm, setShowAddForm] = useState(true)
-  const [form, setForm] = useState<NewAreaForm>(emptyAreaForm)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [form, setForm] = useState({ name: '', postcodeSectors: '' })
   const [formError, setFormError] = useState<string | null>(null)
 
-  function openForm() {
-    setShowAddForm(true)
-    setForm(emptyAreaForm())
-    setFormError(null)
+  const areas = useMemo(() => settingsServiceAreasToRows(query.data), [query.data])
+
+  if (query.isPending) return <SettingsServiceAreasSkeleton />
+  if (query.isError) {
+    return (
+      <SectionError
+        message="Could not load service areas."
+        onRetry={() => query.refetch()}
+      />
+    )
   }
 
-  function closeForm() {
-    setShowAddForm(false)
-    setForm(emptyAreaForm())
-    setFormError(null)
-  }
-
-  function addArea() {
+  async function addArea() {
+    if (!canMutate) return
     const name = form.name.trim()
     const postcodeSectors = parsePostcodeSectors(form.postcodeSectors)
-
     if (!name) {
       setFormError(addForm.validation.nameRequired)
       return
@@ -1093,26 +985,29 @@ function ServiceAreasPanel({
       setFormError(addForm.validation.postcodeRequired)
       return
     }
-
-    onChange({
-      areas: [
-        ...values.areas,
-        {
-          id: `area-${Date.now()}`,
-          name,
-          postcodeSectors,
-          notes: form.notes.trim(),
-        },
-      ],
+    setFormError(null)
+    await create.mutateAsync({
+      name,
+      postcodeSector: postcodeSectors.join(','),
+      isDefault: areas.length === 0,
     })
-    closeForm()
+    setForm({ name: '', postcodeSectors: '' })
+    setShowAddForm(false)
     showToast(settingsContent.toasts.areaAdded)
   }
 
-  function deleteArea(id: string) {
-    onChange({
-      areas: values.areas.filter((area) => area.id !== id),
-    })
+  async function deleteArea(area: SettingsServiceAreaRow) {
+    if (!canMutate || (area.linkedRounds.count ?? 0) > 0) return
+    try {
+      await remove.mutateAsync(area.id)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        showToast('This service area no longer exists.')
+        query.refetch()
+        return
+      }
+      throw error
+    }
   }
 
   return (
@@ -1123,74 +1018,62 @@ function ServiceAreasPanel({
             <DashboardIcon name="map-pin" className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-foreground">{panelCopy.heading}</h2>
-            <p className="mt-0.5 text-sm text-muted">{panelCopy.subheading}</p>
+            <h2 className="text-base font-semibold text-foreground">
+              {settingsContent.serviceArea.heading}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted">
+              {settingsContent.serviceArea.subheading}
+            </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={openForm}
-          className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2 text-sm')}
-        >
-          <DashboardIcon name="plus" className="h-4 w-4" />
-          {serviceArea.addArea}
-        </button>
+        <MutationGate canMutate={canMutate}>
+          <button
+            type="button"
+            onClick={() => setShowAddForm(true)}
+            disabled={create.isPending}
+            className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2 text-sm')}
+          >
+            <DashboardIcon name="plus" className="h-4 w-4" />
+            {setupWizardContent.serviceArea.addArea}
+          </button>
+        </MutationGate>
       </div>
 
       <div className="mt-6 space-y-5">
-        {showAddForm ? (
+        {showAddForm && canMutate ? (
           <div className="rounded-xl border border-primary/20 bg-accent-surface p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-foreground">{addForm.title}</h3>
-
             <div className="mt-4 space-y-3">
               <Input
                 inputSize="sm"
                 value={form.name}
-                onChange={(event) => {
-                  setForm((prev) => ({ ...prev, name: event.target.value }))
-                  if (formError) setFormError(null)
-                }}
+                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                 placeholder={addForm.fields.areaName.placeholder}
-                aria-label={addForm.fields.areaName.label}
                 className="rounded-lg bg-card"
-                autoFocus
               />
-
               <Input
                 inputSize="sm"
                 value={form.postcodeSectors}
-                onChange={(event) => {
-                  setForm((prev) => ({ ...prev, postcodeSectors: event.target.value }))
-                  if (formError) setFormError(null)
-                }}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, postcodeSectors: e.target.value }))
+                }
                 placeholder={addForm.fields.postcodeSectors.placeholder}
-                aria-label={addForm.fields.postcodeSectors.label}
                 className="rounded-lg bg-card"
               />
-
-              <Input
-                inputSize="sm"
-                value={form.notes}
-                onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
-                placeholder={addForm.fields.notes.placeholder}
-                aria-label={addForm.fields.notes.label}
-                className="rounded-lg bg-card"
-              />
-
               {formError ? <FieldError message={formError} size="sm" /> : null}
-
-              <div className="flex flex-wrap gap-2 pt-1">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={addArea}
-                  className={cn(dashboardCtaClass, 'px-4 py-2 text-sm')}
+                  disabled={create.isPending}
+                  className={cn(dashboardCtaClass, 'px-4 py-2 text-sm disabled:opacity-60')}
                 >
-                  {addForm.actions.confirm}
+                  {create.isPending ? 'Adding…' : addForm.actions.confirm}
                 </button>
                 <button
                   type="button"
-                  onClick={closeForm}
-                  className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-surface"
+                  onClick={() => setShowAddForm(false)}
+                  className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold"
                 >
                   {addForm.actions.cancel}
                 </button>
@@ -1200,94 +1083,57 @@ function ServiceAreasPanel({
         ) : null}
 
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {values.areas.map((area) => (
-            <ServiceAreaCard
-              key={area.id}
-              area={area}
-              linkedRoundsLabel={panelCopy.linkedRounds}
-              linkedRounds={linkedRoundLabelsForArea(area.name)}
-              deleteLabel={actions.delete}
-              onDelete={() => deleteArea(area.id)}
-            />
-          ))}
+          {areas.map((area) => {
+            const linked = area.linkedRounds.count > 0
+            return (
+              <li
+                key={area.id}
+                className="rounded-xl border border-border bg-card p-4 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">{area.name}</h3>
+                  {canMutate ? (
+                    <button
+                      type="button"
+                      onClick={() => deleteArea(area)}
+                      disabled={linked || remove.isPending}
+                      title={
+                        linked
+                          ? 'Cannot delete: linked to one or more rounds'
+                          : actions.delete
+                      }
+                      aria-label={actions.delete}
+                      className={cn(
+                        '-mt-0.5 -mr-0.5 shrink-0 rounded-md p-1 transition-colors',
+                        linked
+                          ? 'cursor-not-allowed text-muted/40'
+                          : 'text-muted hover:bg-surface hover:text-danger',
+                      )}
+                    >
+                      <DashboardIcon name="trash" className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {area.postcodeSectors.map((sector) => (
+                    <span
+                      key={sector}
+                      className="rounded-md bg-sidebar px-2 py-0.5 text-[11px] font-semibold tracking-wide text-sidebar-foreground uppercase"
+                    >
+                      {sector}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-muted">
+                  {settingsContent.serviceArea.linkedRounds}{' '}
+                  {linked ? area.linkedRounds.names.join(', ') : 'None'}
+                </p>
+              </li>
+            )
+          })}
         </ul>
       </div>
     </article>
-  )
-}
-
-function ServiceAreaCard({
-  area,
-  linkedRoundsLabel,
-  linkedRounds,
-  deleteLabel,
-  onDelete,
-}: {
-  area: ServiceArea
-  linkedRoundsLabel: string
-  linkedRounds: string[]
-  deleteLabel: string
-  onDelete: () => void
-}) {
-  return (
-    <li className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground">{area.name}</h3>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label={deleteLabel}
-          className="-mt-0.5 -mr-0.5 shrink-0 rounded-md p-1 text-muted transition-colors hover:bg-surface hover:text-danger"
-        >
-          <DashboardIcon name="trash" className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {area.postcodeSectors.map((sector) => (
-          <span
-            key={sector}
-            className="rounded-md bg-sidebar px-2 py-0.5 text-[11px] font-semibold tracking-wide text-sidebar-foreground uppercase"
-          >
-            {sector}
-          </span>
-        ))}
-      </div>
-
-      {area.notes ? (
-        <p className="mt-2 text-sm leading-relaxed text-muted">{area.notes}</p>
-      ) : null}
-
-      {linkedRounds.length > 0 ? (
-        <div className="mt-3 border-t border-border pt-3">
-          <p className="text-xs text-muted">{linkedRoundsLabel}</p>
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-            {linkedRounds.map((round) => (
-              <span key={round} className="text-sm font-medium text-primary">
-                {round}
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </li>
-  )
-}
-
-function ExternalLinkIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-      <path
-        fillRule="evenodd"
-        d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z"
-        clipRule="evenodd"
-      />
-      <path
-        fillRule="evenodd"
-        d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.31v2.44a.75.75 0 0 0 1.5 0v-4a.75.75 0 0 0-.75-.75h-4a.75.75 0 0 0 0 1.5h2.31l-9.194 8.496a.75.75 0 0 0-.053 1.06Z"
-        clipRule="evenodd"
-      />
-    </svg>
   )
 }
 
@@ -1295,23 +1141,25 @@ const categoryTagClass: Record<string, string> = {
   'window-cleaning': 'bg-primary/10 text-primary',
   'exterior-cleaning': 'bg-accent-surface text-accent',
   'gutter-fascia': 'bg-warning-surface text-warning-foreground',
-  specialist: 'bg-sidebar/10 text-sidebar',
+  specialist: 'bg-success/10 text-success',
 }
 
-function ServiceCataloguePanel({
-  values,
-  onChange,
-}: {
-  values: SettingsServiceCatalogue
-  onChange: (values: SettingsServiceCatalogue) => void
-}) {
-  const { serviceCatalogue: panelCopy } = settingsContent
-  const { serviceCatalogue } = setupWizardContent
-  const { categories, columns, tags, actions } = serviceCatalogue
+function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
+  const query = useServices()
+  const create = useCreateService()
+  const update = useUpdateService()
+  const remove = useDeleteService()
   const { showToast } = useToast()
+  const { categories, columns, tags, actions, addService } =
+    setupWizardContent.serviceCatalogue
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingService, setEditingService] = useState<CatalogueService | null>(null)
+
+  const services = useMemo(
+    () => settingsServicesToCatalogue(query.data),
+    [query.data],
+  )
 
   const categoryOptions = useMemo(
     () =>
@@ -1322,58 +1170,56 @@ function ServiceCataloguePanel({
   )
 
   const categoryLabels = useMemo(
-    () => Object.fromEntries(categories.map((category) => [category.id, category.label])),
+    () => Object.fromEntries(categories.map((c) => [c.id, c.label])),
     [categories],
   )
 
-  function toggleActive(id: string) {
-    onChange({
-      services: values.services.map((service) =>
-        service.id === id ? { ...service, active: !service.active } : service,
-      ),
+  if (query.isPending) return <SettingsServicesSkeleton />
+  if (query.isError) {
+    return (
+      <SectionError
+        message="Could not load services."
+        onRetry={() => query.refetch()}
+      />
+    )
+  }
+
+  async function saveService(service: CatalogueService) {
+    if (!canMutate) return
+    const isEdit = services.some((item) => item.id === service.id)
+    const input = catalogueServiceToInput(service)
+    if (isEdit) {
+      await update.mutateAsync({ id: service.id, input })
+      showToast(settingsContent.toasts.serviceUpdated)
+    } else {
+      await create.mutateAsync(input)
+      showToast(settingsContent.toasts.serviceAdded)
+    }
+  }
+
+  async function toggleActive(service: CatalogueService) {
+    if (!canMutate) return
+    await update.mutateAsync({
+      id: service.id,
+      input: { active: !service.active },
     })
   }
 
-  function deleteService(id: string) {
-    onChange({
-      services: values.services.filter((service) => service.id !== id),
-    })
+  async function deleteService(id: string) {
+    if (!canMutate) return
+    try {
+      await remove.mutateAsync(id)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        showToast('This service no longer exists.')
+        query.refetch()
+        return
+      }
+      throw error
+    }
   }
 
-  function openAddModal() {
-    setEditingService(null)
-    setModalOpen(true)
-  }
-
-  function openEditModal(service: CatalogueService) {
-    setEditingService(service)
-    setModalOpen(true)
-  }
-
-  function closeModal() {
-    setModalOpen(false)
-    setEditingService(null)
-  }
-
-  function saveService(service: CatalogueService) {
-    const isEdit = values.services.some((item) => item.id === service.id)
-
-    onChange({
-      services: (() => {
-        const next = isEdit
-          ? values.services.map((item) => (item.id === service.id ? service : item))
-          : [...values.services, service]
-
-        if (!service.isDefault) return next
-
-        return next.map((item) =>
-          item.id === service.id ? item : { ...item, isDefault: false },
-        )
-      })(),
-    })
-
-    showToast(isEdit ? settingsContent.toasts.serviceUpdated : settingsContent.toasts.serviceAdded)
-  }
+  const pending = create.isPending || update.isPending || remove.isPending
 
   return (
     <>
@@ -1384,18 +1230,28 @@ function ServiceCataloguePanel({
               <DashboardIcon name="briefcase" className="h-5 w-5" />
             </span>
             <div>
-              <h2 className="text-base font-semibold text-foreground">{panelCopy.heading}</h2>
-              <p className="mt-0.5 text-sm text-muted">{panelCopy.subheading}</p>
+              <h2 className="text-base font-semibold text-foreground">
+                {settingsContent.serviceCatalogue.heading}
+              </h2>
+              <p className="mt-0.5 text-sm text-muted">
+                {settingsContent.serviceCatalogue.subheading}
+              </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={openAddModal}
-            className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2 text-sm')}
-          >
-            <DashboardIcon name="plus" className="h-4 w-4" />
-            {serviceCatalogue.addService}
-          </button>
+          <MutationGate canMutate={canMutate}>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingService(null)
+                setModalOpen(true)
+              }}
+              disabled={pending}
+              className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2 text-sm')}
+            >
+              <DashboardIcon name="plus" className="h-4 w-4" />
+              {addService}
+            </button>
+          </MutationGate>
         </div>
 
         <div className="mt-6 overflow-hidden rounded-xl border border-border">
@@ -1405,9 +1261,8 @@ function ServiceCataloguePanel({
             <span className="text-center">{columns.active}</span>
             <span />
           </div>
-
           <ul className="divide-y divide-border">
-            {values.services.map((service) => (
+            {services.map((service) => (
               <li
                 key={service.id}
                 className="grid gap-4 px-5 py-4 sm:grid-cols-[1fr_7rem_6rem_8.5rem] sm:items-center"
@@ -1433,34 +1288,42 @@ function ServiceCataloguePanel({
                     <p className="mt-1 text-sm text-muted">{service.description}</p>
                   ) : null}
                 </div>
-
                 <p className="font-semibold text-foreground sm:text-right">
                   {formatCurrency(service.price)}
                 </p>
-
                 <div className="flex sm:justify-center">
-                  <Toggle
-                    checked={service.active}
-                    onChange={() => toggleActive(service.id)}
-                    ariaLabel={`${service.name} active`}
-                  />
+                  <MutationGate canMutate={canMutate}>
+                    <Toggle
+                      checked={service.active}
+                      onChange={() => toggleActive(service)}
+                      ariaLabel={`${service.name} active`}
+                    />
+                  </MutationGate>
                 </div>
-
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openEditModal(service)}
-                    className="rounded-lg border border-primary/30 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-accent-surface"
-                  >
-                    {actions.edit}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteService(service.id)}
-                    className="rounded-lg bg-danger/10 px-3 py-1.5 text-sm font-medium text-danger transition-colors hover:bg-danger/15"
-                  >
-                    {actions.delete}
-                  </button>
+                  {canMutate ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingService(service)
+                          setModalOpen(true)
+                        }}
+                        disabled={pending}
+                        className="rounded-lg border border-primary/30 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-accent-surface disabled:opacity-60"
+                      >
+                        {actions.edit}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteService(service.id)}
+                        disabled={pending}
+                        className="rounded-lg bg-danger/10 px-3 py-1.5 text-sm font-medium text-danger transition-colors hover:bg-danger/15 disabled:opacity-60"
+                      >
+                        {actions.delete}
+                      </button>
+                    </>
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -1470,28 +1333,14 @@ function ServiceCataloguePanel({
 
       <AddServiceModal
         open={modalOpen}
-        onClose={closeModal}
+        onClose={() => {
+          setModalOpen(false)
+          setEditingService(null)
+        }}
         onSave={saveService}
         editingService={editingService}
         categoryOptions={categoryOptions}
       />
     </>
-  )
-}
-
-function SaveChangesButton({ onSave }: { onSave: () => void }) {
-  const { showToast } = useToast()
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        onSave()
-        showToast(settingsContent.toasts.saved)
-      }}
-      className={dashboardCtaClass}
-    >
-      {settingsContent.actions.save}
-    </button>
   )
 }

@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
-import { isSetupComplete, isSetupEnforced } from '@/lib/setup-storage'
 import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
 import { useTodaysWorkInteractions } from '@/hooks/use-todays-work-interactions'
 import { AppShell } from '@/components/app/AppShell'
@@ -13,10 +12,6 @@ export default function TodaysWork() {
   const [signingOut, setSigningOut] = useState(false)
   const quickActions = useAppQuickActions()
   const interactions = useTodaysWorkInteractions()
-
-  if (isSetupEnforced() && !isSetupComplete()) {
-    return <Navigate to={ROUTES.setupWizard} replace />
-  }
 
   async function handleSignOut() {
     setSigningOut(true)

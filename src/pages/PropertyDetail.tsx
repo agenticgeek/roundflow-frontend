@@ -1,10 +1,9 @@
 import { useState } from 'react'
-import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
 import { getCustomerRecordByPropertyId } from '@/content/customers'
 import { getPropertyDetail } from '@/content/property-detail'
-import { isSetupComplete, isSetupEnforced } from '@/lib/setup-storage'
 import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
 import { AppShell } from '@/components/app/AppShell'
 import {
@@ -20,10 +19,6 @@ export default function PropertyDetail() {
   const quickActions = useAppQuickActions()
   const property = getPropertyDetail(propertyId)
   const customerRecord = propertyId ? getCustomerRecordByPropertyId(propertyId) : null
-
-  if (isSetupEnforced() && !isSetupComplete()) {
-    return <Navigate to={ROUTES.setupWizard} replace />
-  }
 
   async function handleSignOut() {
     setSigningOut(true)

@@ -6,6 +6,7 @@ import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { GpsTrackingPanel } from '@/components/dashboard/GpsTrackingPanel'
 import { TechnicianKpis } from '@/components/dashboard/TechnicianKpis'
 import { TodayRoundsTable } from '@/components/dashboard/TodayRoundsTable'
+import { WorkspaceSetupCard } from '@/components/setup-wizard/WorkspaceSetupCard'
 
 interface DashboardScreenProps {
   interactions: DashboardInteractions
@@ -26,6 +27,8 @@ export function DashboardScreen({ interactions }: DashboardScreenProps) {
         refreshing={interactions.refreshing}
         onRefresh={interactions.refreshDashboard}
       />
+
+      <WorkspaceSetupCard />
 
       <DashboardMetricGrid metrics={metrics} />
 

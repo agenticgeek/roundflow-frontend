@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { ROUTES, propertyDetailPath } from '@/config/routes'
 import type { RoundPlannerView } from '@/content/round-planner'
-import { isSetupComplete, isSetupEnforced } from '@/lib/setup-storage'
 import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
 import { useRoundPlannerInteractions } from '@/hooks/use-round-planner-interactions'
 import { useToast } from '@/components/ui/toast'
@@ -43,10 +42,6 @@ export default function RoundPlanner() {
     navigate(location.pathname, { replace: true, state: null })
   }, [location.pathname, location.state, navigate, setView, showToast])
 
-  if (isSetupEnforced() && !isSetupComplete()) {
-    return <Navigate to={ROUTES.setupWizard} replace />
-  }
-
   async function handleSignOut() {
     setSigningOut(true)
     try {
@@ -69,6 +64,7 @@ export default function RoundPlanner() {
     >
       <RoundPlannerScreen
         interactions={interactions}
+        onAddRound={quickActions.openAddRoundModal}
         onBulkMessage={quickActions.openBulkMessageModal}
         onAddOneOffJob={quickActions.openAddOneOffJobModal}
         onViewPropertyDetails={handleViewPropertyDetails}

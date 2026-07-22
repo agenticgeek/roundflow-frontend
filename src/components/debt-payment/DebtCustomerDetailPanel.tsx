@@ -39,6 +39,7 @@ export function DebtCustomerDetailPanel({
   return (
     <SidePanel
       open
+      panelKey={record.id}
       onClose={onClose}
       title={record.customer}
       subtitle={record.address}

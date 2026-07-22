@@ -6,33 +6,28 @@ import { AuthEmailLinkNotice } from '@/components/AuthEmailLinkNotice'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
-import { Field, FieldError, Input, PrimaryButton } from '@/components/ui'
+import { Field, Input, PrimaryButton } from '@/components/ui'
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
   const [resendMessage, setResendMessage] = useState<string | null>(null)
 
   async function sendResetLink() {
-    setError(null)
     setResendMessage(null)
     setLoading(true)
 
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}${ROUTES.resetPassword}`,
       })
-
-      if (resetError) {
-        setError(resetError.message)
-        return
-      }
-
+    } catch {
+      // Keep the response indistinguishable from a successful request.
+    } finally {
+      // Always show the same result so this screen cannot be used to discover accounts.
       setSent(true)
       if (sent) setResendMessage(authContent.resetMagicLink.sent)
-    } finally {
       setLoading(false)
     }
   }
@@ -52,7 +47,7 @@ export default function ForgotPassword() {
           actionLabel={authContent.resetMagicLink.action}
           resendLabel={authContent.resetMagicLink.resend}
           loading={loading}
-          error={error}
+          error={null}
           sentMessage={resendMessage}
           onResend={() => {
             void sendResetLink()
@@ -85,7 +80,6 @@ export default function ForgotPassword() {
           <PrimaryButton loading={loading}>
             {loading ? 'Sending…' : 'Send reset link'}
           </PrimaryButton>
-          {error ? <FieldError message={error} /> : null}
         </div>
       </form>
 

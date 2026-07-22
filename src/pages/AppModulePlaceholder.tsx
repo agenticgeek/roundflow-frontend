@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
-import { isSetupComplete, isSetupEnforced } from '@/lib/setup-storage'
 import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
 import { ModulePlaceholderPage } from '@/pages/ModulePlaceholder'
 
@@ -15,10 +14,6 @@ export function AppModulePlaceholder({ moduleId }: AppModulePlaceholderProps) {
   const navigate = useNavigate()
   const [signingOut, setSigningOut] = useState(false)
   const quickActions = useAppQuickActions()
-
-  if (isSetupEnforced() && !isSetupComplete()) {
-    return <Navigate to={ROUTES.setupWizard} replace />
-  }
 
   async function handleSignOut() {
     setSigningOut(true)

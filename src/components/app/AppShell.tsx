@@ -4,6 +4,7 @@ import { appShellContent } from '@/content/app-shell'
 import type { AppQuickActions } from '@/hooks/use-app-quick-actions'
 import { AddOneOffJobModal } from '@/components/dashboard/AddOneOffJobModal'
 import { BulkMessageModal } from '@/components/dashboard/BulkMessageModal'
+import { CreateRoundModal } from '@/components/round-planner/CreateRoundModal'
 import { AppMobileHeader, AppMobileNav, AppSidebar } from '@/components/app/AppSidebar'
 import { useAppSidebar } from '@/hooks/use-app-sidebar'
 import { cn } from '@/lib/utils'
@@ -53,7 +54,14 @@ export function AppShell({
         <AppMobileHeader onOpenMenu={sidebarState.openMobile} />
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className={cn('mx-auto px-4 py-6 sm:px-6 lg:px-8', mainMaxWidthClass)}>{children}</div>
+          <div
+            className={cn(
+              'mx-auto animate-fade-in px-4 py-6 sm:px-6 lg:px-8',
+              mainMaxWidthClass,
+            )}
+          >
+            {children}
+          </div>
         </main>
       </div>
 
@@ -66,6 +74,11 @@ export function AppShell({
       <BulkMessageModal
         open={quickActions.bulkMessageModalOpen}
         onClose={quickActions.closeBulkMessageModal}
+      />
+
+      <CreateRoundModal
+        open={quickActions.addRoundModalOpen}
+        onClose={quickActions.closeAddRoundModal}
       />
 
       <AddOneOffJobModal

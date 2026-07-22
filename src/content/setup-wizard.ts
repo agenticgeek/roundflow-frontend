@@ -34,9 +34,17 @@ export interface SetupWizardContent {
   footer: {
     back: string
     skip: string
+    skipStep: string
     continue: string
     launch: string
     stepLabel: string
+  }
+  bulkReplaceConfirm: {
+    title: string
+    servicesDescription: string
+    serviceAreasDescription: string
+    cancel: string
+    confirm: string
   }
   stepper: {
     showNextSteps: string
@@ -305,12 +313,16 @@ export interface SetupWizardContent {
       assignServiceArea: { label: string; hint: string; placeholder: string }
     }
     propertyTypes: SelectOption[]
+    cleaningFrequencies: SelectOption[]
     vatOptions: SelectOption[]
     paymentMethods: SelectOption[]
     preferredDays: SelectOption[]
     actions: { assignProperty: string; addProperty: string }
     validation: {
       customerNameRequired: string
+      fullAddressRequired: string
+      postcodeRequired: string
+      priceRequired: string
       roundRequired: string
     }
     defaults: AddPropertyData
@@ -344,7 +356,6 @@ export interface SetupWizardContent {
       title: string
       completed: string
     }
-    checklist: readonly { id: string; label: string }[]
     ready: {
       title: string
       description: string
@@ -546,18 +557,28 @@ export const setupWizardContent = {
     { id: 'sms-templates', label: 'SMS/Whatsapp Templates' },
     { id: 'technician-management', label: 'Technician Management' },
     { id: 'service-area', label: 'Service Area' },
-    { id: 'assign-round', label: 'Assign Round' },
+    { id: 'first-round', label: 'Assign Round' },
+    { id: 'add-property', label: 'Add Property' },
     { id: 'assign-technicians', label: 'Assign Technicians' },
-    { id: 'add-properties', label: 'Add Properties' },
-    { id: 'activate-system', label: 'Activate System' },
+    { id: 'generate-visits', label: 'Generate Visits' },
     { id: 'review-launch', label: 'Review & Launch' },
   ],
   footer: {
     back: 'Back',
     skip: 'Skip setup',
+    skipStep: 'Skip this step',
     continue: 'Continue',
     launch: 'Launch',
     stepLabel: 'Step {current} of {total}',
+  },
+  bulkReplaceConfirm: {
+    title: 'Replace existing items?',
+    servicesDescription:
+      'Saving replaces all current services with the list shown. This cannot be undone from here.',
+    serviceAreasDescription:
+      'Saving replaces all current service areas with the list shown. This cannot be undone from here.',
+    cancel: 'Cancel',
+    confirm: 'Replace and continue',
   },
   stepper: {
     showNextSteps: 'Show next steps',
@@ -1105,11 +1126,18 @@ export const setupWizardContent = {
       },
     },
     propertyTypes: [
-      { value: 'house', label: 'House' },
-      { value: 'flat', label: 'Flat / Apartment' },
-      { value: 'commercial', label: 'Commercial' },
-      { value: 'office', label: 'Office' },
-      { value: 'conservatory', label: 'Conservatory' },
+      { value: 'HOUSE', label: 'House' },
+      { value: 'FLAT_APARTMENT', label: 'Flat / Apartment' },
+      { value: 'COMMERCIAL', label: 'Commercial' },
+      { value: 'OFFICE', label: 'Office' },
+      { value: 'CONSERVATORY', label: 'Conservatory' },
+    ],
+    cleaningFrequencies: [
+      { value: 'FORTNIGHTLY', label: 'Fortnightly' },
+      { value: 'FOUR_WEEKLY', label: 'Every 4 weeks' },
+      { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
+      { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
+      { value: 'MONTHLY', label: 'Monthly' },
     ],
     vatOptions: [
       { value: '', label: 'Select' },
@@ -1118,22 +1146,26 @@ export const setupWizardContent = {
     ],
     paymentMethods: [
       { value: '', label: 'Select' },
-      { value: 'direct-debit', label: 'Direct Debit' },
-      { value: 'card', label: 'Card Payment' },
-      { value: 'cash', label: 'Cash' },
-      { value: 'invoice', label: 'Invoice' },
+      { value: 'GOCARDLESS', label: 'GoCardless' },
+      { value: 'STRIPE', label: 'Stripe' },
+      { value: 'CASH', label: 'Cash' },
+      { value: 'CHEQUE', label: 'Cheque' },
+      { value: 'BACS', label: 'BACS' },
     ],
     preferredDays: [
       { value: '', label: 'Select' },
-      { value: 'monday', label: 'Monday' },
-      { value: 'tuesday', label: 'Tuesday' },
-      { value: 'wednesday', label: 'Wednesday' },
-      { value: 'thursday', label: 'Thursday' },
-      { value: 'friday', label: 'Friday' },
+      { value: 'MON', label: 'Monday' },
+      { value: 'TUE', label: 'Tuesday' },
+      { value: 'WED', label: 'Wednesday' },
+      { value: 'THU', label: 'Thursday' },
+      { value: 'FRI', label: 'Friday' },
     ],
     actions: { assignProperty: 'Assign Property', addProperty: 'Add Property' },
     validation: {
       customerNameRequired: 'Customer name is required.',
+      fullAddressRequired: 'Full address is required.',
+      postcodeRequired: 'Postcode is required.',
+      priceRequired: 'Price per visit is required.',
       roundRequired: 'Please select a round.',
     },
     defaults: { properties: [] },
@@ -1145,8 +1177,8 @@ export const setupWizardContent = {
       fullAddress: '',
       postcode: '',
       serviceArea: '',
-      propertyType: 'house',
-      cleaningFrequency: '4-week',
+      propertyType: 'HOUSE',
+      cleaningFrequency: 'FOUR_WEEKLY',
       pricePerVisit: '',
       vat: '',
       paymentMethod: '',
@@ -1158,6 +1190,7 @@ export const setupWizardContent = {
       accessNotes: '',
       round: '',
       assignServiceArea: '',
+      serviceId: '',
     },
   },
   activateSystem: {
@@ -1171,35 +1204,38 @@ export const setupWizardContent = {
     options: {
       allRounds: {
         label: 'All Rounds',
-        description: 'Generate visits of all configured rounds',
+        description: 'Generate visits for all configured rounds',
         recommended: '(recommended)',
       },
       selectedRounds: {
         label: 'Selected Rounds Only',
-        description: 'Generate visits of all configured rounds',
+        description: 'Generate visits for specific rounds only',
       },
     },
     fields: {
       firstCycleStartDate: {
         label: 'First Cycle Start Date',
-        placeholder: '20 May 2025',
+        placeholder: 'YYYY-MM-DD',
       },
       frequencyCycle: {
-        label: 'Frequency/Cycle',
+        label: 'Cycle length (weeks)',
       },
     },
-    readyDescription: 'This will generate first set of visits and make them available for your team.',
-    actions: { activate: 'Activate System' },
+    readyDescription: 'This will generate the first set of visits and make them available for your team.',
+    actions: { activate: 'Generate Visits' },
     cycleOptions: [
-      { value: '1-week', label: '1-week cycle' },
-      { value: '2-week', label: '2-week cycle' },
-      { value: '3-week', label: '3-week cycle' },
-      { value: '4-week', label: '4-week cycle' },
+      { value: '1', label: '1 week' },
+      { value: '2', label: '2 weeks' },
+      { value: '4', label: '4 weeks' },
+      { value: '6', label: '6 weeks' },
+      { value: '8', label: '8 weeks' },
+      { value: '12', label: '12 weeks' },
     ],
     defaults: {
       generateVisitsMode: 'all',
-      firstCycleStartDate: '20 May 2025',
-      frequencyCycle: '4-week',
+      startDate: '',
+      cycleWeeks: 8,
+      roundIds: [],
     },
   },
   reviewLaunch: {
@@ -1209,15 +1245,6 @@ export const setupWizardContent = {
       title: 'Setup Progress',
       completed: '{completed} of {total} completed',
     },
-    checklist: [
-      { id: 'business-profile', label: 'Business profile completed' },
-      { id: 'gocardless', label: 'GoCardless connected' },
-      { id: 'stripe', label: 'Stripe configured' },
-      { id: 'sms-templates', label: 'SMS templates created' },
-      { id: 'technicians', label: 'Technicians added' },
-      { id: 'service-areas', label: 'Service areas created' },
-      { id: 'round-settings', label: 'Round settings saved' },
-    ],
     ready: {
       title: 'Ready to Launch',
       description:
@@ -1227,7 +1254,6 @@ export const setupWizardContent = {
       title: 'What happens next?',
       items: [
         "You'll be taken to your main dashboard",
-        'You can start adding customer properties and creating rounds',
         'Access Settings anytime to update your configuration',
         'Your technicians will receive app invitations if configured',
       ],

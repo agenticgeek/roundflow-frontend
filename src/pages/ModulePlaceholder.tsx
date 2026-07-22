@@ -4,7 +4,7 @@ import { appShellContent } from '@/content/app-shell'
 import { AppShell } from '@/components/app/AppShell'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
 import type { AppQuickActions } from '@/hooks/use-app-quick-actions'
-import { isSetupSkipped, resetSetupComplete } from '@/lib/setup-storage'
+import { isSetupDeferred } from '@/lib/setup-deferred'
 
 interface ModulePlaceholderScreenProps {
   moduleId: string
@@ -15,10 +15,9 @@ function ModulePlaceholderScreen({ moduleId }: ModulePlaceholderScreenProps) {
   const navItem = appShellContent.sidebar.nav.find((item) => item.id === moduleId)
   const title = navItem?.label ?? 'Module'
   const { backLabel } = appShellContent.modulePlaceholder
-  const showSkippedSetupCard = moduleId === 'settings' && isSetupSkipped()
+  const showSkippedSetupCard = moduleId === 'settings' && isSetupDeferred()
 
   function handleOpenSetup() {
-    resetSetupComplete()
     navigate(ROUTES.setupWizard)
   }
 

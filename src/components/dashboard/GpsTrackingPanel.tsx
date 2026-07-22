@@ -1,6 +1,11 @@
 import type { TechnicianLocation } from '@/content/dashboard'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
-import { dashboardHoverCardClass, toneBgClass, toneTextClass } from '@/components/dashboard/dashboard-styles'
+import {
+  dashboardHoverCardClass,
+  dashboardPressableClass,
+  toneBgClass,
+  toneTextClass,
+} from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
 
 interface GpsTrackingPanelProps {
@@ -152,6 +157,7 @@ export function GpsTrackingPanel({
                   className={cn(
                     'w-full rounded-xl border bg-background p-4 text-left shadow-sm',
                     dashboardHoverCardClass,
+                    dashboardPressableClass,
                     selected ? 'border-primary/30 ring-1 ring-primary/20' : 'border-border',
                   )}
                 >

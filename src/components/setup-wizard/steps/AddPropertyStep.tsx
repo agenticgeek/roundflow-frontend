@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AddPropertyData, PropertyDraft, PropertyRecord } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
@@ -15,7 +15,10 @@ interface AddPropertyStepProps {
   initialValues: AddPropertyData
   serviceAreaOptions: SelectOption[]
   roundOptions: SelectOption[]
-  onSubmit: (values: AddPropertyData) => void
+  serviceOptions?: SelectOption[]
+  adding?: boolean
+  onAddProperty: (draft: PropertyDraft) => Promise<void> | void
+  onSubmit: () => void
 }
 
 function SectionHeading({ children }: { children: string }) {
@@ -48,15 +51,22 @@ export function AddPropertyStep({
   initialValues,
   serviceAreaOptions,
   roundOptions,
+  serviceOptions = [],
+  adding = false,
+  onAddProperty,
   onSubmit,
 }: AddPropertyStepProps) {
-  const { addProperty: addPropertyContent, roundSettings } = setupWizardContent
+  const { addProperty: addPropertyContent } = setupWizardContent
   const { subSteps, sections, fields, validation, draftDefaults } = addPropertyContent
 
   const [properties, setProperties] = useState<PropertyRecord[]>(initialValues.properties)
   const [draft, setDraft] = useState<PropertyDraft>({ ...draftDefaults })
   const [subStep, setSubStep] = useState(0)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setProperties(initialValues.properties)
+  }, [initialValues.properties])
 
   const currentMeta = subSteps[subStep]
 
@@ -76,6 +86,21 @@ export function AddPropertyStep({
       setError(validation.customerNameRequired)
       return false
     }
+    if (subStep === 0 && !draft.fullAddress.trim()) {
+      setError(validation.fullAddressRequired)
+      return false
+    }
+    if (subStep === 0 && !draft.postcode.trim()) {
+      setError(validation.postcodeRequired)
+      return false
+    }
+    if (subStep === 1) {
+      const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, ''))
+      if (!Number.isFinite(price) || price <= 0) {
+        setError(validation.priceRequired)
+        return false
+      }
+    }
     if (subStep === 4 && !draft.round) {
       setError(validation.roundRequired)
       return false
@@ -93,25 +118,19 @@ export function AddPropertyStep({
     setSubStep((index) => Math.max(index - 1, 0))
   }
 
-  function saveProperty() {
-    if (!validateSubStep()) return
-
-    const roundLabel = roundOptions.find((option) => option.value === draft.round)?.label ?? ''
-
-    const record: PropertyRecord = {
-      ...draft,
-      id: `property-${Date.now()}`,
-      propertyName: draft.propertyName.trim() || draft.customerName.trim(),
-      round: roundLabel,
+  async function saveProperty() {
+    if (!validateSubStep() || adding) return
+    try {
+      await onAddProperty(draft)
+      resetDraft()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add property.')
     }
-
-    setProperties((prev) => [...prev, record])
-    resetDraft()
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    onSubmit({ properties })
+    onSubmit()
   }
 
   const addPropertyButton = (
@@ -154,9 +173,10 @@ export function AddPropertyStep({
               <ServicePlanPanel
                 draft={draft}
                 fields={fields}
-                frequencies={roundSettings.recurringCycles}
+                frequencies={addPropertyContent.cleaningFrequencies}
                 vatOptions={addPropertyContent.vatOptions}
                 paymentMethods={addPropertyContent.paymentMethods}
+                serviceOptions={serviceOptions}
                 onChange={updateDraft}
               />
             ) : null}
@@ -195,9 +215,13 @@ export function AddPropertyStep({
             totalSteps={subSteps.length}
             isFirstStep={subStep === 0}
             onBack={handleSubBack}
-            onContinue={subStep === subSteps.length - 1 ? saveProperty : handleSubContinue}
+            onContinue={subStep === subSteps.length - 1 ? () => void saveProperty() : handleSubContinue}
             continueLabel={
-              subStep === subSteps.length - 1 ? addPropertyContent.actions.addProperty : undefined
+              subStep === subSteps.length - 1
+                ? adding
+                  ? 'Saving…'
+                  : addPropertyContent.actions.addProperty
+                : undefined
             }
           />
         </div>
@@ -213,7 +237,10 @@ export function AddPropertyStep({
               <p className="text-sm font-medium text-foreground">{property.propertyName}</p>
               <p className="mt-0.5 text-xs text-muted">{property.fullAddress || property.customerName}</p>
               {property.round ? (
-                <p className="mt-1.5 text-xs font-medium text-primary">{property.round}</p>
+                <p className="mt-1.5 text-xs font-medium text-primary">
+                  {roundOptions.find((option) => option.value === property.round)?.label ??
+                    property.round}
+                </p>
               ) : null}
             </li>
           ))}
@@ -340,13 +367,15 @@ function ServicePlanPanel({
   frequencies,
   vatOptions,
   paymentMethods,
+  serviceOptions,
   onChange,
 }: {
   draft: PropertyDraft
   fields: (typeof setupWizardContent)['addProperty']['fields']
-  frequencies: readonly { id: string; label: string }[]
+  frequencies: SelectOption[]
   vatOptions: SelectOption[]
   paymentMethods: SelectOption[]
+  serviceOptions: SelectOption[]
   onChange: <K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) => void
 }) {
   return (
@@ -357,9 +386,9 @@ function ServicePlanPanel({
         </span>
         <SegmentCardGroup
           ariaLabel={fields.cleaningFrequency.label}
-          options={frequencies}
+          options={frequencies.map((option) => ({ id: option.value, label: option.label }))}
           value={draft.cleaningFrequency}
-          onChange={(value) => onChange('cleaningFrequency', value as PropertyDraft['cleaningFrequency'])}
+          onChange={(value) => onChange('cleaningFrequency', value)}
         />
       </div>
       <Field label={fields.pricePerVisit.label} labelWeight="medium" size="sm">
@@ -370,6 +399,16 @@ function ServicePlanPanel({
           placeholder={fields.pricePerVisit.placeholder}
         />
       </Field>
+      {serviceOptions.length > 0 ? (
+        <Field label="Service" labelWeight="medium" size="sm">
+          <Select
+            inputSize="sm"
+            value={draft.serviceId}
+            onChange={(e) => onChange('serviceId', e.target.value)}
+            options={[{ value: '', label: 'Select service' }, ...serviceOptions]}
+          />
+        </Field>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={fields.vat.label} labelWeight="medium" size="sm">
           <Select
@@ -408,6 +447,7 @@ function SchedulingPanel({
       <Field label={fields.startDate.label} labelWeight="medium" size="sm">
         <Input
           inputSize="sm"
+          type="date"
           value={draft.startDate}
           onChange={(e) => onChange('startDate', e.target.value)}
           placeholder={fields.startDate.placeholder}
@@ -432,6 +472,7 @@ function SchedulingPanel({
       >
         <Input
           inputSize="sm"
+          type="date"
           value={draft.nextVisitDate}
           onChange={(e) => onChange('nextVisitDate', e.target.value)}
           placeholder={fields.nextVisitDate.placeholder}

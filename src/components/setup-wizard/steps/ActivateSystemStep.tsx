@@ -1,12 +1,17 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ActivateSystemData, GenerateVisitsMode } from '@/types/setup-wizard'
+import type { SelectOption } from '@/content/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, Input, Select, Toggle } from '@/components/ui'
 import { SetupStepHeader } from '@/components/setup-wizard/SetupStepHeader'
+import { cn } from '@/lib/utils'
 
 interface ActivateSystemStepProps {
   initialValues: ActivateSystemData
+  roundOptions: SelectOption[]
+  alreadyGenerated?: boolean
+  visitsGenerated?: number
   onSubmit: (values: ActivateSystemData) => void
 }
 
@@ -53,14 +58,40 @@ function VisitsToggleRow({
   )
 }
 
-export function ActivateSystemStep({ initialValues, onSubmit }: ActivateSystemStepProps) {
+export function ActivateSystemStep({
+  initialValues,
+  roundOptions,
+  alreadyGenerated = false,
+  visitsGenerated = 0,
+  onSubmit,
+}: ActivateSystemStepProps) {
   const { activateSystem } = setupWizardContent
   const { sections, options, fields, readyDescription, actions, cycleOptions } = activateSystem
 
   const [values, setValues] = useState<ActivateSystemData>(initialValues)
 
+  useEffect(() => {
+    setValues(initialValues)
+  }, [initialValues])
+
   function setGenerateVisitsMode(mode: GenerateVisitsMode) {
-    setValues((prev) => ({ ...prev, generateVisitsMode: mode }))
+    setValues((prev) => ({
+      ...prev,
+      generateVisitsMode: mode,
+      roundIds: mode === 'all' ? [] : prev.roundIds,
+    }))
+  }
+
+  function toggleRound(roundId: string) {
+    setValues((prev) => {
+      const selected = prev.roundIds.includes(roundId)
+      return {
+        ...prev,
+        roundIds: selected
+          ? prev.roundIds.filter((id) => id !== roundId)
+          : [...prev.roundIds, roundId],
+      }
+    })
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -75,6 +106,13 @@ export function ActivateSystemStep({ initialValues, onSubmit }: ActivateSystemSt
         title={activateSystem.heading}
         subtitle={activateSystem.subheading}
       />
+
+      {alreadyGenerated ? (
+        <p className="rounded-xl border border-success/20 bg-success/5 px-4 py-3 text-sm text-foreground">
+          {visitsGenerated} visit{visitsGenerated === 1 ? '' : 's'} already generated. You can
+          continue, or generate another cycle below.
+        </p>
+      ) : null}
 
       <section className="space-y-3">
         <h3 className="text-sm font-medium text-foreground">{sections.generateVisits}</h3>
@@ -100,6 +138,27 @@ export function ActivateSystemStep({ initialValues, onSubmit }: ActivateSystemSt
             ariaLabel={options.selectedRounds.label}
           />
         </div>
+
+        {values.generateVisitsMode === 'selected' ? (
+          <ul className="space-y-2 rounded-xl border border-border p-4">
+            {roundOptions.map((round) => {
+              const checked = values.roundIds.includes(round.value)
+              return (
+                <li key={round.value}>
+                  <label className="flex cursor-pointer items-center gap-3 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleRound(round.value)}
+                      className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20"
+                    />
+                    {round.label}
+                  </label>
+                </li>
+              )
+            })}
+          </ul>
+        ) : null}
       </section>
 
       <section className="space-y-4">
@@ -107,9 +166,10 @@ export function ActivateSystemStep({ initialValues, onSubmit }: ActivateSystemSt
         <Field label={fields.firstCycleStartDate.label} labelWeight="medium" size="sm">
           <Input
             inputSize="sm"
-            value={values.firstCycleStartDate}
+            type="date"
+            value={values.startDate}
             onChange={(event) =>
-              setValues((prev) => ({ ...prev, firstCycleStartDate: event.target.value }))
+              setValues((prev) => ({ ...prev, startDate: event.target.value }))
             }
             placeholder={fields.firstCycleStartDate.placeholder}
           />
@@ -117,11 +177,11 @@ export function ActivateSystemStep({ initialValues, onSubmit }: ActivateSystemSt
         <Field label={fields.frequencyCycle.label} labelWeight="medium" size="sm">
           <Select
             inputSize="sm"
-            value={values.frequencyCycle}
+            value={String(values.cycleWeeks)}
             onChange={(event) =>
               setValues((prev) => ({
                 ...prev,
-                frequencyCycle: event.target.value as ActivateSystemData['frequencyCycle'],
+                cycleWeeks: Number(event.target.value) || prev.cycleWeeks,
               }))
             }
             options={[...cycleOptions]}
@@ -136,7 +196,10 @@ export function ActivateSystemStep({ initialValues, onSubmit }: ActivateSystemSt
         </div>
         <button
           type="submit"
-          className="shrink-0 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:opacity-90 active:scale-[0.98]"
+          className={cn(
+            'shrink-0 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground',
+            'transition-all duration-200 hover:opacity-90 active:scale-[0.98]',
+          )}
         >
           {actions.activate}
         </button>

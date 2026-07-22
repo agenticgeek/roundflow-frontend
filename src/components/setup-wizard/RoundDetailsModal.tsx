@@ -68,7 +68,7 @@ export function RoundDetailsModal({
 
   if (!round) return null
 
-  const roundName = formatRoundName(round.areaName, round.day, roundDays)
+  const roundName = round.name ?? formatRoundName(round.areaName, round.day, roundDays)
 
   return (
     <Modal

@@ -221,26 +221,28 @@ export function DebtPaymentScreen() {
         </label>
       </div>
 
-      {filteredRecords.length === 0 ? (
-        <p className="rounded-xl border border-border bg-card px-5 py-10 text-center text-sm text-muted">
-          No customers match this filter.
-        </p>
-      ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {filteredRecords.map((record) => (
-            <DebtCustomerCard
-              key={record.id}
-              record={record}
-              checked={selectedIds.includes(record.id)}
-              active={detailId === record.id}
-              onOpen={() => setDetailId(record.id)}
-              onToggleChecked={() => toggleSelected(record.id)}
-              onSendReminder={() => openAction('reminder', record)}
-              onViewInvoice={() => openAction('invoice', record)}
-            />
-          ))}
-        </div>
-      )}
+      <div key={activeTab} className="animate-fade-in">
+        {filteredRecords.length === 0 ? (
+          <p className="rounded-xl border border-border bg-card px-5 py-10 text-center text-sm text-muted">
+            No customers match this filter.
+          </p>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {filteredRecords.map((record) => (
+              <DebtCustomerCard
+                key={record.id}
+                record={record}
+                checked={selectedIds.includes(record.id)}
+                active={detailId === record.id}
+                onOpen={() => setDetailId(record.id)}
+                onToggleChecked={() => toggleSelected(record.id)}
+                onSendReminder={() => openAction('reminder', record)}
+                onViewInvoice={() => openAction('invoice', record)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <DebtCustomerDetailPanel
         record={detailRecord}
@@ -303,7 +305,7 @@ function DebtCustomerCard({
   return (
     <article
       className={cn(
-        'cursor-pointer rounded-xl border-2 bg-card p-4 shadow-sm transition-colors',
+        'cursor-pointer rounded-xl border-2 bg-card p-4 shadow-sm transition-all active:scale-[0.99]',
         active ? 'border-primary' : 'border-border hover:border-primary/40',
       )}
       onClick={onOpen}

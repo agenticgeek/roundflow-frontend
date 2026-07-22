@@ -1,0 +1,235 @@
+---
+description: RoundFlow Setup Wizard + Settings — locked stack, API contract, and implementation rules
+alwaysApply: true
+---
+
+# RoundFlow Frontend — Setup Wizard + Settings
+
+> **Precedence:** (1) live OpenAPI contract at `/docs` wins for endpoint shapes → (2) this rule wins for architecture and patterns → (3) strategy docs for anything not covered here. Never invent endpoints, fields, or enums — if the guide and `/docs` conflict, follow `/docs` and flag the diff in a comment.
+
+## Role & mission
+
+Senior frontend engineer implementing **Setup Wizard** and **Settings** for RoundFlow. State strategy is locked — do not substitute libraries or improvise patterns. Production-grade: typed end to end, deterministic on every failure path, zero dead code, zero TODOs left behind.
+
+## Locked stack
+
+| Layer | Library | Owns |
+|---|---|---|
+| Server state | TanStack Query v5 | ALL API data (setup status, step payloads, settings sections, lists) |
+| Client UI state | Zustand (tiny stores) | Modals, toast queue, global chrome — nothing else |
+| Forms | React Hook Form + Zod (`@hookform/resolvers`) | Field values while editing; Zod mirrors backend validation |
+| HTTP | One thin `apiClient` (fetch) | Base URL, JSON, Bearer auth, error normalization, AbortSignal |
+| Auth session | Supabase JS | Login, refresh, `access_token` — never stored in Zustand |
+
+Install: `@tanstack/react-query zustand react-hook-form zod @hookform/resolvers` (+ existing `@supabase/supabase-js`). Add `@tanstack/react-query-devtools` in dev only.
+
+## Non-negotiable rules
+
+1. **Never** put API responses in Zustand. No services store, no setup-status store, no settings mirror.
+2. **Never** call `fetch` from a component or feature hook — only `api/client.ts` touches the network.
+3. **Never** buffer the wizard client-side and submit on Finish. Each step `POST`s immediately on Save.
+4. **Query keys come only from `lib/query-keys.ts`.** No inline string keys.
+5. **Wizard step lives in the URL** (`/setup?step=N`). Do **not** create `wizard.store.ts`. Clamp the step (rule 14).
+6. **TECHNICIAN role:** reads allowed; every mutation control is hidden or disabled (with tooltip). Never fire a mutation for a technician.
+7. **Types are generated** via `openapi-typescript` → `src/api/types.gen.ts`. Hand-write only what the spec lacks.
+8. **Every submit button is disabled while its mutation `isPending`.** Double-click = one request.
+9. **No optimistic updates.** Mutate → invalidate → refetch.
+
+## Folder structure
+
+```
+src/
+  api/
+    client.ts              # api(): auth header, JSON, ApiError, AbortSignal, single-flight 401 retry
+    setup.api.ts
+    settings.api.ts
+    auth.api.ts              # getMe()
+    types.gen.ts             # generated — do not hand-edit
+    types.ts                 # hand-written only where spec is silent
+  lib/
+    query-keys.ts
+    errors.ts                # ApiError + handleForbidden()
+    schemas/                 # Zod per form/step (with transforms)
+  features/
+    setup/    { pages/  hooks/  components/ }
+    settings/ { pages/  hooks/  components/ }
+  stores/
+    ui.store.ts              # modal state + toast queue ONLY
+  providers/
+    QueryProvider.tsx
+    AuthProvider.tsx
+```
+
+## Query keys (`lib/query-keys.ts`)
+
+```ts
+export const queryKeys = {
+  auth: { me: ['auth', 'me'] as const },
+  setup: {
+    all: ['setup'] as const,
+    status: ['setup', 'status'] as const,
+    step: (n: number) => ['setup', 'step', n] as const,
+  },
+  settings: {
+    all: ['settings'] as const,
+    businessProfile: ['settings', 'business-profile'] as const,
+    roundSettings: ['settings', 'round-settings'] as const,
+    payment: ['settings', 'payment'] as const,
+    services: ['settings', 'services'] as const,
+    serviceAreas: ['settings', 'service-areas'] as const,
+    technicians: ['settings', 'technicians'] as const,
+    messageTemplates: ['settings', 'message-templates'] as const,
+  },
+} as const;
+
+export function invalidateBusinessSettings(qc: QueryClient) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: queryKeys.settings.businessProfile }),
+    qc.invalidateQueries({ queryKey: queryKeys.settings.roundSettings }),
+    qc.invalidateQueries({ queryKey: queryKeys.settings.payment }),
+  ]);
+}
+```
+
+Business Profile, Round Settings, and Payment share one `BusinessSettings` row — after ANY of the three PATCHes, always call `invalidateBusinessSettings`.
+
+## API endpoints (build `*.api.ts` from this table + `/docs`)
+
+Base: `{VITE_API_URL}`. Headers: `Content-Type: application/json`, `Authorization: Bearer <token>`. `GET` = ADMIN/MANAGER/TECHNICIAN; mutations = ADMIN/MANAGER only (403 else). Error body: `{ "error": string }` (no `code`/`fields` yet — build both coded + fallback paths).
+
+### Setup (`setup.api.ts`) — only while `setupCompleted === false` except GETs + `/setup/complete`
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/setup/status` | Gate + stepper; use QueryClient defaults (no focus refetch — invalidate after mutations) |
+| GET/POST | `/setup/step/1` | Business Profile; POST requires `businessName` |
+| GET/POST | `/setup/step/2` | Payment; completes when `paymentRule` set |
+| GET/POST | `/setup/step/3` | **Bulk replace** services — confirm dialog |
+| GET/POST | `/setup/step/4` | Round Settings; `defaultCycleLength` required |
+| GET/POST | `/setup/step/5` | Deferred stub — no DB write |
+| GET/POST | `/setup/step/6` | Replace **pending-only** technicians — NOT full bulk replace |
+| GET/POST | `/setup/step/7` | **Bulk replace** service areas — confirm dialog |
+| GET/POST | `/setup/step/8` | **Upsert** ACTIVE round |
+| GET/POST | `/setup/step/9` | **Additive** property bundle (201 on POST) |
+| GET/POST | `/setup/step/10` | Per-round technician assignments |
+| GET/POST | `/setup/step/11` | Generate SCHEDULED visits (call once) |
+| GET | `/setup/step/12` | Review checklist only — no POST |
+| POST | `/setup/complete` | **Await** `setup.status` invalidate before navigate |
+
+### Settings (`settings.api.ts`) — only while `setupCompleted === true`
+
+Singleton PATCHes: business-profile, round-settings, payment. Collections: services, service-areas, technicians (CRUD). Payment connect: `POST /settings/payment/:provider/connect` separate from rules PATCH. Message templates: deferred stub only. `GET /auth/me` in `auth.api.ts`.
+
+### Invalidation map
+
+| Mutation | Invalidate |
+|---|---|
+| `POST /setup/step/:n` | `setup.status` + `setup.step(n)` |
+| `POST /setup/complete` | `setup.status` (await, then navigate) |
+| PATCH business-profile / round-settings / payment / connect | `invalidateBusinessSettings(qc)` |
+| Services CRUD | `settings.services` |
+| Service areas CRUD | `settings.serviceAreas` |
+| Technicians CRUD/deactivate | `settings.technicians` |
+
+## QueryClient config
+
+- Default: `staleTime: 30_000`, `refetchOnWindowFocus: false`, retry 4xx never / 5xx+network up to 2, `mutations.retry: 0`
+- Global mutation error → toast except 400 (form) and `meta.silenceGlobalError`
+- Default query options only — do not special-case `setup.status` with focus refetch
+
+## `api/client.ts`
+
+- Single-flight 401 refresh via Supabase → retry once → sign out on failure
+- Forward `AbortSignal` from Query `queryFn`
+- 204 → `undefined`; non-OK → `ApiError(status, message, code?, fields?)`
+
+## Error handling
+
+| Status | Behavior |
+|---|---|
+| 401 | Refresh + retry once in client |
+| 403 | `handleForbidden` by `error.code` if present; legacy fallback for TECHNICIAN toast vs navigate |
+| 400 | `setError` per field or root — never toast |
+| 404 | Invalidate list, inline "no longer exists", close modal |
+| 409 | Specific inline message; list intact |
+| 5xx/network | Toast (mutations) or inline retry (queries) |
+
+**BACKEND-GAP:** Live errors are `{ error: string }` only until `code`/`fields` ship.
+
+## Form pattern
+
+```ts
+const form = useForm({
+  resolver: zodResolver(schema),
+  values: data ? toFormValues(data) : undefined,
+  resetOptions: { keepDirtyValues: true },
+});
+```
+
+Never `useEffect(() => reset(data))`. Unsaved-changes guard when `isDirty`. Skeleton while pending; inline retry on error.
+
+## Bootstrap gate
+
+1. Supabase session ready
+2. `useSetupStatus` + `useMe`
+3. Pending → full-screen loader
+4. `setupCompleted === false` → `/setup`
+5. `setupCompleted === true` → app + settings
+6. TECHNICIAN → read-only settings UI
+
+All settings queries: `enabled: status?.setupCompleted === true`.
+
+## Wizard rules
+
+12 steps: 1 Business Profile, 2 Payment, 3 Services, 4 Round Settings, 5 SMS stub, 6 Technicians, 7 Service Areas, 8 First Round, 9 Add Property (additive), 10 Assign Technicians, 11 Generate Visits, 12 Review & Launch.
+
+- URL step source; clamp to `maxAllowedStep` from status
+- Bulk-replace confirm: steps **3 and 7 only** ("replaces all current items")
+- Step 6: pending invites only — accurate copy, preserve accepted techs
+- Step 9: each POST creates one property bundle; Continue advances without re-POST
+- Step 10: per-round technician replace; every ACTIVE round needs ≥ 1 tech
+- Step 11: generate visits once (`startDate` today+, `cycleWeeks` 1–52)
+- Step 12: GET checklist only; Launch = `POST /setup/complete` when `allRequiredComplete`
+- Complete enabled only when `allRequiredComplete === true`
+
+## Settings rules
+
+- `defaultWorkingDays` editable **only** on Round Settings
+- Payment rules PATCH ≠ provider connect mutation
+- Service areas: disable delete when `linkedRounds.count > 0`; `isDefault` superRefine client-side
+- Technicians: `displayName` + derived `appStatus`; accepted → `PATCH { active: false }`, never DELETE
+- SMS templates: read-only stub
+- Do not build UI for `bankDetails` until specified
+
+## Money transforms (form layer only)
+
+- `defaultPrice`: send `number`, receive `string`; Zod `z.coerce.number().positive()`
+- `defaultCycleLength`: UI weeks → wire days `7|14|21|28|null`
+
+## Zustand (`stores/ui.store.ts` only)
+
+Modal state + toast queue. No lists, settings, tokens, or step index.
+
+## Build order
+
+1. Foundation (errors, client, types.gen, query-keys, QueryProvider, ui.store)
+2. Gate (auth, setup status, bootstrap, role)
+3. Wizard (shell → steps 1–8 → complete)
+4. Settings (all sections)
+5. Polish (skeletons, guards, devtools, dead-code sweep)
+
+## Definition of done (self-verify)
+
+- `tsc --noEmit` clean; no `any` on API boundaries
+- `fetch(` only in `api/client.ts`
+- No inline query keys; no server data in Zustand
+- Double-click = one request; dirty forms survive focus refetch
+- TECHNICIAN: no mutations; 403 → permission toast not /setup redirect
+- URL step clamp; Complete awaits invalidate; step 8 gates Complete
+- Step 6 re-save preserves accepted technicians
+- Invalidation map honored; 400/404/409 behaviors correct
+- Working days on Round Settings only; step 5 stub never blocks Complete
+
+## When uncertain
+
+Check `/docs`. `/docs` wins on payload shape — leave `// CONTRACT-DIFF:` comment. Stop and ask if genuinely ambiguous.

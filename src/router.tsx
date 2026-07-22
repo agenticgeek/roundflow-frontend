@@ -1,8 +1,9 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
-import { GuestRoute, ProtectedRoute, SetupRoute } from '@/lib/auth'
+import { GuestRoute, ProtectedRoute, SetupRoute } from '@/providers/RouteGuards'
 import Login from '@/pages/Login'
 import Signup from '@/pages/Signup'
+import AuthCallback from '@/pages/AuthCallback'
 import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
 import Dashboard from '@/pages/Dashboard'
@@ -11,14 +12,19 @@ import PropertyDetail from '@/pages/PropertyDetail'
 import TodaysWork from '@/pages/TodaysWork'
 import Customers from '@/pages/Customers'
 import DebtPayment from '@/pages/DebtPayment'
+import Reports from '@/pages/Reports'
+import Complaints from '@/pages/Complaints'
 import Settings from '@/pages/Settings'
-import { AppModulePlaceholder } from '@/pages/AppModulePlaceholder'
+import Technicians from '@/pages/Technicians'
 import SetupWizard from '@/pages/SetupWizard'
 
-const placeholderModules = [
-  { path: ROUTES.reportsHistory, moduleId: 'reports-history' },
-  { path: ROUTES.complaints, moduleId: 'complaints' },
-  { path: ROUTES.technicians, moduleId: 'technicians' },
+const technicianRoutes = [
+  ROUTES.technicianNew,
+  ROUTES.technicianEdit,
+  ROUTES.technicianConversation,
+  ROUTES.technicianPhotos,
+  ROUTES.technicianDetail,
+  ROUTES.technicians,
 ] as const
 
 /** Router config built entirely from ROUTES constants — no path strings inline. */
@@ -88,11 +94,27 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
   },
-  ...placeholderModules.map(({ path, moduleId }) => ({
+  {
+    path: ROUTES.reportsHistory,
+    element: (
+      <ProtectedRoute>
+        <Reports />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.complaints,
+    element: (
+      <ProtectedRoute>
+        <Complaints />
+      </ProtectedRoute>
+    ),
+  },
+  ...technicianRoutes.map((path) => ({
     path,
     element: (
       <ProtectedRoute>
-        <AppModulePlaceholder moduleId={moduleId} />
+        <Technicians />
       </ProtectedRoute>
     ),
   })),
@@ -112,7 +134,15 @@ export const router = createBrowserRouter([
       </GuestRoute>
     ),
   },
-  { path: ROUTES.forgotPassword, element: <ForgotPassword /> },
+  { path: ROUTES.authCallback, element: <AuthCallback /> },
+  {
+    path: ROUTES.forgotPassword,
+    element: (
+      <GuestRoute>
+        <ForgotPassword />
+      </GuestRoute>
+    ),
+  },
   { path: ROUTES.resetPassword, element: <ResetPassword /> },
   { path: '*', element: <Navigate to={ROUTES.home} replace /> },
 ])
