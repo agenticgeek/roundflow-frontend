@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { AssignTechniciansData, Technician, WizardRound } from '@/types/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
@@ -108,6 +108,10 @@ export function AssignTechniciansStep({
   const [rounds, setRounds] = useState<WizardRound[]>(initialValues.rounds)
   const [editingRoundId, setEditingRoundId] = useState<string | null>(null)
 
+  useEffect(() => {
+    setRounds(initialValues.rounds)
+  }, [initialValues.rounds])
+
   const dayLabels = useMemo(
     () => Object.fromEntries(roundDays.filter((day) => day.value).map((day) => [day.value, day.label])),
     [roundDays],
@@ -195,7 +199,7 @@ export function AssignTechniciansStep({
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-foreground">
-                      {formatRoundName(round.areaName, round.day, roundDays)}
+                      {round.name ?? formatRoundName(round.areaName, round.day, roundDays)}
                     </p>
                     <p className="mt-0.5 text-xs text-muted">{dayLabels[round.day] ?? round.day}</p>
                   </div>

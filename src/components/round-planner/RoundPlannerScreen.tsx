@@ -11,6 +11,7 @@ import { RoundPlannerToolbar } from '@/components/round-planner/RoundPlannerTool
 
 interface RoundPlannerScreenProps {
   interactions: RoundPlannerInteractions
+  onAddRound?: () => void
   onBulkMessage?: () => void
   onAddOneOffJob?: () => void
   onViewPropertyDetails?: (propertyId: string) => void
@@ -19,6 +20,7 @@ interface RoundPlannerScreenProps {
 /** Composes Round Planner sections — data from content, state from interactions hook. */
 export function RoundPlannerScreen({
   interactions,
+  onAddRound,
   onBulkMessage,
   onAddOneOffJob,
   onViewPropertyDetails,
@@ -78,34 +80,41 @@ export function RoundPlannerScreen({
         statusOptions={statuses}
         onStatusChange={interactions.setStatusId}
         addRoundLabel={actions.addRound}
+        onAddRound={onAddRound}
       />
 
       <RoundPlannerMetrics metrics={metrics} />
 
       {interactions.view === 'calendar' ? (
-        <RoundPlannerCalendar
-          weeks={interactions.visibleWeeks}
-          days={interactions.filteredDays}
-          dayHeaders={calendar.dayHeaders}
-          emptyLabel={calendar.emptyLabel}
-          onSelectRound={interactions.openRoundDetail}
-        />
+        <div className="animate-fade-in">
+          <RoundPlannerCalendar
+            weeks={interactions.visibleWeeks}
+            days={interactions.filteredDays}
+            dayHeaders={calendar.dayHeaders}
+            emptyLabel={calendar.emptyLabel}
+            onSelectRound={interactions.openRoundDetail}
+          />
+        </div>
       ) : null}
 
       {interactions.view === 'map' ? (
-        <RoundPlannerMapView round={mapRound} />
+        <div className="animate-fade-in">
+          <RoundPlannerMapView round={mapRound} />
+        </div>
       ) : null}
 
       {interactions.view === 'list' ? (
-        <RoundPlannerListView
-          items={interactions.filteredListItems}
-          expandedItemId={interactions.expandedListItemId}
-          onToggleItem={interactions.toggleListItem}
-          onViewDetails={onViewPropertyDetails ?? (() => undefined)}
-          onBulkMessage={onBulkMessage ?? (() => undefined)}
-          onAddOneOffJob={onAddOneOffJob ?? (() => undefined)}
-          onRemoveProperty={interactions.openRemoveProperty}
-        />
+        <div className="animate-fade-in">
+          <RoundPlannerListView
+            items={interactions.filteredListItems}
+            expandedItemId={interactions.expandedListItemId}
+            onToggleItem={interactions.toggleListItem}
+            onViewDetails={onViewPropertyDetails ?? (() => undefined)}
+            onBulkMessage={onBulkMessage ?? (() => undefined)}
+            onAddOneOffJob={onAddOneOffJob ?? (() => undefined)}
+            onRemoveProperty={interactions.openRemoveProperty}
+          />
+        </div>
       ) : null}
 
       <RemovePropertyFromRoundModal

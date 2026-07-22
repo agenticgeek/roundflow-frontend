@@ -7,10 +7,10 @@ export type SetupStepId =
   | 'sms-templates'
   | 'technician-management'
   | 'service-area'
-  | 'assign-round'
+  | 'first-round'
+  | 'add-property'
   | 'assign-technicians'
-  | 'add-properties'
-  | 'activate-system'
+  | 'generate-visits'
   | 'review-launch'
 
 export interface SetupStepDefinition {
@@ -124,6 +124,8 @@ export interface AssignRoundData {
 
 export interface WizardRound {
   id: string
+  /** Prefer API round name when present. */
+  name?: string
   areaName: string
   day: string
   propertyCount: number
@@ -143,7 +145,7 @@ export interface PropertyDraft {
   postcode: string
   serviceArea: string
   propertyType: string
-  cleaningFrequency: RecurringCycle
+  cleaningFrequency: string
   pricePerVisit: string
   vat: string
   paymentMethod: string
@@ -155,6 +157,7 @@ export interface PropertyDraft {
   accessNotes: string
   round: string
   assignServiceArea: string
+  serviceId: string
 }
 
 export interface PropertyRecord extends PropertyDraft {
@@ -169,8 +172,9 @@ export type GenerateVisitsMode = 'all' | 'selected'
 
 export interface ActivateSystemData {
   generateVisitsMode: GenerateVisitsMode
-  firstCycleStartDate: string
-  frequencyCycle: RecurringCycle
+  startDate: string
+  cycleWeeks: number
+  roundIds: string[]
 }
 
 export type SetupWizardData = {

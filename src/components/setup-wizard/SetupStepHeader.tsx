@@ -10,7 +10,7 @@ interface SetupStepHeaderProps {
 /** Reusable step header — icon, title, subtitle, optional top-right action. */
 export function SetupStepHeader({ icon, title, subtitle, action }: SetupStepHeaderProps) {
   return (
-    <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex flex-col gap-4 pb-5 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-4">
         {icon}
         <div>

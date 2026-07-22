@@ -18,6 +18,8 @@ export interface SidePanelProps {
   className?: string
   bodyClassName?: string
   footerClassName?: string
+  /** Remounts the drawer animation when switching directly between records. */
+  panelKey?: string
 }
 
 /**
@@ -42,6 +44,7 @@ export function SidePanel({
   className,
   bodyClassName,
   footerClassName,
+  panelKey,
 }: SidePanelProps) {
   const titleId = useId()
 
@@ -69,10 +72,11 @@ export function SidePanel({
         type="button"
         aria-label={closeLabel}
         onClick={onClose}
-        className="absolute inset-0 bg-foreground/25 backdrop-blur-[1px]"
+        className="absolute inset-0 animate-fade-in bg-foreground/25 backdrop-blur-[1px]"
       />
 
       <aside
+        key={panelKey}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

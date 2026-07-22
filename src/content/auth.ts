@@ -22,10 +22,10 @@ export const authContent = {
   },
   signupMagicLink: {
     title: 'Check your email',
-    subtitle: 'A magic link has been sent to {email}. Kindly check your inbox and click the link to continue to setup.',
+    subtitle: 'A confirmation link has been sent to {email}. Check your inbox and click the link to continue.',
     action: 'Back to log in',
-    resend: 'Resend magic link',
-    sent: 'Magic link sent. Check your inbox.',
+    resend: 'Resend confirmation link',
+    sent: 'Confirmation link sent. Check your inbox.',
   },
   forgotPassword: {
     title: 'Forgot password?',

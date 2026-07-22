@@ -1,19 +1,15 @@
 import type { ReactNode } from 'react'
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { site } from '@/content/site'
+import type { UiToast } from '@/stores/ui.store'
+import { useUiStore } from '@/stores/ui.store'
 import { cn } from '@/lib/utils'
-
-interface Toast {
-  id: string
-  message: string
-  description?: string
-  exiting?: boolean
-}
 
 interface ToastOptions {
   durationMs?: number
   description?: string
+  tone?: UiToast['tone']
 }
 
 interface ToastContextValue {
@@ -31,26 +27,47 @@ const ToastContext = createContext<ToastContextValue | null>(null)
  * timing, fade animation, and close affordance consistent across the product.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([])
+  const toasts = useUiStore((state) => state.toasts)
+  const pushToast = useUiStore((state) => state.pushToast)
+  const removeToast = useUiStore((state) => state.dismissToast)
+  const timers = useRef(new Map<string, number>())
 
   const dismissToast = useCallback((id: string) => {
-    setToasts((current) =>
-      current.map((toast) => (toast.id === id ? { ...toast, exiting: true } : toast)),
-    )
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((toast) => toast.id !== id))
-    }, 180)
-  }, [])
+    const timer = timers.current.get(id)
+    if (timer) window.clearTimeout(timer)
+    timers.current.delete(id)
+    removeToast(id)
+  }, [removeToast])
 
   const showToast = useCallback(
     (message: string, options: ToastOptions = {}) => {
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const durationMs = options.durationMs ?? 3500
-
-      setToasts([{ id, message, description: options.description }])
-      window.setTimeout(() => dismissToast(id), durationMs)
+      pushToast({
+        message,
+        description: options.description,
+        durationMs: options.durationMs,
+        tone: options.tone,
+      })
     },
-    [dismissToast],
+    [pushToast],
+  )
+
+  useEffect(() => {
+    for (const toast of toasts) {
+      if (timers.current.has(toast.id)) continue
+      const timer = window.setTimeout(
+        () => dismissToast(toast.id),
+        toast.durationMs ?? 3500,
+      )
+      timers.current.set(toast.id, timer)
+    }
+  }, [dismissToast, toasts])
+
+  useEffect(
+    () => () => {
+      for (const timer of timers.current.values()) window.clearTimeout(timer)
+      timers.current.clear()
+    },
+    [],
   )
 
   const value = useMemo(
@@ -80,7 +97,7 @@ function ToastViewport({
   toasts,
   onDismiss,
 }: {
-  toasts: Toast[]
+  toasts: UiToast[]
   onDismiss: (id: string) => void
 }) {
   if (toasts.length === 0) return null
@@ -93,9 +110,10 @@ function ToastViewport({
           role="status"
           aria-live="polite"
           className={cn(
-            'pointer-events-auto flex w-full max-w-lg items-start justify-between gap-4 bg-primary px-6 py-4 text-primary-foreground shadow-xl',
+            'pointer-events-auto flex w-full max-w-lg items-start justify-between gap-4 px-6 py-4 text-primary-foreground shadow-xl',
+            toast.tone === 'error' ? 'bg-danger' : 'bg-primary',
             toast.description ? 'rounded-2xl' : 'items-center rounded-full py-3',
-            toast.exiting ? 'animate-toast-out' : 'animate-toast-in',
+            'animate-toast-in',
           )}
         >
           <div className="min-w-0">

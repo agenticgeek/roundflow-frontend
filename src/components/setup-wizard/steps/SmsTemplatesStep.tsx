@@ -98,7 +98,7 @@ export function SmsTemplatesStep({ initialValues, onSubmit }: SmsTemplatesStepPr
                       type="button"
                       onClick={() => setSelectedId(template.id)}
                       className={cn(
-                        'w-full rounded-xl border px-3.5 py-2.5 text-left transition-colors duration-150',
+                        'w-full rounded-xl border px-3.5 py-2.5 text-left transition-all duration-150 active:scale-[0.99]',
                         active
                           ? 'border-primary bg-primary/5'
                           : 'border-border bg-background hover:bg-surface',
@@ -134,7 +134,10 @@ export function SmsTemplatesStep({ initialValues, onSubmit }: SmsTemplatesStepPr
               </button>
             </div>
 
-            <div className="min-h-[12rem] rounded-xl border border-border bg-surface p-4 sm:min-h-[14rem] sm:p-5">
+            <div
+              key={selectedTemplate.id}
+              className="min-h-[12rem] animate-fade-in rounded-xl border border-border bg-surface p-4 sm:min-h-[14rem] sm:p-5"
+            >
               <p className="text-xs text-muted">{previewLabel}</p>
               <p className="mt-3 text-sm leading-relaxed text-foreground">{previewText}</p>
             </div>

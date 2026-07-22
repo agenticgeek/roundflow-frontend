@@ -1,7 +1,8 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '@/components/AuthLayout'
+import { FullScreenLoader } from '@/components/FullScreenLoader'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
@@ -39,8 +40,34 @@ export default function ResetPassword() {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
 
   const strength = getStrength(password)
+
+  useEffect(() => {
+    let active = true
+
+    async function establishRecoverySession() {
+      const code = new URLSearchParams(window.location.search).get('code')
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+        if (active && exchangeError) setLinkError(exchangeError.message)
+      } else {
+        const { data } = await supabase.auth.getSession()
+        if (active && !data.session) {
+          setLinkError('This password reset link is invalid or has expired.')
+        }
+      }
+      if (active) setCheckingSession(false)
+    }
+
+    void establishRecoverySession()
+    return () => {
+      active = false
+    }
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -65,11 +92,18 @@ export default function ResetPassword() {
         return
       }
 
-      navigate(ROUTES.dashboard, { replace: true })
+      setSuccess(true)
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 1200)
+      })
+      await supabase.auth.signOut()
+      navigate(ROUTES.login, { replace: true })
     } finally {
       setLoading(false)
     }
   }
+
+  if (checkingSession) return <FullScreenLoader />
 
   return (
     <AuthLayout>
@@ -82,6 +116,11 @@ export default function ResetPassword() {
       </h2>
       <p className="mt-2 text-[15px] text-muted">{authContent.resetPassword.subtitle}</p>
 
+      {linkError ? (
+        <div className="mt-8">
+          <FieldError message={linkError} />
+        </div>
+      ) : (
       <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
         <div>
           <Field label="New password" error={passwordError}>
@@ -120,12 +159,14 @@ export default function ResetPassword() {
 
         <div className="pt-1">
           <PrimaryButton loading={loading}>
-            {loading ? 'Resetting…' : 'Reset password'}
+            {success ? 'Password reset' : loading ? 'Resetting…' : 'Reset password'}
           </PrimaryButton>
           {error ? <FieldError message={error} /> : null}
         </div>
       </form>
+      )}
 
+      {!linkError ? (
       <p className="mt-5 flex items-center justify-center gap-2 text-sm text-muted">
         <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-success" aria-hidden="true">
           <path
@@ -134,8 +175,9 @@ export default function ResetPassword() {
             clipRule="evenodd"
           />
         </svg>
-        You'll be redirected to the dashboard after reset.
+        You'll be redirected to log in after reset.
       </p>
+      ) : null}
     </AuthLayout>
   )
 }

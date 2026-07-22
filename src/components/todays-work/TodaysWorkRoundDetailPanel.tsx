@@ -43,6 +43,7 @@ export function TodaysWorkRoundDetailPanel({
   return (
     <SidePanel
       open
+      panelKey={round.id}
       onClose={onClose}
       title={round.round}
       widthClass="max-w-sm"

@@ -7,9 +7,10 @@ import { cn } from '@/lib/utils'
 
 interface SetupStepperProps {
   currentIndex: number
+  completedSteps?: boolean[]
 }
 
-export function SetupStepper({ currentIndex }: SetupStepperProps) {
+export function SetupStepper({ currentIndex, completedSteps }: SetupStepperProps) {
   const { stepper } = setupWizardContent
   const {
     trackRef,
@@ -44,7 +45,7 @@ export function SetupStepper({ currentIndex }: SetupStepperProps) {
         >
           {SETUP_STEPS.map((step, index) => {
             const isActive = index === currentIndex
-            const isComplete = index < currentIndex
+            const isComplete = completedSteps?.[index] ?? index < currentIndex
 
             return (
               <li

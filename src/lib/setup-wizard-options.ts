@@ -15,6 +15,7 @@ export function buildWizardRounds(
       const existing = existingById[id]
       return {
         id,
+        name: existing?.name ?? `${assignment.areaName} ${linkedRound.day}`,
         areaName: assignment.areaName,
         day: linkedRound.day,
         propertyCount: existing?.propertyCount ?? 20,

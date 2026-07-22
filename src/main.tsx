@@ -4,14 +4,20 @@ import { RouterProvider } from 'react-router-dom'
 import '@/styles/globals.css'
 import { ToastProvider } from '@/components/ui/toast'
 import { AuthProvider } from '@/lib/auth'
+import { AppBootstrapProvider } from '@/providers/AppBootstrapProvider'
+import { QueryProvider } from '@/providers/QueryProvider'
 import { router } from '@/router'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
+    <QueryProvider>
       <ToastProvider>
-        <RouterProvider router={router} />
+        <AuthProvider>
+          <AppBootstrapProvider>
+            <RouterProvider router={router} />
+          </AppBootstrapProvider>
+        </AuthProvider>
       </ToastProvider>
-    </AuthProvider>
+    </QueryProvider>
   </StrictMode>,
 )

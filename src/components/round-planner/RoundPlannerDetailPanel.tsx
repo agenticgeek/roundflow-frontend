@@ -36,6 +36,7 @@ export function RoundPlannerDetailPanel({
     <>
       <SidePanel
         open
+        panelKey={round.id}
         onClose={onClose}
         title={round.title}
         subtitle={dateLabel}

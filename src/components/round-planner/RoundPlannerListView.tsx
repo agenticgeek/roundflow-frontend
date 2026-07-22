@@ -191,7 +191,7 @@ function ListRow({
       {expanded ? (
         <tr className="border-b border-border bg-accent-surface/60">
           <td colSpan={8} className="px-4 py-5 sm:px-5">
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid animate-fade-in-up gap-6 md:grid-cols-2">
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-foreground">{details.title}</h3>
                 <dl className="space-y-2 text-sm">

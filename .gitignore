@@ -13,6 +13,9 @@ dist-ssr
 *.local
 .env
 
+# Generated OpenAPI snapshot (regenerate with npm run generate:types)
+openapi.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

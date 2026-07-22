@@ -209,7 +209,7 @@ function CustomerRecordCard({
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full items-start justify-between gap-4 text-left"
+        className="flex w-full items-start justify-between gap-4 text-left transition-transform active:scale-[0.99]"
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

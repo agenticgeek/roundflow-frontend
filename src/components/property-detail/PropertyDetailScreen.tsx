@@ -78,7 +78,7 @@ export function PropertyDetailScreen({
   const issuesCount = isUnassigned ? '—' : String(property.issuesCount)
 
   return (
-    <div className="space-y-6">
+    <div className="animate-fade-in space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -207,7 +207,7 @@ export function PropertyDetailScreen({
           </div>
         </div>
 
-        <div className="p-6">
+        <div key={activeTab} className="animate-fade-in p-6">
           {activeTab === 'overview' ? (
             <>
               <h2 className="text-base font-semibold text-foreground">{overview.propertyDetails.title}</h2>

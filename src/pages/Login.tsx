@@ -4,8 +4,14 @@ import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '@/components/AuthLayout'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
-import { getPostAuthRoute } from '@/lib/setup-storage'
 import { authContent } from '@/content/auth'
+// === DEV AUTH BACKDOOR START — comment out this import + the block in handleSubmit to disable ===
+import {
+  createDevAuthBypassSession,
+  isDevAuthBypassCredentials,
+  persistDevAuthBypass,
+} from '@/lib/dev-auth-bypass'
+// === DEV AUTH BACKDOOR END ===
 import {
   AuthTabs,
   Field,
@@ -15,21 +21,24 @@ import {
   PrimaryButton,
   Input,
 } from '@/components/ui'
-import { useToast } from '@/components/ui/toast'
 
-function isInvalidCredentialsMessage(message: string) {
-  return /invalid login credentials|invalid email or password/i.test(message)
+function signInErrorMessage(message: string) {
+  if (/email not confirmed/i.test(message)) return 'Email not confirmed'
+  if (/invalid login credentials|invalid email or password/i.test(message)) {
+    return 'Invalid login credentials'
+  }
+  return message
 }
 
 export default function Login() {
   const navigate = useNavigate()
-  const { showToast } = useToast()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [googleError, setGoogleError] = useState<string | null>(null)
+  const [googleLoading, setGoogleLoading] = useState(false)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -37,26 +46,25 @@ export default function Login() {
     setLoading(true)
 
     try {
+      // === DEV AUTH BACKDOOR START — comment out this entire block to disable ===
+      if (isDevAuthBypassCredentials(email, password)) {
+        persistDevAuthBypass()
+        window.dispatchEvent(
+          new CustomEvent('rf-dev-auth-bypass', { detail: createDevAuthBypassSession() }),
+        )
+        navigate(ROUTES.dashboard, { replace: true })
+        return
+      }
+      // === DEV AUTH BACKDOOR END ===
+
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
 
       if (signInError) {
-        const invalidCreds = isInvalidCredentialsMessage(signInError.message)
-        const message = invalidCreds
-          ? authContent.errors.invalidCredentials
-          : signInError.message
-
-        setError(message)
-        showToast(
-          invalidCreds ? authContent.errors.invalidCredentials : authContent.errors.signInFailed,
-        )
+        setError(signInErrorMessage(signInError.message))
         return
       }
-
-      navigate(getPostAuthRoute(), { replace: true })
     } catch {
-      const message = authContent.errors.signInFailed
-      setError(message)
-      showToast(message)
+      setError(authContent.errors.signInFailed)
     } finally {
       setLoading(false)
     }
@@ -64,11 +72,16 @@ export default function Login() {
 
   async function handleGoogle() {
     setGoogleError(null)
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}${ROUTES.dashboard}` },
-    })
-    if (oauthError) setGoogleError(oauthError.message)
+    setGoogleLoading(true)
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}${ROUTES.authCallback}` },
+      })
+      if (oauthError) setGoogleError(oauthError.message)
+    } finally {
+      setGoogleLoading(false)
+    }
   }
 
   return (
@@ -130,7 +143,7 @@ export default function Login() {
       <div className="mt-6 space-y-6">
         <OrDivider />
         <div>
-          <GoogleButton onClick={handleGoogle} />
+          <GoogleButton onClick={handleGoogle} disabled={googleLoading} />
           {googleError ? <FieldError message={googleError} /> : null}
         </div>
       </div>

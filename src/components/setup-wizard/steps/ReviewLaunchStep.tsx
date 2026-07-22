@@ -1,9 +1,10 @@
-import type { SetupWizardData } from '@/types/setup-wizard'
+import type { SetupStep12ChecklistItem } from '@/api/types'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { cn } from '@/lib/utils'
 
 interface ReviewLaunchStepProps {
-  wizardData: SetupWizardData
+  checklist: SetupStep12ChecklistItem[]
+  allComplete: boolean
 }
 
 function CheckCircleIcon({ className }: { className?: string }) {
@@ -15,9 +16,14 @@ function CheckCircleIcon({ className }: { className?: string }) {
   )
 }
 
-function ChecklistIcon() {
+function ChecklistIcon({ complete }: { complete: boolean }) {
   return (
-    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/10 text-success">
+    <span
+      className={cn(
+        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+        complete ? 'bg-success/10 text-success' : 'bg-surface text-muted',
+      )}
+    >
       <svg viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3" aria-hidden="true">
         <path
           fillRule="evenodd"
@@ -29,35 +35,13 @@ function ChecklistIcon() {
   )
 }
 
-function isChecklistItemComplete(id: string, data: SetupWizardData): boolean {
-  switch (id) {
-    case 'business-profile':
-      return Boolean(data['business-profile']?.businessName?.trim())
-    case 'gocardless':
-      return Boolean(data['payment-setup']?.goCardlessConnected)
-    case 'stripe':
-      return Boolean(data['payment-setup']?.stripeConnected)
-    case 'sms-templates':
-      return (data['sms-templates']?.templates.length ?? 0) > 0
-    case 'technicians':
-      return (data['technician-management']?.technicians.length ?? 0) > 0
-    case 'service-areas':
-      return (data['service-area']?.areas.length ?? 0) > 0
-    case 'round-settings':
-      return Boolean(data['round-settings'])
-    default:
-      return false
-  }
-}
-
-export function ReviewLaunchStep({ wizardData }: ReviewLaunchStepProps) {
+export function ReviewLaunchStep({ checklist, allComplete }: ReviewLaunchStepProps) {
   const { reviewLaunch } = setupWizardContent
-  const { heading, subheading, progress, checklist, ready, nextSteps } = reviewLaunch
+  const { heading, subheading, progress, ready, nextSteps } = reviewLaunch
 
-  const completedCount = checklist.filter((item) => isChecklistItemComplete(item.id, wizardData)).length
+  const completedCount = checklist.filter((item) => item.complete).length
   const totalCount = checklist.length
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
-  const allComplete = completedCount === totalCount
 
   const completedLabel = progress.completed
     .replace('{completed}', String(completedCount))
@@ -91,22 +75,19 @@ export function ReviewLaunchStep({ wizardData }: ReviewLaunchStepProps) {
 
       <div className="overflow-hidden rounded-xl border border-border bg-background">
         <ul className="divide-y divide-border">
-          {checklist.map((item) => {
-            const complete = isChecklistItemComplete(item.id, wizardData)
-            return (
-              <li key={item.id} className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
-                <ChecklistIcon />
-                <span
-                  className={cn(
-                    'text-sm',
-                    complete ? 'font-medium text-foreground' : 'text-muted',
-                  )}
-                >
-                  {item.label}
-                </span>
-              </li>
-            )
-          })}
+          {checklist.map((item) => (
+            <li key={item.label} className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
+              <ChecklistIcon complete={item.complete} />
+              <span
+                className={cn(
+                  'text-sm',
+                  item.complete ? 'font-medium text-foreground' : 'text-muted',
+                )}
+              >
+                {item.label}
+              </span>
+            </li>
+          ))}
         </ul>
       </div>
 

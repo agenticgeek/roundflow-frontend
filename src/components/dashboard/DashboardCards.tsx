@@ -1,7 +1,12 @@
 import type { DashboardAlert, DashboardAlertId, DashboardMetric } from '@/content/dashboard'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
-import { toneBgClass, toneBorderClass, toneTextClass } from '@/components/dashboard/dashboard-styles'
+import {
+  dashboardPressableClass,
+  toneBgClass,
+  toneBorderClass,
+  toneTextClass,
+} from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
 
 interface DashboardMetricGridProps {
@@ -47,6 +52,7 @@ export function DashboardAlertRow({ alerts, onOpenAlert }: DashboardAlertRowProp
           onClick={() => onOpenAlert(alert.id)}
           className={cn(
             'flex flex-col rounded-xl border bg-background px-4 py-3 text-left shadow-sm transition-all duration-200 hover:bg-surface hover:shadow-md',
+            dashboardPressableClass,
             toneBorderClass(alert.tone),
           )}
         >

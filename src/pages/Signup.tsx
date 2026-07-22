@@ -27,31 +27,61 @@ export default function Signup() {
   const [error, setError] = useState<string | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [googleError, setGoogleError] = useState<string | null>(null)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [resendMessage, setResendMessage] = useState<string | null>(null)
 
-  async function sendSignupLink(showMessage = true) {
+  async function sendSignupLink() {
     setLoading(true)
     setError(null)
     setResendMessage(null)
 
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { full_name: fullName, company_name: companyName },
-          emailRedirectTo: `${window.location.origin}${ROUTES.setupWizard}`,
+          data: { full_name: fullName.trim(), company_name: companyName.trim() },
+          emailRedirectTo: `${window.location.origin}${ROUTES.authCallback}`,
         },
       })
 
       if (signUpError) {
-        setError(signUpError.message)
+        setError(
+          /already registered|already been registered/i.test(signUpError.message)
+            ? 'User already registered'
+            : signUpError.message,
+        )
         return false
       }
 
-      if (showMessage) setResendMessage(authContent.signupMagicLink.sent)
+      // This flow requires email confirmation. Avoid entering the app if a
+      // development Supabase project has confirmations disabled.
+      if (data.session) await supabase.auth.signOut()
       return true
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function resendSignupLink() {
+    setLoading(true)
+    setError(null)
+    setResendMessage(null)
+
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}${ROUTES.authCallback}`,
+        },
+      })
+      if (resendError) {
+        setError(resendError.message)
+        return
+      }
+      setResendMessage(authContent.signupMagicLink.sent)
     } finally {
       setLoading(false)
     }
@@ -62,22 +92,31 @@ export default function Signup() {
     setError(null)
     setConfirmError(null)
 
+    if (!fullName.trim() || !companyName.trim() || !email.trim() || !password) {
+      setError('Complete all fields to create your account.')
+      return
+    }
     if (password !== confirmPassword) {
       setConfirmError('Passwords do not match')
       return
     }
 
-    const sent = await sendSignupLink(false)
+    const sent = await sendSignupLink()
     if (sent) setMagicLinkSent(true)
   }
 
   async function handleGoogle() {
     setGoogleError(null)
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}${ROUTES.dashboard}` },
-    })
-    if (oauthError) setGoogleError(oauthError.message)
+    setGoogleLoading(true)
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}${ROUTES.authCallback}` },
+      })
+      if (oauthError) setGoogleError(oauthError.message)
+    } finally {
+      setGoogleLoading(false)
+    }
   }
 
   return (
@@ -93,13 +132,16 @@ export default function Signup() {
           error={error}
           sentMessage={resendMessage}
           onResend={() => {
-            void sendSignupLink()
+            void resendSignupLink()
           }}
         />
       ) : (
         <>
       <h2 className="text-[32px] font-semibold tracking-tight text-foreground">{authContent.signup.title}</h2>
       <p className="mt-2 text-[15px] text-muted">{authContent.signup.subtitle}</p>
+      <p className="mt-2 text-sm text-muted">
+        Joining as a technician? Use the invitation link from your administrator.
+      </p>
 
       <div className="mt-8">
         <AuthTabs active="signup" />
@@ -131,6 +173,7 @@ export default function Signup() {
         <Field label="Company name">
           <Input
             type="text"
+            required
             autoComplete="organization"
             placeholder="Your business name"
             value={companyName}
@@ -192,7 +235,7 @@ export default function Signup() {
       <div className="mt-6 space-y-6">
         <OrDivider />
         <div>
-          <GoogleButton onClick={handleGoogle} />
+          <GoogleButton onClick={handleGoogle} disabled={googleLoading} />
           {googleError ? <FieldError message={googleError} /> : null}
         </div>
       </div>
