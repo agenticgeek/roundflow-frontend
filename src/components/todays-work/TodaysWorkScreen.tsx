@@ -33,6 +33,7 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
         onCloseDay={interactions.openCloseDay}
       />
 
+
       <TodaysWorkMetrics metrics={metrics} />
 
       <TodaysWorkToolbar
