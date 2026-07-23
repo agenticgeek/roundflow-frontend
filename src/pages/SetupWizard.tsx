@@ -188,19 +188,27 @@ export default function SetupWizard() {
 
   const roundOptions = useMemo(
     () =>
-      (step8.data ?? []).map((round) => ({
-        value: round.id,
-        label: round.name,
-      })),
+      (step8.data ?? [])
+        .filter((round): round is typeof round & { id: string; name: string } =>
+          Boolean(round.id && round.name),
+        )
+        .map((round) => ({
+          value: round.id,
+          label: round.name,
+        })),
     [step8.data],
   )
 
   const serviceOptions = useMemo(
     () =>
-      (step3.data ?? []).map((service) => ({
-        value: service.id,
-        label: service.name,
-      })),
+      (step3.data ?? [])
+        .filter((service): service is typeof service & { id: string; name: string } =>
+          Boolean(service.id && service.name),
+        )
+        .map((service) => ({
+          value: service.id,
+          label: service.name,
+        })),
     [step3.data],
   )
 
@@ -522,7 +530,9 @@ export default function SetupWizard() {
           <ActivateSystemStep
             initialValues={step11ToForm(
               step11.data,
-              (step8.data ?? []).map((round) => round.id),
+              (step8.data ?? [])
+                .map((round) => round.id)
+                .filter((id): id is string => Boolean(id)),
             )}
             roundOptions={roundOptions}
             alreadyGenerated={Boolean(step11.data?.activated || (step11.data?.visitsGenerated ?? 0) > 0)}

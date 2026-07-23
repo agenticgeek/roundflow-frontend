@@ -378,20 +378,22 @@ export function step10FromForm(values: AssignTechniciansData): SetupStep10Input 
 export function techniciansForAssignStep(
   technicians: Technician[] | undefined,
 ): WizardTechnician[] {
-  return (technicians ?? []).map((technician) => ({
-    id: technician.id,
-    fullName: technician.displayName ?? technician.name ?? 'Technician',
-    mobile: technician.phone ?? '',
-    email: '',
-    role: technician.role ?? '',
-    defaultArea: '',
-    appStatus:
-      technician.appStatus === 'ACTIVE'
-        ? 'active'
-        : technician.appStatus === 'INACTIVE'
-          ? 'inactive'
-          : 'pending',
-  }))
+  return (technicians ?? [])
+    .filter((technician): technician is Technician & { id: string } => Boolean(technician.id))
+    .map((technician) => ({
+      id: technician.id,
+      fullName: technician.displayName ?? technician.name ?? 'Technician',
+      mobile: technician.phone ?? '',
+      email: '',
+      role: technician.role ?? '',
+      defaultArea: '',
+      appStatus:
+        technician.appStatus === 'ACTIVE'
+          ? 'active'
+          : technician.appStatus === 'INACTIVE'
+            ? 'inactive'
+            : 'pending',
+    }))
 }
 
 export function step11ToForm(
