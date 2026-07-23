@@ -200,7 +200,7 @@ export function ModalButton({
     <button
       type="button"
       className={cn(
-        'rounded-none font-semibold transition-all duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex items-center justify-center rounded-none font-semibold transition-all duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60',
         compact ? 'px-4 py-2.5 text-sm' : 'px-5 py-2.5 text-sm',
         variant === 'secondary' &&
           'border border-border bg-card text-foreground hover:bg-surface',
