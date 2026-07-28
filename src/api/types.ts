@@ -17,6 +17,14 @@ export type DeferredStatus = components['schemas']['DeferredStub']
 export type PaymentConnectResponse = components['schemas']['ProviderConnectResponse']
 export type PaymentMethod = components['schemas']['PaymentMethod']
 export type CleaningFrequency = components['schemas']['CleaningFrequency']
+export type Property = components['schemas']['Property']
+export type PropertyCreateInput = components['schemas']['PropertyCreateInput']
+export type PropertyCreateResult = {
+  customerId?: string
+  propertyId?: string
+  servicePlanId?: string
+  assigned?: boolean
+}
 
 export type TechnicianAppStatus = NonNullable<Technician['appStatus']>
 
