@@ -5,6 +5,7 @@ import type { AppQuickActions } from '@/hooks/use-app-quick-actions'
 import { AddOneOffJobModal } from '@/components/dashboard/AddOneOffJobModal'
 import { BulkMessageModal } from '@/components/dashboard/BulkMessageModal'
 import { CreateRoundModal } from '@/components/round-planner/CreateRoundModal'
+import { AddPropertyModal } from '@/components/properties/AddPropertyModal'
 import { AppMobileHeader, AppMobileNav, AppSidebar } from '@/components/app/AppSidebar'
 import { useAppSidebar } from '@/hooks/use-app-sidebar'
 import { cn } from '@/lib/utils'
@@ -79,6 +80,11 @@ export function AppShell({
       <CreateRoundModal
         open={quickActions.addRoundModalOpen}
         onClose={quickActions.closeAddRoundModal}
+      />
+
+      <AddPropertyModal
+        open={quickActions.addPropertyModalOpen}
+        onClose={quickActions.closeAddPropertyModal}
       />
 
       <AddOneOffJobModal

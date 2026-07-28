@@ -21,11 +21,11 @@ interface AddPropertyStepProps {
   onSubmit: () => void
 }
 
-function SectionHeading({ children }: { children: string }) {
+export function SectionHeading({ children }: { children: string }) {
   return <h3 className="text-sm font-medium text-foreground">{children}</h3>
 }
 
-function LabelWithHint({
+export function LabelWithHint({
   label,
   hint,
   hintClassName,
@@ -250,12 +250,13 @@ export function AddPropertyStep({
   )
 }
 
-function PropertyDetailsPanel({
+export function PropertyDetailsPanel({
   draft,
   sections,
   fields,
   serviceAreaOptions,
   propertyTypes,
+  serviceAreaRequired = false,
   onChange,
 }: {
   draft: PropertyDraft
@@ -263,6 +264,8 @@ function PropertyDetailsPanel({
   fields: (typeof setupWizardContent)['addProperty']['fields']
   serviceAreaOptions: SelectOption[]
   propertyTypes: SelectOption[]
+  /** Some callers (e.g. the standalone Add Property modal) require this against the live API. */
+  serviceAreaRequired?: boolean
   onChange: <K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) => void
 }) {
   return (
@@ -339,7 +342,12 @@ function PropertyDetailsPanel({
               placeholder={fields.postcode.placeholder}
             />
           </Field>
-          <Field label={fields.serviceArea.label} labelWeight="medium" size="sm">
+          <Field
+            label={fields.serviceArea.label}
+            required={serviceAreaRequired}
+            labelWeight="medium"
+            size="sm"
+          >
             <Select
               inputSize="sm"
               value={draft.serviceArea}
@@ -361,7 +369,7 @@ function PropertyDetailsPanel({
   )
 }
 
-function ServicePlanPanel({
+export function ServicePlanPanel({
   draft,
   fields,
   frequencies,
@@ -431,7 +439,7 @@ function ServicePlanPanel({
   )
 }
 
-function SchedulingPanel({
+export function SchedulingPanel({
   draft,
   fields,
   preferredDays,
@@ -482,7 +490,7 @@ function SchedulingPanel({
   )
 }
 
-function RiskNotesPanel({
+export function RiskNotesPanel({
   draft,
   fields,
   onChange,

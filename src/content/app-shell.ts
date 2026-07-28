@@ -8,7 +8,7 @@ export interface AppNavItem {
   route: RoutePath
 }
 
-export type AppQuickActionId = 'add-round' | 'bulk-message' | 'add-one-off-job'
+export type AppQuickActionId = 'add-round' | 'add-property' | 'bulk-message' | 'add-one-off-job'
 
 export interface AppQuickAction {
   id: AppQuickActionId
@@ -33,6 +33,7 @@ export const appShellContent = {
     quickActionsTitle: 'Quick Actions',
     quickActions: [
       { id: 'add-round', label: 'Add Round', icon: 'plus-circle' },
+      { id: 'add-property', label: 'Add Property', icon: 'home' },
       { id: 'bulk-message', label: 'Bulk Message', icon: 'message' },
       { id: 'add-one-off-job', label: 'Add One-off Job', icon: 'plus' },
     ] satisfies AppQuickAction[],

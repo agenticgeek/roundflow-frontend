@@ -4,6 +4,7 @@ import type { AppQuickActionId } from '@/content/app-shell'
 /** Shared quick-action modal state — available from any app module. */
 export function useAppQuickActions() {
   const [addRoundModalOpen, setAddRoundModalOpen] = useState(false)
+  const [addPropertyModalOpen, setAddPropertyModalOpen] = useState(false)
   const [bulkMessageModalOpen, setBulkMessageModalOpen] = useState(false)
   const [addOneOffJobModalOpen, setAddOneOffJobModalOpen] = useState(false)
 
@@ -13,6 +14,14 @@ export function useAppQuickActions() {
 
   const closeAddRoundModal = useCallback(() => {
     setAddRoundModalOpen(false)
+  }, [])
+
+  const openAddPropertyModal = useCallback(() => {
+    setAddPropertyModalOpen(true)
+  }, [])
+
+  const closeAddPropertyModal = useCallback(() => {
+    setAddPropertyModalOpen(false)
   }, [])
 
   const openBulkMessageModal = useCallback(() => {
@@ -36,6 +45,9 @@ export function useAppQuickActions() {
       if (actionId === 'add-round') {
         openAddRoundModal()
       }
+      if (actionId === 'add-property') {
+        openAddPropertyModal()
+      }
       if (actionId === 'bulk-message') {
         openBulkMessageModal()
       }
@@ -43,13 +55,16 @@ export function useAppQuickActions() {
         openAddOneOffJobModal()
       }
     },
-    [openAddOneOffJobModal, openAddRoundModal, openBulkMessageModal],
+    [openAddOneOffJobModal, openAddPropertyModal, openAddRoundModal, openBulkMessageModal],
   )
 
   return {
     addRoundModalOpen,
     openAddRoundModal,
     closeAddRoundModal,
+    addPropertyModalOpen,
+    openAddPropertyModal,
+    closeAddPropertyModal,
     bulkMessageModalOpen,
     openBulkMessageModal,
     closeBulkMessageModal,
