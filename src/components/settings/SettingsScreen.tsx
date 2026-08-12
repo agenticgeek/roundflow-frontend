@@ -850,7 +850,12 @@ function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
                   className="rounded-lg bg-card"
                 />
               </Field>
-              <Field label={addForm.fields.role.label} labelWeight="medium" size="sm">
+              <Field
+                label={addForm.fields.role.label}
+                labelWeight="medium"
+                size="sm"
+                className="sm:col-span-2"
+              >
                 <Select
                   inputSize="sm"
                   value={form.role}

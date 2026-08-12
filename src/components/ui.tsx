@@ -32,6 +32,7 @@ export function Field({
   children,
   labelWeight = 'semibold',
   size = 'default',
+  className,
 }: {
   label: ReactNode
   required?: boolean
@@ -40,9 +41,10 @@ export function Field({
   /** `medium` for setup/forms; `semibold` for auth screens (default). */
   labelWeight?: 'medium' | 'semibold'
   size?: InputSize
+  className?: string
 }) {
   return (
-    <div className="block">
+    <div className={cn('block', className)}>
       <span
         className={cn(
           'block text-foreground',

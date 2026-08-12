@@ -10,6 +10,9 @@ import {
   modalWarningPanelClass,
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { usePauseProperty } from '@/features/properties/hooks/useProperties'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface PauseServiceModalProps {
@@ -28,6 +31,8 @@ function applyMessageTemplate(template: string, property: PropertyDetailRecord) 
 export function PauseServiceModal({ open, property, onClose }: PauseServiceModalProps) {
   const { pauseServiceModal, pauseServiceToast } = propertyDetailContent
   const { showToast } = useToast()
+  const { canMutate } = useAppBootstrap()
+  const pauseProperty = usePauseProperty()
   const [reason, setReason] = useState<string>(pauseServiceModal.reasons[0]?.value ?? '')
   const [duration, setDuration] = useState<PauseDuration>('range')
   const [startDate, setStartDate] = useState<string>(pauseServiceModal.defaultStartDate)
@@ -49,10 +54,33 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
 
   const subtitle = pauseServiceModal.subtitle.replace('{customer}', property.customerName)
   const smsMeta = pauseServiceModal.smsMeta.replace('{count}', String(smsMessage.length))
+  const reasonLabel =
+    pauseServiceModal.reasons.find((item) => item.value === reason)?.label ?? reason
 
-  function handlePause() {
-    onClose()
-    showToast(pauseServiceToast.title, { description: pauseServiceToast.description })
+  async function handlePause() {
+    if (!canMutate || !property || pauseProperty.isPending) return
+    if (duration === 'range' && resumeDate && resumeDate <= startDate) {
+      showToast('Resume date must be after the start date')
+      return
+    }
+
+    try {
+      await pauseProperty.mutateAsync({
+        id: property.id,
+        input: {
+          reason: reasonLabel,
+          pauseStartDate: startDate,
+          pauseEndDate: duration === 'indefinite' ? null : resumeDate,
+        },
+      })
+      onClose()
+      showToast(pauseServiceToast.title, { description: pauseServiceToast.description })
+      void notifySms
+      void smsMessage
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) return
+      showToast(error instanceof Error ? error.message : 'Could not pause service')
+    }
   }
 
   return (
@@ -72,7 +100,13 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
           <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
             {pauseServiceModal.actions.cancel}
           </ModalButton>
-          <ModalButton compact variant="primary" className="w-full gap-2" onClick={handlePause}>
+          <ModalButton
+            compact
+            variant="primary"
+            className="w-full gap-2"
+            disabled={!canMutate || pauseProperty.isPending}
+            onClick={() => void handlePause()}
+          >
             <DashboardIcon name="pause" className="h-4 w-4" />
             {pauseServiceModal.actions.pause}
           </ModalButton>

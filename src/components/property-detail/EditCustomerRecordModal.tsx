@@ -5,11 +5,17 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Field, Input, Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton, modalInputClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import type { CleaningFrequency, PaymentMethod, PropertyType } from '@/api/types'
+import { useUpdateCustomer } from '@/features/customers/hooks/useCustomers'
+import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface EditCustomerRecordModalProps {
   open: boolean
   property: PropertyDetailRecord | null
+  customerId: string
   onClose: () => void
 }
 
@@ -120,15 +126,47 @@ function IconInput({
   )
 }
 
+function toApiFrequency(value: string): CleaningFrequency {
+  if (value === 'every-8-weeks') return 'EIGHT_WEEKLY'
+  if (value === 'monthly') return 'MONTHLY'
+  if (value === 'fortnightly') return 'FORTNIGHTLY'
+  return 'FOUR_WEEKLY'
+}
+
+function toApiPaymentMethod(value: string): PaymentMethod {
+  if (value === 'cash') return 'CASH'
+  if (value === 'bank-transfer') return 'BACS'
+  return 'GOCARDLESS'
+}
+
+function toApiPropertyType(value: string): PropertyType {
+  return value === 'commercial' ? 'COMMERCIAL' : 'HOUSE'
+}
+
+function toApiCleanMethod(value: string) {
+  return value === 'traditional' ? 'Traditional' : 'Water Fed Pole'
+}
+
 /** Edit customer/property record — opened from property detail header. */
-export function EditCustomerRecordModal({ open, property, onClose }: EditCustomerRecordModalProps) {
+export function EditCustomerRecordModal({
+  open,
+  property,
+  customerId,
+  onClose,
+}: EditCustomerRecordModalProps) {
   const { editCustomerModal } = propertyDetailContent
   const { showToast } = useToast()
+  const { canMutate } = useAppBootstrap()
+  const updateCustomer = useUpdateCustomer(customerId)
+  const updateProperty = useUpdateProperty()
   const [form, setForm] = useState<EditCustomerForm | null>(null)
+  const [initialFrequency, setInitialFrequency] = useState('')
 
   useEffect(() => {
     if (!open || !property) return
-    setForm(buildForm(property))
+    const next = buildForm(property)
+    setForm(next)
+    setInitialFrequency(next.frequency)
   }, [open, property])
 
   const subtitle = useMemo(() => {
@@ -139,15 +177,50 @@ export function EditCustomerRecordModal({ open, property, onClose }: EditCustome
       .replace('{street}', street)
   }, [editCustomerModal.subtitle, property])
 
+  const saving = updateCustomer.isPending || updateProperty.isPending
+
   if (!property || !form) return null
 
   function updateField<K extends keyof EditCustomerForm>(key: K, value: EditCustomerForm[K]) {
     setForm((current) => (current ? { ...current, [key]: value } : current))
   }
 
-  function handleSave() {
-    onClose()
-    showToast(editCustomerModal.successToast)
+  async function handleSave() {
+    if (!canMutate || !form || !property || saving) return
+    const price = Number(form.price)
+    if (!Number.isFinite(price) || price <= 0) {
+      showToast('Enter a valid price')
+      return
+    }
+
+    try {
+      await updateCustomer.mutateAsync({
+        name: form.fullName.trim(),
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+        addressLine: form.streetAddress.trim(),
+        postcode: form.postcode.trim(),
+        propertyType: toApiPropertyType(form.propertyType),
+        accessNotes: form.accessNotes.trim() || null,
+        riskNotes: form.riskNotes.trim() || null,
+        price,
+        cleanMethod: toApiCleanMethod(form.cleanMethod),
+        paymentMethod: toApiPaymentMethod(form.paymentMethod),
+      })
+
+      if (form.frequency !== initialFrequency) {
+        await updateProperty.mutateAsync({
+          id: property.id,
+          input: { cleaningFrequency: toApiFrequency(form.frequency) },
+        })
+      }
+
+      onClose()
+      showToast(editCustomerModal.successToast)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) return
+      showToast(error instanceof Error ? error.message : 'Could not save customer')
+    }
   }
 
   return (
@@ -159,7 +232,7 @@ export function EditCustomerRecordModal({ open, property, onClose }: EditCustome
       showCloseButton
       stacked
       size="compact"
-      maxWidthClass="max-w-2xl"
+      maxWidthClass="max-w-3xl"
       headerClassName="pl-16"
       bodyClassName="space-y-6"
       footer={
@@ -167,7 +240,13 @@ export function EditCustomerRecordModal({ open, property, onClose }: EditCustome
           <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
             {editCustomerModal.actions.cancel}
           </ModalButton>
-          <ModalButton compact variant="primary" className="w-full" onClick={handleSave}>
+          <ModalButton
+            compact
+            variant="primary"
+            className="w-full"
+            disabled={!canMutate || saving}
+            onClick={() => void handleSave()}
+          >
             {editCustomerModal.actions.save}
           </ModalButton>
         </div>

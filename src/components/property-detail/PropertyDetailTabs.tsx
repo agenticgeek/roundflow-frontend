@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { GenerateInvoiceModal } from '@/components/property-detail/GenerateInvoiceModal'
 import type {
   PropertyDetailRecord,
@@ -21,6 +21,9 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Textarea } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
+import { categoryToNoteType } from '@/features/customers/lib/mappers'
+import { useAddPropertyNote } from '@/features/properties/hooks/useProperties'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
 
 const visitStatusClass: Record<VisitStatus, string> = {
@@ -35,12 +38,13 @@ const visitPaymentClass: Record<VisitPaymentStatus, string> = {
 
 interface VisitHistoryTabProps {
   property: PropertyDetailRecord
+  visits?: PropertyVisitRecord[]
 }
 
 /** Visit history table — from property detail tabs. */
-export function VisitHistoryTab({ property }: VisitHistoryTabProps) {
+export function VisitHistoryTab({ property, visits: visitsProp }: VisitHistoryTabProps) {
   const { visitHistory } = propertyDetailContent
-  const visits = getPropertyVisitHistory(property)
+  const visits = visitsProp ?? getPropertyVisitHistory(property)
   const [invoiceVisit, setInvoiceVisit] = useState<PropertyVisitRecord | null>(null)
 
   return (
@@ -152,21 +156,29 @@ const paymentDotClass: Record<PaymentRecordStatus, string> = {
 
 interface PaymentsTabProps {
   property: PropertyDetailRecord
+  /** `undefined` = use mock fallback; empty array = loaded with no rows; omit financials when parent passes nothing for TECHNICIAN via sentinel. */
+  payments?: PropertyPaymentRecord[] | null
 }
 
 /** Payment history table — visits, invoices, and actions. */
-export function PaymentsTab({ property }: PaymentsTabProps) {
+export function PaymentsTab({ property, payments: paymentsProp }: PaymentsTabProps) {
   const { paymentHistory } = propertyDetailContent
   const { showToast } = useToast()
-  const payments = getPropertyPaymentHistory(property)
+  const payments =
+    paymentsProp === null
+      ? []
+      : (paymentsProp ?? getPropertyPaymentHistory(property))
   const [invoiceVisit, setInvoiceVisit] = useState<PropertyVisitRecord | null>(null)
   const visitsTotal = paymentHistory.visitsTotal.replace('{count}', String(payments.length))
+  const hiddenForRole = paymentsProp === null
 
   return (
     <>
       <h2 className="text-base font-semibold text-foreground">{paymentHistory.title}</h2>
 
-      {payments.length === 0 ? (
+      {hiddenForRole ? (
+        <p className="mt-5 text-sm text-muted">Payment history is not available for your role.</p>
+      ) : payments.length === 0 ? (
         <p className="mt-5 text-sm text-muted">{paymentHistory.emptyLabel}</p>
       ) : (
         <div className="mt-5 overflow-hidden rounded-lg border border-border">
@@ -288,6 +300,8 @@ function PaymentStatusBadge({ label, status }: { label: string; status: PaymentR
 
 interface NotesRiskTabProps {
   property: PropertyDetailRecord
+  notes?: PropertyNoteRecord[]
+  customerId?: string
 }
 
 const noteCategoryPillClass: Record<PropertyNoteCategory, { base: string; selected: string }> = {
@@ -318,14 +332,22 @@ function formatNoteDate() {
 }
 
 /** Notes & risk information — add notes and view history. */
-export function NotesRiskTab({ property }: NotesRiskTabProps) {
+export function NotesRiskTab({ property, notes: notesProp, customerId }: NotesRiskTabProps) {
   const { notesRisk } = propertyDetailContent
   const { showToast } = useToast()
-  const [notes, setNotes] = useState<PropertyNoteRecord[]>(() => getPropertyNotes(property))
+  const { canMutate } = useAppBootstrap()
+  const addNote = useAddPropertyNote(property.id)
+  const [notes, setNotes] = useState<PropertyNoteRecord[]>(
+    () => notesProp ?? getPropertyNotes(property),
+  )
   const [formOpen, setFormOpen] = useState(false)
   const [category, setCategory] = useState<PropertyNoteCategory>('internal')
   const [draft, setDraft] = useState('')
   const canSave = draft.trim().length > 0
+
+  useEffect(() => {
+    if (notesProp) setNotes(notesProp)
+  }, [notesProp])
 
   const attribution = notesRisk.attribution
     .replace('{author}', notesRisk.defaultAuthor)
@@ -337,21 +359,20 @@ export function NotesRiskTab({ property }: NotesRiskTabProps) {
     setCategory('internal')
   }
 
-  function handleSave() {
-    if (!canSave) return
+  async function handleSave() {
+    if (!canSave || !canMutate || addNote.isPending) return
 
-    setNotes((current) => [
-      {
-        id: `${property.id}-note-${Date.now()}`,
-        category,
+    try {
+      await addNote.mutateAsync({
+        type: categoryToNoteType(category),
         body: draft.trim(),
-        author: notesRisk.defaultAuthor,
-        addedOn: formatNoteDate(),
-      },
-      ...current,
-    ])
-    closeForm()
-    showToast(notesRisk.saveToast)
+      })
+      closeForm()
+      showToast(notesRisk.saveToast)
+      void customerId
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save note')
+    }
   }
 
   return (
@@ -421,11 +442,11 @@ export function NotesRiskTab({ property }: NotesRiskTabProps) {
               </button>
               <button
                 type="button"
-                onClick={handleSave}
-                disabled={!canSave}
+                onClick={() => void handleSave()}
+                disabled={!canSave || !canMutate || addNote.isPending}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
-                  canSave
+                  canSave && canMutate && !addNote.isPending
                     ? 'bg-primary text-primary-foreground hover:opacity-90'
                     : 'cursor-not-allowed bg-muted/40 text-primary-foreground',
                 )}

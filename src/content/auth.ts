@@ -15,6 +15,7 @@ export const authContent = {
   errors: {
     invalidCredentials: 'Wrong email or password',
     signInFailed: 'Unable to sign in. Please try again.',
+    alreadyRegistered: 'This email is already registered. Log in instead.',
   },
   signup: {
     title: 'Get started free',

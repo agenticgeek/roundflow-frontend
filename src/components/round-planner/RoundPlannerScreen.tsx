@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { roundPlannerContent } from '@/content/round-planner'
 import type { RoundPlannerInteractions } from '@/hooks/use-round-planner-interactions'
 import { RoundPlannerCalendar } from '@/components/round-planner/RoundPlannerCalendar'
@@ -8,6 +9,7 @@ import { RoundPlannerMapView } from '@/components/round-planner/RoundPlannerMapV
 import { RoundPlannerMetrics } from '@/components/round-planner/RoundPlannerMetrics'
 import { RemovePropertyFromRoundModal } from '@/components/round-planner/RemovePropertyFromRoundModal'
 import { RoundPlannerToolbar } from '@/components/round-planner/RoundPlannerToolbar'
+import { useRounds } from '@/features/rounds/hooks/useRounds'
 
 interface RoundPlannerScreenProps {
   interactions: RoundPlannerInteractions
@@ -32,12 +34,21 @@ export function RoundPlannerScreen({
     actions,
     allWeeksOption,
     weeks,
-    areas,
+    areas: mockAreas,
     technicians,
     statuses,
     metrics,
     calendar,
   } = roundPlannerContent
+  const roundsQuery = useRounds('ACTIVE')
+  const areas = useMemo(() => {
+    const live = (roundsQuery.data ?? []).map((round) => ({
+      value: round.id,
+      label: round.name,
+    }))
+    if (live.length === 0) return mockAreas
+    return [{ value: 'all', label: 'All rounds' }, ...live]
+  }, [mockAreas, roundsQuery.data])
   const mapRound =
     interactions.filteredDays.flatMap((day) => day.rounds)[0] ??
     roundPlannerContent.days.flatMap((day) => day.rounds)[0] ??

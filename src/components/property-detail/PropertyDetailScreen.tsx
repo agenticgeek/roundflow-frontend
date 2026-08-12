@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { CustomerPropertyRecord } from '@/content/customers'
-import type { PropertyDetailRecord, PropertyDetailTabId, PropertyPlanStatus } from '@/content/property-detail'
+import type { PropertyDetailRecord, PropertyDetailTabId } from '@/content/property-detail'
 import { propertyDetailContent } from '@/content/property-detail'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
 import { EditCustomerRecordModal } from '@/components/property-detail/EditCustomerRecordModal'
@@ -14,11 +14,22 @@ import {
 } from '@/components/property-detail/PropertyDetailTabs'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
+import { useResumeProperty } from '@/features/properties/hooks/useProperties'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
+
+export type PropertyDetailTabData = {
+  visits: import('@/content/property-detail').PropertyVisitRecord[]
+  payments?: import('@/content/property-detail').PropertyPaymentRecord[] | null
+  notes: import('@/content/property-detail').PropertyNoteRecord[]
+}
 
 interface PropertyDetailScreenProps {
   property: PropertyDetailRecord
   customerRecord?: CustomerPropertyRecord | null
+  customerId: string
+  tabData?: PropertyDetailTabData | null
   onBack: () => void
 }
 
@@ -51,6 +62,8 @@ const propertyDetailOutlineActionClass = cn(
 export function PropertyDetailScreen({
   property,
   customerRecord = null,
+  customerId,
+  tabData = null,
   onBack,
 }: PropertyDetailScreenProps) {
   const [activeTab, setActiveTab] = useState<PropertyDetailTabId>('overview')
@@ -60,6 +73,9 @@ export function PropertyDetailScreen({
   const [messageOpen, setMessageOpen] = useState(false)
   const { actions, assignment, statusLabels, paymentStatusLabels, summary, summaryCards, tabs, overview } =
     propertyDetailContent
+  const resumeProperty = useResumeProperty()
+  const { canMutate } = useAppBootstrap()
+  const { showToast } = useToast()
 
   const isUnassigned =
     Boolean(property.needsAssignment) ||
@@ -67,6 +83,7 @@ export function PropertyDetailScreen({
     property.planStatus === 'pending'
 
   const isActive = property.serviceStatus === 'active' && !isUnassigned
+  const isPaused = property.serviceStatus === 'paused'
   const roundLabel =
     property.assignedRound !== '—' && property.assignedRound !== 'Not Assigned'
       ? property.assignedRound
@@ -76,6 +93,16 @@ export function PropertyDetailScreen({
   const outstandingBalance = isUnassigned ? '—' : property.outstandingBalance
   const paymentMethod = isUnassigned ? '—' : property.paymentMethod
   const issuesCount = isUnassigned ? '—' : String(property.issuesCount)
+
+  async function handleResume() {
+    if (!canMutate || resumeProperty.isPending) return
+    try {
+      await resumeProperty.mutateAsync(property.id)
+      showToast('Service resumed')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not resume service')
+    }
+  }
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -116,6 +143,16 @@ export function PropertyDetailScreen({
             <button type="button" onClick={() => setPauseOpen(true)} className={propertyDetailOutlineActionClass}>
               <DashboardIcon name="pause" className="h-4 w-4" />
               {actions.pauseService}
+            </button>
+          ) : null}
+          {isPaused ? (
+            <button
+              type="button"
+              onClick={() => void handleResume()}
+              disabled={!canMutate || resumeProperty.isPending}
+              className={propertyDetailActionClass}
+            >
+              Resume Service
             </button>
           ) : null}
           <ActionButton icon="message" label={actions.sendMessage} onClick={() => setMessageOpen(true)} />
@@ -223,11 +260,15 @@ export function PropertyDetailScreen({
               onAssign={() => setAssignOpen(true)}
             />
           ) : activeTab === 'visit-history' ? (
-            <VisitHistoryTab property={property} />
+            <VisitHistoryTab property={property} visits={tabData?.visits} />
           ) : activeTab === 'payments' ? (
-            <PaymentsTab property={property} />
+            <PaymentsTab property={property} payments={tabData?.payments} />
           ) : activeTab === 'notes-risk' ? (
-            <NotesRiskTab property={property} />
+            <NotesRiskTab
+              property={property}
+              notes={tabData?.notes}
+              customerId={customerId}
+            />
           ) : activeTab === 'photos' ? (
             <TabPlaceholder label={activeTab} />
           ) : null}
@@ -235,7 +276,12 @@ export function PropertyDetailScreen({
       </section>
 
       <AssignToRoundModal open={assignOpen} record={customerRecord} onClose={() => setAssignOpen(false)} />
-      <EditCustomerRecordModal open={editOpen} property={property} onClose={() => setEditOpen(false)} />
+      <EditCustomerRecordModal
+        open={editOpen}
+        property={property}
+        customerId={customerId}
+        onClose={() => setEditOpen(false)}
+      />
       <PauseServiceModal open={pauseOpen} property={property} onClose={() => setPauseOpen(false)} />
       <SendPropertyMessageModal open={messageOpen} property={property} onClose={() => setMessageOpen(false)} />
     </div>
