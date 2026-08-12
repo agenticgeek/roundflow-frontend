@@ -18,6 +18,7 @@ import type { PropertyDraft } from '@/types/setup-wizard'
 import { useServiceAreas, useServices, useTechnicians } from '@/features/settings/hooks/useSettings'
 import { settingsServiceAreasToRows, settingsTechniciansToRows } from '@/features/settings/lib/mappers'
 import { useCreateProperty } from '@/features/properties/hooks/useProperties'
+import { useRound, useRounds } from '@/features/rounds/hooks/useRounds'
 import type { PaymentMethod, PropertyCreateInput } from '@/api/types'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useToast } from '@/components/ui/toast'
@@ -68,9 +69,9 @@ const DUMMY_SERVICES = [
 ]
 
 const DUMMY_ROUNDS = [
-  { value: 'Alnwick Monday', label: 'Alnwick Monday (sample)' },
-  { value: 'Alnwick Wednesday', label: 'Alnwick Wednesday (sample)' },
-  { value: 'Newcastle Tuesday', label: 'Newcastle Tuesday (sample)' },
+  { value: 'dummy-round-alnwick-monday', label: 'Alnwick Monday (sample)' },
+  { value: 'dummy-round-alnwick-wednesday', label: 'Alnwick Wednesday (sample)' },
+  { value: 'dummy-round-newcastle-tuesday', label: 'Newcastle Tuesday (sample)' },
 ]
 
 function withDummyFallback<T>(rows: T[], dummy: T[]): T[] {
@@ -221,6 +222,7 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
   const areasQuery = useServiceAreas(open)
   const techniciansQuery = useTechnicians(open)
   const servicesQuery = useServices()
+  const roundsQuery = useRounds('ACTIVE', open)
   const createProperty = useCreateProperty()
 
   const { addProperty: addPropertyContent } = setupWizardContent
@@ -266,18 +268,36 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       ),
     [servicesQuery.data],
   )
-  // BACKEND-GAP: no GET /rounds listing endpoint exists yet, so round options are
-  // derived from each service area's linked-round names rather than real round IDs.
-  const roundOptions = useMemo(() => {
-    const names = new Set<string>()
-    for (const area of serviceAreaRows) {
-      for (const name of area.linkedRounds.names) names.add(name)
+  const roundOptions = useMemo(
+    () =>
+      withDummyFallback(
+        (roundsQuery.data ?? []).map((round) => ({ value: round.id, label: round.name })),
+        DUMMY_ROUNDS,
+      ),
+    [roundsQuery.data],
+  )
+
+  // "Pre-filled from round": selecting a round fills its default day, and its
+  // first assigned technician once the round detail loads.
+  const selectedRoundId = realId(draft.round) ?? ''
+  const roundDetailQuery = useRound(selectedRoundId, open && draft.assignMode === 'now')
+
+  useEffect(() => {
+    if (!selectedRoundId) return
+    const round = (roundsQuery.data ?? []).find((item) => item.id === selectedRoundId)
+    if (round?.defaultDay) {
+      setDraft((prev) => ({ ...prev, roundDay: round.defaultDay ?? prev.roundDay }))
     }
-    return withDummyFallback(
-      Array.from(names).map((name) => ({ value: name, label: name })),
-      DUMMY_ROUNDS,
-    )
-  }, [serviceAreaRows])
+  }, [selectedRoundId, roundsQuery.data])
+
+  useEffect(() => {
+    const detail = roundDetailQuery.data
+    if (!detail || detail.id !== selectedRoundId) return
+    const technician = detail.technicians.find((item) => item.active) ?? detail.technicians[0]
+    if (technician) {
+      setDraft((prev) => ({ ...prev, technicianId: technician.id }))
+    }
+  }, [roundDetailQuery.data, selectedRoundId])
 
   const currentMeta = subSteps[subStep]
 
@@ -364,13 +384,19 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       accessNotes: draft.accessNotes.trim() || undefined,
       riskNotes: draft.riskNotes.trim() || undefined,
       nextDueDate: draft.nextVisitDate || undefined,
-      // Round assignment isn't submitted yet — see BACKEND-GAP above on roundOptions.
-      roundId: null,
+      // null = "Save & Assign Later"; the plan inherits the round's frequency server-side.
+      roundId: draft.assignMode === 'now' ? (realId(draft.round) ?? null) : null,
     }
+
+    const sampleRoundPicked = draft.assignMode === 'now' && isDummyId(draft.round)
 
     try {
       await createProperty.mutateAsync(input)
-      showToast('Property saved', { description: `${propertyLabel} has been added.` })
+      showToast('Property saved', {
+        description: sampleRoundPicked
+          ? `${propertyLabel} has been added unassigned — the selected round was sample data.`
+          : `${propertyLabel} has been added.`,
+      })
       onClose()
     } catch (err) {
       setError(errorMessage(err))

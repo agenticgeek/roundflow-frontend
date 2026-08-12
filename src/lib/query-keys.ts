@@ -9,6 +9,25 @@ export const queryKeys = {
     status: ['setup', 'status'] as const,
     step: (n: number) => ['setup', 'step', n] as const,
   },
+  customers: {
+    all: ['customers'] as const,
+    list: (filters: Record<string, string | number | undefined>) =>
+      ['customers', 'list', filters] as const,
+    detail: (id: string) => ['customers', 'detail', id] as const,
+  },
+  properties: {
+    all: ['properties'] as const,
+    notes: (id: string) => ['properties', 'notes', id] as const,
+  },
+  rounds: {
+    all: ['rounds'] as const,
+    list: (status?: string) => ['rounds', 'list', status ?? 'ALL'] as const,
+    detail: (id: string) => ['rounds', 'detail', id] as const,
+    occurrences: (id: string, from?: string, to?: string) =>
+      ['rounds', 'occurrences', id, from ?? '', to ?? ''] as const,
+    occurrenceDay: (id: string, date: string) =>
+      ['rounds', 'occurrence-day', id, date] as const,
+  },
   settings: {
     all: ['settings'] as const,
     businessProfile: ['settings', 'business-profile'] as const,
@@ -27,4 +46,12 @@ export function invalidateBusinessSettings(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.settings.roundSettings }),
     queryClient.invalidateQueries({ queryKey: queryKeys.settings.payment }),
   ])
+}
+
+export function invalidateCustomers(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: queryKeys.customers.all })
+}
+
+export function invalidateRounds(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all })
 }

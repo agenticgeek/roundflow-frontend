@@ -34,7 +34,7 @@ export function TechnicianForm({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!name.trim() || !phone.trim() || !role || !area) {
+    if (!name.trim() || !phone.trim() || !role) {
       setError('Complete the required technician details.')
       return
     }
@@ -97,7 +97,7 @@ export function TechnicianForm({
                 className="border-primary/20 bg-accent-surface"
               />
             </Field>
-            <Field label={content.area} required labelWeight="medium" size="sm">
+            <Field label={content.area} labelWeight="medium" size="sm">
               <Select
                 inputSize="sm"
                 value={area}

@@ -25,6 +25,62 @@ export type PropertyCreateResult = {
   servicePlanId?: string
   assigned?: boolean
 }
+export type PropertyUpdateInput = components['schemas']['PropertyUpdateInput'] & {
+  // CONTRACT-DIFF: handoff §3.3 — mutually exclusive with roundId.
+  cleaningFrequency?: CleaningFrequency | null
+}
+export type CustomerUpdateInput = components['schemas']['CustomerUpdateInput']
+export type CustomerDetail = components['schemas']['CustomerDetail']
+export type CustomerListRowPaymentStatus =
+  | 'paid'
+  | 'hold'
+  | 'pending'
+  | 'overdue'
+  | 'failed'
+  | 'none'
+export type CustomerListRow = Omit<
+  components['schemas']['CustomerListRow'],
+  'paymentStatus'
+> & {
+  // CONTRACT-DIFF: handoff allows "none" when there is no payment history.
+  paymentStatus?: CustomerListRowPaymentStatus
+}
+export type CustomerListResult = Omit<
+  components['schemas']['CustomerListResult'],
+  'customers'
+> & {
+  customers?: CustomerListRow[]
+  // CONTRACT-DIFF: handoff §2.1 pagination — may lag OpenAPI.
+  pagination?: {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+  }
+}
+export type PauseServiceInput = components['schemas']['PauseServiceInput']
+export type NoteCreateInput = components['schemas']['NoteCreateInput']
+export type PropertyNote = components['schemas']['PropertyNote']
+export type ServicePlanView = components['schemas']['ServicePlanView']
+export type NoteType = components['schemas']['NoteType']
+export type DayOfWeek = components['schemas']['DayOfWeek']
+export type LifecycleStatus = components['schemas']['LifecycleStatus']
+
+// CONTRACT-DIFF: POST /customers create body not in generated OpenAPI.
+export type CustomerCreateInput = {
+  name: string
+  phone?: string | null
+  email?: string | null
+  paymentMethod?: PaymentMethod | null
+}
+
+export type CustomerListParams = {
+  search?: string
+  roundId?: string
+  status?: LifecycleStatus | 'HOLD'
+  page?: number
+  pageSize?: number
+}
 
 export type TechnicianAppStatus = NonNullable<Technician['appStatus']>
 

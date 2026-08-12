@@ -8,6 +8,9 @@ import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { dashboardCtaClass, dashboardHoverCardClass } from '@/components/dashboard/dashboard-styles'
 import { Input, MultiSelect, Select } from '@/components/ui'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
+import { useCustomers } from '@/features/customers/hooks/useCustomers'
+import { customerListRowToRecord, formatMoney } from '@/features/customers/lib/mappers'
+import { useRounds } from '@/features/rounds/hooks/useRounds'
 import { cn } from '@/lib/utils'
 
 const statusClass: Record<CustomerStatus, string> = {
@@ -27,10 +30,6 @@ const metricClass: Record<(typeof customersContent.metrics)[number]['tone'], str
   success: 'border-success/20 bg-success/10 text-success',
   danger: 'border-danger/20 bg-danger/10 text-danger',
   warning: 'border-warning-border bg-warning-surface text-warning-foreground',
-}
-
-function roundValue(round: string) {
-  return round.toLowerCase().replace(/\s+/g, '-')
 }
 
 const defaultStatusFilters = customersContent.filters.status.options.map((option) => option.value)
@@ -64,37 +63,74 @@ export function CustomersScreen() {
   const [statusIds, setStatusIds] = useState<string[]>(() => [...defaultStatusFilters])
   const [assignRecordId, setAssignRecordId] = useState<string | null>(null)
 
+  const roundsQuery = useRounds('ACTIVE')
+  const listParams = useMemo(
+    () => ({
+      search: search.trim() || undefined,
+      roundId: roundId !== 'all' && roundId !== 'not-assigned' ? roundId : undefined,
+      pageSize: 100,
+    }),
+    [roundId, search],
+  )
+  const customersQuery = useCustomers(listParams)
+
+  const records = useMemo(
+    () => (customersQuery.data?.customers ?? []).map(customerListRowToRecord),
+    [customersQuery.data?.customers],
+  )
+
   const assignRecord = useMemo(
-    () => customersContent.records.find((record) => record.id === assignRecordId) ?? null,
-    [assignRecordId],
+    () => records.find((record) => record.id === assignRecordId) ?? null,
+    [assignRecordId, records],
   )
 
   const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase()
-
-    return customersContent.records.filter((record) => {
-      if (roundId !== 'all') {
-        const matchesNotAssigned = roundId === 'not-assigned' && record.needsAssignment
-        if (!matchesNotAssigned && roundValue(record.round) !== roundId) return false
-      }
-
-      if (!matchesStatusFilter(record, statusIds)) return false
-
-      if (!query) return true
-
-      const haystack = [
-        record.customer,
-        record.address,
-        record.round,
-        record.technician,
-        record.paymentStatus,
-      ]
-        .join(' ')
-        .toLowerCase()
-
-      return haystack.includes(query)
+    return records.filter((record) => {
+      if (roundId === 'not-assigned' && !record.needsAssignment) return false
+      return matchesStatusFilter(record, statusIds)
     })
-  }, [roundId, search, statusIds])
+  }, [records, roundId, statusIds])
+
+  const summary = customersQuery.data?.summary
+  const metrics = [
+    {
+      id: 'total',
+      label: 'Total Customers',
+      value: String(summary?.totalCustomers ?? '—'),
+      tone: 'default' as const,
+    },
+    {
+      id: 'active',
+      label: 'Active',
+      value: String(summary?.active ?? '—'),
+      tone: 'success' as const,
+    },
+    {
+      id: 'payment-holds',
+      label: 'Payment Holds',
+      value: String(summary?.paymentHolds ?? '—'),
+      tone: 'danger' as const,
+    },
+    {
+      id: 'amount-due',
+      label: 'Amount Due',
+      value:
+        summary?.amountDue === undefined ? '—' : (formatMoney(summary.amountDue) ?? '£0'),
+      tone: 'warning' as const,
+    },
+  ]
+
+  const roundOptions = useMemo(() => {
+    const rounds = (roundsQuery.data ?? []).map((round) => ({
+      value: round.id,
+      label: round.name,
+    }))
+    return [
+      { value: 'all', label: 'All' },
+      ...rounds,
+      { value: 'not-assigned', label: 'Not Assigned' },
+    ]
+  }, [roundsQuery.data])
 
   return (
     <div className="space-y-5">
@@ -102,7 +138,13 @@ export function CustomersScreen() {
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           {customersContent.header.title}
         </h1>
-        <p className="mt-1 text-sm text-muted">{customersContent.header.subtitle}</p>
+        <p className="mt-1 text-sm text-muted">
+          {customersQuery.isPending
+            ? 'Loading customers…'
+            : customersQuery.isError
+              ? 'Could not load customers.'
+              : `Showing ${filteredRecords.length} customer${filteredRecords.length === 1 ? '' : 's'}`}
+        </p>
       </header>
 
       <PanelCard interactive={false} className="border-primary/15 bg-accent-surface/50 px-5 py-4">
@@ -128,7 +170,7 @@ export function CustomersScreen() {
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {customersContent.metrics.map((metric) => (
+          {metrics.map((metric) => (
             <PanelCard
               key={metric.id}
               interactive={false}
@@ -146,7 +188,7 @@ export function CustomersScreen() {
             aria-label={customersContent.filters.round.label}
             value={roundId}
             onChange={(event) => setRoundId(event.target.value)}
-            options={[...customersContent.filters.round.options]}
+            options={roundOptions}
             className="min-w-36 border-accent/25 bg-accent-surface shadow-none"
           />
           <MultiSelect
@@ -163,7 +205,22 @@ export function CustomersScreen() {
       </div>
 
       <section className="space-y-3">
-        {filteredRecords.length === 0 ? (
+        {customersQuery.isPending ? (
+          <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
+            Loading customers…
+          </PanelCard>
+        ) : customersQuery.isError ? (
+          <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
+            <p>Could not load customers.</p>
+            <button
+              type="button"
+              className={cn(dashboardCtaClass, 'mt-3')}
+              onClick={() => void customersQuery.refetch()}
+            >
+              Retry
+            </button>
+          </PanelCard>
+        ) : filteredRecords.length === 0 ? (
           <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
             {customersContent.emptyLabel}
           </PanelCard>
@@ -173,7 +230,9 @@ export function CustomersScreen() {
               key={record.id}
               record={record}
               onOpen={() =>
-                navigate(propertyDetailPath(record.propertyId), { state: { from: 'customers' } })
+                navigate(propertyDetailPath(record.propertyId), {
+                  state: { from: 'customers', customerId: record.id },
+                })
               }
               onAssign={() => setAssignRecordId(record.id)}
             />

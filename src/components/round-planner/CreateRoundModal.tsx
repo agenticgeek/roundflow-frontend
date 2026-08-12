@@ -5,11 +5,17 @@ import { Field, Input, Textarea, Toggle } from '@/components/ui'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServiceAreas, useTechnicians } from '@/features/settings/hooks/useSettings'
 import {
+  useCreateRound,
+  useSetRoundTechnicians,
+} from '@/features/rounds/hooks/useRounds'
+import {
   settingsServiceAreasToRows,
   settingsTechniciansToRows,
 } from '@/features/settings/lib/mappers'
+import type { DayOfWeek } from '@/api/types'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useToast } from '@/components/ui/toast'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface CreateRoundModalProps {
@@ -521,6 +527,8 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
   const areasQuery = useServiceAreas(open)
   const techniciansQuery = useTechnicians(open)
 
+  const createRound = useCreateRound()
+  const setTechnicians = useSetRoundTechnicians()
   const [step, setStep] = useState<Step>(1)
   const [roundName, setRoundName] = useState('')
   const [areaName, setAreaName] = useState('')
@@ -539,7 +547,6 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
   const [autoAssign, setAutoAssign] = useState(false)
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('')
   const [generateVisits, setGenerateVisits] = useState(true)
-  const [saving, setSaving] = useState(false)
 
   const areas = useMemo(() => {
     const apiAreas = settingsServiceAreasToRows(areasQuery.data).map((area) => ({
@@ -575,7 +582,6 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
     setAutoAssign(false)
     setSelectedTechnicianId('')
     setGenerateVisits(true)
-    setSaving(false)
   }, [open])
 
   const selectedArea = areas.find((area) => area.id === selectedAreaId)
@@ -592,15 +598,19 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
 
   const canContinue =
     canMutate &&
+    !createRound.isPending &&
+    !setTechnicians.isPending &&
     (step === 1
       ? Boolean(roundName.trim() && day && frequency)
       : step === 2
-        ? Boolean(selectedAreaId)
+        ? Boolean(selectedAreaId) && !selectedAreaId.startsWith('local-area-')
         : step === 3
-          ? selectedProperties.size > 0
+          ? true
           : step === 4
             ? Boolean(selectedTechnicianId)
             : true)
+
+  const saving = createRound.isPending || setTechnicians.isPending
 
   function addLocalArea() {
     if (!newAreaName.trim()) return
@@ -636,25 +646,52 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
     }
   }
 
-  function continueFlow() {
+  async function continueFlow() {
     if (!canContinue) return
     if (step < 5) {
       setStep((step + 1) as Step)
       return
     }
 
-    // BACKEND-GAP: OpenAPI has no post-setup POST /rounds endpoint.
-    setSaving(true)
-    window.setTimeout(() => {
-      setSaving(false)
+    const dayMap: Record<string, DayOfWeek> = {
+      Mon: 'MON',
+      Tue: 'TUE',
+      Wed: 'WED',
+      Thu: 'THU',
+      Fri: 'FRI',
+      Sat: 'SAT',
+      Sun: 'SUN',
+    }
+
+    try {
+      const created = await createRound.mutateAsync({
+        name: roundName.trim(),
+        frequency,
+        serviceAreaId: selectedAreaId,
+        defaultDay: dayMap[day] ?? null,
+        description: description.trim() || null,
+      })
+
+      if (selectedTechnicianId && created.id) {
+        await setTechnicians.mutateAsync({
+          id: created.id,
+          technicianIds: [selectedTechnicianId],
+        })
+      }
+
       showToast(
-        generateVisits
-          ? 'Round saved and visits generated'
-          : 'Round saved',
-        { description: `${roundName} is ready in Round Planner.` },
+        generateVisits ? 'Round saved' : 'Round saved',
+        {
+          description: generateVisits
+            ? `${roundName} is ready. Assign properties and activate visits from setup/planner when needed.`
+            : `${roundName} is ready in Round Planner.`,
+        },
       )
       onClose()
-    }, 500)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) return
+      showToast(error instanceof Error ? error.message : 'Could not create round')
+    }
   }
 
   return (

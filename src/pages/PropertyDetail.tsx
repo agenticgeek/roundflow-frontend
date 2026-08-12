@@ -1,15 +1,30 @@
-import { useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import type { CustomerPropertyRecord } from '@/content/customers'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
-import { getCustomerRecordByPropertyId } from '@/content/customers'
-import { getPropertyDetail } from '@/content/property-detail'
 import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
 import { AppShell } from '@/components/app/AppShell'
 import {
   PropertyDetailNotFound,
   PropertyDetailScreen,
 } from '@/components/property-detail/PropertyDetailScreen'
+import { useCustomer, useCustomers } from '@/features/customers/hooks/useCustomers'
+import {
+  customerDetailToNotes,
+  customerDetailToPayments,
+  customerDetailToPropertyRecord,
+  customerDetailToVisits,
+  customerListRowToRecord,
+} from '@/features/customers/lib/mappers'
+import { PanelCard } from '@/components/dashboard/DashboardControls'
+import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
+import { cn } from '@/lib/utils'
+
+type LocationState = {
+  from?: string
+  customerId?: string
+}
 
 export default function PropertyDetail() {
   const navigate = useNavigate()
@@ -17,8 +32,55 @@ export default function PropertyDetail() {
   const { propertyId } = useParams()
   const [signingOut, setSigningOut] = useState(false)
   const quickActions = useAppQuickActions()
-  const property = getPropertyDetail(propertyId)
-  const customerRecord = propertyId ? getCustomerRecordByPropertyId(propertyId) : null
+  const state = (location.state as LocationState | null) ?? null
+
+  // Resolve customerId from navigation state, or look up by propertyId in the list.
+  const listQuery = useCustomers({ pageSize: 100 }, !state?.customerId && Boolean(propertyId))
+  const customerId = useMemo(() => {
+    if (state?.customerId) return state.customerId
+    const match = (listQuery.data?.customers ?? []).find((row) => row.propertyId === propertyId)
+    return match?.customerId ?? ''
+  }, [listQuery.data?.customers, propertyId, state?.customerId])
+
+  const detailQuery = useCustomer(customerId, Boolean(customerId))
+
+  const property = useMemo(
+    () => (detailQuery.data ? customerDetailToPropertyRecord(detailQuery.data) : null),
+    [detailQuery.data],
+  )
+
+  const tabData = useMemo(() => {
+    if (!detailQuery.data) return null
+    const payments = customerDetailToPayments(detailQuery.data)
+    return {
+      visits: customerDetailToVisits(detailQuery.data),
+      // null = TECHNICIAN (endpoint omits payments); array = loaded
+      payments: payments === undefined ? null : payments,
+      notes: customerDetailToNotes(detailQuery.data),
+    }
+  }, [detailQuery.data])
+
+  const customerRecordForModal = useMemo((): CustomerPropertyRecord | null => {
+    if (!detailQuery.data?.customer?.id || !property) return null
+    const listRow = (listQuery.data?.customers ?? []).find(
+      (row) => row.customerId === detailQuery.data?.customer?.id,
+    )
+    if (listRow) return customerListRowToRecord(listRow)
+    return {
+      id: detailQuery.data.customer.id,
+      propertyId: property.id,
+      customer: property.customerName,
+      address: property.fullAddress,
+      status: property.serviceStatus === 'hold' ? 'hold' : 'active',
+      round: property.assignedRound,
+      frequency: property.frequency,
+      price: property.price,
+      technician: property.technician,
+      nextDue: property.nextDue,
+      paymentStatus: property.paymentStatus,
+      needsAssignment: property.needsAssignment,
+    }
+  }, [detailQuery.data, listQuery.data?.customers, property])
 
   async function handleSignOut() {
     setSigningOut(true)
@@ -30,13 +92,16 @@ export default function PropertyDetail() {
   }
 
   function handleBack() {
-    if (location.state?.from === 'customers') {
+    if (state?.from === 'customers') {
       navigate(ROUTES.customers)
       return
     }
-
     navigate(ROUTES.roundPlanner, { state: { view: 'list' } })
   }
+
+  const resolving =
+    (!state?.customerId && listQuery.isPending) ||
+    (Boolean(customerId) && detailQuery.isPending)
 
   return (
     <AppShell
@@ -45,10 +110,27 @@ export default function PropertyDetail() {
       signingOut={signingOut}
       mainMaxWidthClass="max-w-7xl"
     >
-      {property ? (
+      {resolving ? (
+        <PanelCard interactive={false} className="py-16 text-center text-sm text-muted">
+          Loading property…
+        </PanelCard>
+      ) : detailQuery.isError ? (
+        <PanelCard interactive={false} className="py-16 text-center text-sm text-muted">
+          <p>Could not load this customer.</p>
+          <button
+            type="button"
+            className={cn(dashboardCtaClass, 'mt-3')}
+            onClick={() => void detailQuery.refetch()}
+          >
+            Retry
+          </button>
+        </PanelCard>
+      ) : property && customerId ? (
         <PropertyDetailScreen
           property={property}
-          customerRecord={customerRecord}
+          customerRecord={customerRecordForModal}
+          customerId={customerId}
+          tabData={tabData}
           onBack={handleBack}
         />
       ) : (

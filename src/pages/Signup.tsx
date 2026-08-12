@@ -49,9 +49,18 @@ export default function Signup() {
       if (signUpError) {
         setError(
           /already registered|already been registered/i.test(signUpError.message)
-            ? 'User already registered'
+            ? authContent.errors.alreadyRegistered
             : signUpError.message,
         )
+        return false
+      }
+
+      // Confirm-email ON: duplicate confirmed accounts return 200 with
+      // identities: [] and send no mail. Do not show "email sent".
+      const alreadyRegistered =
+        Boolean(data.user) && (data.user.identities?.length ?? 0) === 0
+      if (alreadyRegistered) {
+        setError(authContent.errors.alreadyRegistered)
         return false
       }
 

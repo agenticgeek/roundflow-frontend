@@ -25,7 +25,7 @@ export default function Settings() {
       quickActions={quickActions}
       onSignOut={handleSignOut}
       signingOut={signingOut}
-      mainMaxWidthClass="max-w-7xl"
+      mainMaxWidthClass="max-w-[96rem]"
     >
       <SettingsScreen />
     </AppShell>
