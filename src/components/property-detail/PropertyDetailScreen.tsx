@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import type { CustomerPropertyRecord } from '@/content/customers'
-import type { PropertyDetailRecord, PropertyDetailTabId } from '@/content/property-detail'
+import type {
+  PropertyDetailRecord,
+  PropertyDetailTabId,
+  PropertyPlanStatus,
+} from '@/content/property-detail'
 import { propertyDetailContent } from '@/content/property-detail'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
 import { EditCustomerRecordModal } from '@/components/property-detail/EditCustomerRecordModal'

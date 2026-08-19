@@ -12,6 +12,12 @@ import {
   ModalToggleRow,
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { useReassignRoundTechnician, useRoundToday } from '@/features/today/hooks/useToday'
+import { mergeRoundTodayDetail } from '@/features/today/lib/mappers'
+import { useTechnicians } from '@/features/settings/hooks/useSettings'
+import { settingsTechniciansToRows } from '@/features/settings/lib/mappers'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface ReassignTechnicianModalProps {
@@ -20,43 +26,58 @@ interface ReassignTechnicianModalProps {
   onClose: () => void
 }
 
-function technicianValue(name: string) {
-  return name.trim().toLowerCase()
-}
-
 function countAffectedJobs(round: TodaysWorkRound, applyTo: ReassignApplyToId) {
-  if (applyTo === 'all') return round.jobs.length
-  return round.jobs.filter((job) => job.status !== 'completed').length
+  if (applyTo === 'all') {
+    return round.jobs.length > 0 ? round.jobs.length : round.progressTotal
+  }
+  if (round.jobs.length > 0) {
+    return round.jobs.filter(
+      (job) => job.status === 'scheduled' || job.status === 'in-progress',
+    ).length
+  }
+  return Math.max(0, round.progressTotal - round.progressCompleted - round.skipped)
 }
 
-/** Reassign round jobs to another technician — opened from Today's Work detail panel. */
+/** Reassign round jobs — POST /rounds/:id/reassign. */
 export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechnicianModalProps) {
   const { reassignTechnicianModal } = todaysWorkContent
   const { showToast } = useToast()
-  const [currentTechnicianId, setCurrentTechnicianId] = useState('')
+  const { canMutate } = useAppBootstrap()
+  const reassign = useReassignRoundTechnician()
+  const techniciansQuery = useTechnicians(open)
+  const detailQuery = useRoundToday(round?.id ?? '', open && Boolean(round?.id))
+
   const [newTechnicianId, setNewTechnicianId] = useState('')
   const [applyToId, setApplyToId] = useState<ReassignApplyToId>('remaining')
   const [note, setNote] = useState('')
   const [notifyTechnician, setNotifyTechnician] = useState(false)
 
-  const currentTechnicianOptions = useMemo(
-    () => [...reassignTechnicianModal.technicianOptions],
-    [reassignTechnicianModal.technicianOptions],
-  )
+  const liveRound = useMemo(() => {
+    if (!round) return null
+    return mergeRoundTodayDetail(round, detailQuery.data)
+  }, [detailQuery.data, round])
 
+  const technicianOptions = useMemo(() => {
+    return settingsTechniciansToRows(techniciansQuery.data)
+      .filter((tech) => tech.appStatus !== 'inactive')
+      .map((tech) => ({
+        value: tech.id,
+        label: tech.displayName,
+      }))
+  }, [techniciansQuery.data])
+
+  const fromTechnicianId = liveRound?.technicianId ?? ''
   const newTechnicianOptions = useMemo(() => {
     const placeholder = { value: '', label: 'Select Technician' }
-    const options = reassignTechnicianModal.technicianOptions.filter(
-      (option) => option.value !== currentTechnicianId,
-    )
+    const options = technicianOptions.filter((option) => option.value !== fromTechnicianId)
     return [placeholder, ...options]
-  }, [currentTechnicianId, reassignTechnicianModal.technicianOptions])
+  }, [fromTechnicianId, technicianOptions])
 
   const applyToOption =
     reassignTechnicianModal.applyToOptions.find((option) => option.id === applyToId) ??
     reassignTechnicianModal.applyToOptions[0]
 
-  const affectedJobsCount = round ? countAffectedJobs(round, applyToId) : 0
+  const affectedJobsCount = liveRound ? countAffectedJobs(liveRound, applyToId) : 0
   const jobsLabel = reassignTechnicianModal.jobsAffected.jobsLabel.replace(
     '{count}',
     String(affectedJobsCount),
@@ -64,22 +85,47 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
 
   useEffect(() => {
     if (!open || !round) return
-    const currentId = technicianValue(round.technician)
-    setCurrentTechnicianId(currentId)
     setNewTechnicianId('')
     setApplyToId('remaining')
     setNote('')
     setNotifyTechnician(false)
   }, [open, round])
 
-  if (!round) return null
+  if (!liveRound) return null
 
-  const subtitle = reassignTechnicianModal.subtitle.replace('{technician}', round.technician)
+  const subtitle = reassignTechnicianModal.subtitle.replace(
+    '{technician}',
+    liveRound.technician,
+  )
 
-  function handleConfirm() {
-    if (!newTechnicianId) return
-    onClose()
-    showToast(reassignTechnicianModal.successToast)
+  async function handleConfirm() {
+    if (!canMutate || !liveRound || !fromTechnicianId || !newTechnicianId || reassign.isPending) {
+      if (!fromTechnicianId) showToast('This round has no technician to reassign from')
+      return
+    }
+
+    try {
+      const result = await reassign.mutateAsync({
+        id: liveRound.id,
+        input: {
+          fromTechnicianId,
+          toTechnicianId: newTechnicianId,
+          scope: applyToId,
+          note: note.trim() || null,
+          notify: notifyTechnician,
+        },
+      })
+      onClose()
+      showToast(reassignTechnicianModal.successToast, {
+        description: `${result.updatedCount} job${result.updatedCount === 1 ? '' : 's'} updated.`,
+      })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) {
+        showToast(error.message)
+        return
+      }
+      showToast(error instanceof Error ? error.message : 'Could not reassign technician')
+    }
   }
 
   return (
@@ -103,10 +149,10 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
           <ModalButton
             compact
             variant="primary"
-            disabled={!newTechnicianId}
-            onClick={handleConfirm}
+            disabled={!canMutate || !newTechnicianId || !fromTechnicianId || reassign.isPending}
+            onClick={() => void handleConfirm()}
           >
-            {reassignTechnicianModal.actions.confirm}
+            {reassign.isPending ? 'Reassigning…' : reassignTechnicianModal.actions.confirm}
           </ModalButton>
         </ModalFooter>
       }
@@ -115,22 +161,27 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
         <DashboardIcon name="arrows-horizontal" className="h-5 w-5" />
       </span>
 
+      {!canMutate ? (
+        <p className="rounded-lg border border-warning-border bg-warning-surface px-3 py-2 text-sm text-warning-foreground">
+          You don&apos;t have permission to reassign technicians.
+        </p>
+      ) : null}
+
       <Field label={reassignTechnicianModal.fields.round} size="sm" labelWeight="medium">
         <Input
           inputSize="sm"
           readOnly
-          value={round.round}
+          value={liveRound.round}
           className={cn(modalInputClass, 'bg-surface text-foreground')}
         />
       </Field>
 
       <Field label={reassignTechnicianModal.fields.currentTechnician} size="sm" labelWeight="medium">
-        <Select
+        <Input
           inputSize="sm"
-          value={currentTechnicianId}
-          onChange={(event) => setCurrentTechnicianId(event.target.value)}
-          options={currentTechnicianOptions}
-          className={modalInputClass}
+          readOnly
+          value={liveRound.technician}
+          className={cn(modalInputClass, 'bg-surface text-foreground')}
         />
       </Field>
 
