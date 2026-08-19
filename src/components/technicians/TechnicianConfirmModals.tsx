@@ -4,6 +4,7 @@ import { techniciansContent } from '@/content/technicians'
 
 interface ConfirmModalProps {
   open: boolean
+  pending?: boolean
   onClose: () => void
   onConfirm: () => void
 }
@@ -46,13 +47,18 @@ export function ApprovePhotosModal({ open, onClose, onConfirm }: ConfirmModalPro
   )
 }
 
-export function RemoveTechnicianModal({ open, onClose, onConfirm }: ConfirmModalProps) {
+export function RemoveTechnicianModal({
+  open,
+  pending = false,
+  onClose,
+  onConfirm,
+}: ConfirmModalProps) {
   const content = techniciansContent.modals
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={pending ? () => undefined : onClose}
       title={content.removeTitle}
       showHeader={false}
       maxWidthClass="max-w-md"
@@ -62,20 +68,23 @@ export function RemoveTechnicianModal({ open, onClose, onConfirm }: ConfirmModal
       <h2 className="text-base font-semibold leading-snug text-foreground">
         {content.removeTitle}
       </h2>
+      <p className="mt-3 text-xs leading-relaxed text-muted">{content.removeDescription}</p>
       <div className="mt-6 grid grid-cols-2 gap-3">
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-border px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface"
+          disabled={pending}
+          className="rounded-lg border border-border px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-50"
         >
           {content.cancel}
         </button>
         <button
           type="button"
           onClick={onConfirm}
-          className="rounded-lg bg-danger px-4 py-2.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          disabled={pending}
+          className="rounded-lg bg-danger px-4 py-2.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {content.remove}
+          {pending ? 'Deactivating…' : content.remove}
         </button>
       </div>
     </Modal>

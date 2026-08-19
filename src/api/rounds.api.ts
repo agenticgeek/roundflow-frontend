@@ -86,6 +86,58 @@ export type PlannerDayResult = {
   }
 }
 
+/** CONTRACT-DIFF: round today / push-missed / reassign — TODAY_HANDOFF, may lag OpenAPI. */
+
+export type RoundTodayStatus = 'not_started' | 'in_progress' | 'completed'
+
+export type RoundTodayStop = {
+  visitId: string
+  customerName: string
+  addressLine: string
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED'
+  paymentHold: boolean
+  hasIssue: boolean
+  issueFlag: string | null
+}
+
+export type RoundTodayResult = {
+  roundId: string
+  roundName: string
+  technicianId: string | null
+  technicianName: string | null
+  status: RoundTodayStatus
+  progress: {
+    total: number
+    completed: number
+    skipped: number
+    issues: number
+  }
+  stops: RoundTodayStop[]
+}
+
+export type PushMissedInput = {
+  newDate: string
+  reason: string
+  technicianId?: string | null
+  notifyCustomers?: boolean
+}
+
+export type PushMissedResult = {
+  pushedCount: number
+}
+
+export type ReassignInput = {
+  fromTechnicianId: string
+  toTechnicianId: string
+  scope: 'remaining' | 'all'
+  note?: string | null
+  notify?: boolean
+}
+
+export type ReassignResult = {
+  updatedCount: number
+}
+
 function jsonRequest(method: 'POST' | 'PATCH' | 'PUT', body?: unknown): RequestInit {
   return {
     method,
@@ -128,4 +180,13 @@ export const roundsApi = {
 
   getOccurrenceDay: (id: string, date: string, signal?: AbortSignal) =>
     api<PlannerDayResult>(`/rounds/${id}/planner/occurrences/${date}`, { signal }),
+
+  getToday: (id: string, signal?: AbortSignal) =>
+    api<RoundTodayResult>(`/rounds/${id}/today`, { signal }),
+
+  pushMissed: (id: string, input: PushMissedInput) =>
+    api<PushMissedResult>(`/rounds/${id}/push-missed`, jsonRequest('POST', input)),
+
+  reassign: (id: string, input: ReassignInput) =>
+    api<ReassignResult>(`/rounds/${id}/reassign`, jsonRequest('POST', input)),
 }

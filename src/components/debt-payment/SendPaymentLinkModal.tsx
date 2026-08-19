@@ -5,6 +5,9 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Field, Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton, modalInputClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { useDebtPaymentLink } from '@/features/debt/hooks/useDebt'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface SendPaymentLinkModalProps {
@@ -23,10 +26,12 @@ function applyTemplate(body: string, record: DebtCustomerRecord) {
     .replaceAll('{amount}', record.amountOwed)
 }
 
-/** Generate and send a secure payment link from the debt board. */
+/** Send payment link — POST /debt/:invoiceId/payment-link. */
 export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkModalProps) {
   const { paymentLinkModal } = debtPaymentContent
   const { showToast } = useToast()
+  const { canMutate } = useAppBootstrap()
+  const paymentLink = useDebtPaymentLink()
   const [method, setMethod] = useState<string>(paymentLinkModal.methods[0]?.value ?? '')
   const [expiry, setExpiry] = useState<string>(paymentLinkModal.expiryOptions[1]?.value ?? '7')
   const [message, setMessage] = useState('')
@@ -40,17 +45,33 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
 
   if (!record) return null
 
-  const customerName = record.customer
+  async function handleSend() {
+    if (!canMutate || !record || paymentLink.isPending) return
+    if (!message.trim()) {
+      showToast('Enter a message')
+      return
+    }
 
-  function handleSend() {
-    onClose()
-    showToast(paymentLinkModal.successToast.replace('{customer}', customerName))
+    try {
+      await paymentLink.mutateAsync({
+        invoiceId: record.invoiceId ?? record.id,
+        input: { message: message.trim() },
+      })
+      onClose()
+      showToast(paymentLinkModal.successToast.replace('{customer}', record.customer))
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 400 || error.status === 404)) {
+        showToast(error.message)
+        return
+      }
+      showToast(error instanceof Error ? error.message : 'Could not send payment link')
+    }
   }
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={paymentLink.isPending ? () => undefined : onClose}
       title={paymentLinkModal.title}
       showCloseButton
       stacked
@@ -60,11 +81,23 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
       bodyClassName="space-y-4"
       footer={
         <div className="grid grid-cols-2 gap-3">
-          <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
+          <ModalButton
+            compact
+            variant="secondary"
+            className="w-full"
+            disabled={paymentLink.isPending}
+            onClick={onClose}
+          >
             {paymentLinkModal.actions.cancel}
           </ModalButton>
-          <ModalButton compact variant="primary" className="w-full" onClick={handleSend}>
-            {paymentLinkModal.actions.send}
+          <ModalButton
+            compact
+            variant="primary"
+            className="w-full"
+            disabled={!canMutate || !message.trim() || paymentLink.isPending}
+            onClick={() => void handleSend()}
+          >
+            {paymentLink.isPending ? 'Sending…' : paymentLinkModal.actions.send}
           </ModalButton>
         </div>
       }
@@ -90,6 +123,7 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
           onChange={(event) => setMethod(event.target.value)}
           options={[...paymentLinkModal.methods]}
           className={cn(modalInputClass, 'rounded-lg border-accent/25 bg-accent-surface')}
+          disabled={paymentLink.isPending}
         />
       </Field>
 
@@ -100,6 +134,7 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
           onChange={(event) => setExpiry(event.target.value)}
           options={[...paymentLinkModal.expiryOptions]}
           className={cn(modalInputClass, 'rounded-lg border-accent/25 bg-accent-surface')}
+          disabled={paymentLink.isPending}
         />
       </Field>
 
@@ -109,6 +144,7 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           className="min-h-[7.5rem] rounded-lg"
+          disabled={paymentLink.isPending}
         />
         <p className="mt-1.5 text-xs text-muted">{paymentLinkModal.helper}</p>
       </Field>
