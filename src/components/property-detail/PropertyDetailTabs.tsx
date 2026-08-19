@@ -323,14 +323,6 @@ const noteCategoryPillClass: Record<PropertyNoteCategory, { base: string; select
   },
 }
 
-function formatNoteDate() {
-  return new Date().toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
-}
-
 /** Notes & risk information — add notes and view history. */
 export function NotesRiskTab({ property, notes: notesProp, customerId }: NotesRiskTabProps) {
   const { notesRisk } = propertyDetailContent
