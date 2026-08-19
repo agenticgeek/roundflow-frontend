@@ -9,7 +9,6 @@ export const ROUTES = {
   authCallback: '/auth/callback',
   forgotPassword: '/forgot-password',
   resetPassword: '/reset-password',
-  acceptInvite: '/accept-invite',
   setupWizard: '/setup',
   dashboard: '/dashboard',
   roundPlanner: '/round-planner',

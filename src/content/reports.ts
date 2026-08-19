@@ -1,6 +1,6 @@
 export type ReportsPeriod = 'Daily' | 'Weekly' | 'Monthly'
 
-export type VisitStatus = 'completed' | 'skipped' | 'in-progress' | 'pending' | 'scheduled'
+export type VisitStatus = 'completed' | 'skipped' | 'in-progress' | 'pending'
 
 export type ActivityIcon = 'calendar' | 'home' | 'technicians' | 'refresh'
 
@@ -52,20 +52,16 @@ export const reportsContent = {
   statusFilter: {
     label: 'Status',
     options: [
-      { value: 'all', label: 'All statuses' },
+      { value: 'all', label: 'Status' },
       { value: 'completed', label: 'Completed' },
       { value: 'skipped', label: 'Skipped' },
-      { value: 'scheduled', label: 'Scheduled' },
+      { value: 'in-progress', label: 'In Progress' },
+      { value: 'pending', label: 'Pending' },
     ],
   },
   exportLabel: 'Export',
   viewAllLabel: 'View All',
   periods: ['Daily', 'Weekly', 'Monthly'] as const satisfies readonly ReportsPeriod[],
-  periodHints: {
-    Daily: 'Today',
-    Weekly: 'Last 7 days',
-    Monthly: 'Last 30 days',
-  } as const satisfies Record<ReportsPeriod, string>,
   sections: {
     revenueOverview: 'Revenue Overview',
     technicianPerformance: 'Technician Performance',
@@ -77,7 +73,6 @@ export const reportsContent = {
     skipped: 'Skipped',
     'in-progress': 'In Progress',
     pending: 'Pending',
-    scheduled: 'Scheduled',
   } as const satisfies Record<VisitStatus, string>,
   metrics: [
     {

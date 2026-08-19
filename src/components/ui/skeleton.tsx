@@ -10,7 +10,7 @@ export function Skeleton({
     <div
       aria-hidden="true"
       className={cn(
-        'animate-pulse rounded-md bg-gradient-to-r from-border/35 via-border/70 to-border/35 bg-[length:200%_100%]',
+        'animate-pulse rounded-full bg-gradient-to-r from-border/45 via-border/80 to-border/45',
         className,
       )}
       {...props}

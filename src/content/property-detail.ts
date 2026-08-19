@@ -50,20 +50,16 @@ export type VisitStatus = 'completed' | 'scheduled'
 
 export type VisitPaymentStatus = 'paid' | 'pending'
 
-export type VisitInvoiceAction = 'generate' | 'sent' | 'draft'
+export type VisitInvoiceAction = 'generate' | 'sent'
 
 export type PaymentRecordStatus = 'paid' | 'unpaid'
 
-export type PaymentInvoiceStatus = 'sent' | 'draft' | 'none'
+export type PaymentInvoiceStatus = 'sent' | 'none'
 
 export type PaymentRowAction = 'download' | 'generate'
 
 export interface PropertyPaymentRecord {
   id: string
-  visitId?: string
-  invoiceId?: string | null
-  invoiceNumber?: string | null
-  transactionId?: string | null
   visitDate: string
   visitDateRaw: string
   round: string
@@ -93,7 +89,6 @@ export interface PropertyVisitRecord {
   payment: VisitPaymentStatus
   price: string
   invoice: VisitInvoiceAction
-  invoiceId?: string | null
 }
 
 export const propertyDetailContent = {
@@ -339,7 +334,6 @@ export const propertyDetailContent = {
     invoiceActions: {
       generate: 'Generate',
       sent: 'Sent',
-      draft: 'Draft',
     },
     emptyLabel: 'No visits recorded yet.',
   },
@@ -362,12 +356,10 @@ export const propertyDetailContent = {
     },
     invoiceLabels: {
       sent: 'Sent',
-      draft: 'Draft',
     },
     actions: {
-      download: 'View',
+      download: 'Download',
       generate: 'Generate',
-      send: 'Send',
     },
     emptyLabel: 'No payment records yet.',
     downloadToast: 'Invoice PDF downloaded',
@@ -384,7 +376,6 @@ export const propertyDetailContent = {
     },
     fields: {
       invoiceNumber: 'Invoice Number',
-      dueDate: 'Due date',
       notes: 'Notes (optional)',
       notesPlaceholder: 'Add any additional notes to the invoice...',
     },
@@ -400,14 +391,9 @@ export const propertyDetailContent = {
       cancel: 'Cancel',
       preview: 'Preview Invoice',
       generate: 'Generate & Send',
-      draft: 'Save as draft',
-      sendNow: 'Send now',
     },
     defaultInvoiceNumber: 'INV-2026-217',
     successToast: 'Invoice generated and sent',
-    draftToast: 'Invoice saved as draft',
-    alreadyExists: 'This visit already has an invoice.',
-    noEmailWarning: 'Add a customer email before sending this invoice.',
     previewToast: 'Invoice preview opened',
   },
   invoicePreviewModal: {
@@ -789,16 +775,14 @@ export function paymentRecordToVisitRecord(record: PropertyPaymentRecord): Prope
   const [firstName] = record.technician.split(' ')
 
   return {
-    id: record.visitId ?? record.id,
+    id: record.id,
     visitDate: record.visitDateRaw,
     round: record.round,
     technician: firstName ?? record.technician,
     status: 'completed',
     payment: record.payment === 'paid' ? 'paid' : 'pending',
     price: record.amount,
-    invoice:
-      record.invoice === 'sent' ? 'sent' : record.invoice === 'draft' ? 'draft' : 'generate',
-    invoiceId: record.invoiceId,
+    invoice: 'generate',
   }
 }
 

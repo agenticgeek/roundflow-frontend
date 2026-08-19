@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { FullScreenLoader } from '@/components/FullScreenLoader'
 import { ROUTES } from '@/config/routes'
 import { useAuth } from '@/lib/auth'
-import { resolvePendingInviteToken } from '@/lib/pending-invite'
 import { supabase } from '@/lib/supabase'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 
@@ -13,12 +12,6 @@ export default function AuthCallback() {
   const { ready, setupCompleted } = useAppBootstrap()
   const [exchanging, setExchanging] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [inviteToken] = useState(
-    () =>
-      new URLSearchParams(window.location.search).get('invite_token')?.trim() ??
-      resolvePendingInviteToken() ??
-      '',
-  )
 
   useEffect(() => {
     let active = true
@@ -61,11 +54,6 @@ export default function AuthCallback() {
 
   useEffect(() => {
     if (!exchanging && !authLoading && session && ready) {
-      // Invite accept provisions via POST /invites/:token/accept — land in app.
-      if (inviteToken) {
-        navigate(ROUTES.dashboard, { replace: true })
-        return
-      }
       // Backend contract: after POST /auth/signup, land on setup wizard.
       const destination =
         justProvisioned || !setupCompleted ? ROUTES.setupWizard : ROUTES.dashboard
@@ -74,7 +62,6 @@ export default function AuthCallback() {
   }, [
     authLoading,
     exchanging,
-    inviteToken,
     justProvisioned,
     navigate,
     ready,

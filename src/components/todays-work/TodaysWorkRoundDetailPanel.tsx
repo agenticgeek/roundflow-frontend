@@ -4,12 +4,10 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { SidePanel } from '@/components/ui/side-panel'
 import { dashboardCtaClass, toneBorderClass } from '@/components/dashboard/dashboard-styles'
-import { TodaysWorkStopsSkeleton } from '@/components/todays-work/TodaysWorkSkeletons'
 import { cn } from '@/lib/utils'
 
 interface TodaysWorkRoundDetailPanelProps {
   round: TodaysWorkRound | null
-  loading?: boolean
   onClose: () => void
   onReassignTechnician?: (roundId: string) => void
   onPushMissedJobs?: (roundId: string) => void
@@ -31,7 +29,6 @@ const jobStatusClass: Record<TodaysWorkJob['status'], string> = {
 /** Right-side round detail — opened from the live rounds table. */
 export function TodaysWorkRoundDetailPanel({
   round,
-  loading = false,
   onClose,
   onReassignTechnician,
   onPushMissedJobs,
@@ -52,30 +49,24 @@ export function TodaysWorkRoundDetailPanel({
       widthClass="max-w-sm"
       bodyClassName="space-y-5"
       footer={
-        onReassignTechnician || onPushMissedJobs ? (
-          <div className="space-y-2">
-            {onReassignTechnician ? (
-              <button
-                type="button"
-                className={cn(dashboardCtaClass, 'w-full')}
-                onClick={() => onReassignTechnician(round.id)}
-              >
-                <DashboardIcon name="arrows-horizontal" className="h-4 w-4" />
-                {detailPanel.actions.reassignTechnician}
-              </button>
-            ) : null}
-            {onPushMissedJobs ? (
-              <button
-                type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent-surface px-4 py-2.5 text-sm font-medium leading-none text-foreground transition-colors hover:bg-accent-surface/80"
-                onClick={() => onPushMissedJobs(round.id)}
-              >
-                <DashboardIcon name="chevron-right" className="h-4 w-4" />
-                {detailPanel.actions.pushMissedJobs}
-              </button>
-            ) : null}
-          </div>
-        ) : null
+        <div className="space-y-2">
+          <button
+            type="button"
+            className={cn(dashboardCtaClass, 'w-full')}
+            onClick={() => onReassignTechnician?.(round.id)}
+          >
+            <DashboardIcon name="arrows-horizontal" className="h-4 w-4" />
+            {detailPanel.actions.reassignTechnician}
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent-surface px-4 py-2.5 text-sm font-medium leading-none text-foreground transition-colors hover:bg-accent-surface/80"
+            onClick={() => onPushMissedJobs?.(round.id)}
+          >
+            <DashboardIcon name="chevron-right" className="h-4 w-4" />
+            {detailPanel.actions.pushMissedJobs}
+          </button>
+        </div>
       }
     >
       <div className="flex items-center gap-3">
@@ -120,17 +111,11 @@ export function TodaysWorkRoundDetailPanel({
 
       <section className="border-t border-border pt-4 pb-1">
         <h3 className="text-sm font-medium text-foreground">{detailPanel.jobsTitle}</h3>
-        {loading ? (
-          <TodaysWorkStopsSkeleton />
-        ) : round.jobs.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">No stops for this round today.</p>
-        ) : (
-          <ul className="mt-3 space-y-2">
-            {round.jobs.map((job) => (
-              <JobCard key={job.id} job={job} />
-            ))}
-          </ul>
-        )}
+        <ul className="mt-3 space-y-2">
+          {round.jobs.map((job) => (
+            <JobCard key={job.id} job={job} />
+          ))}
+        </ul>
       </section>
     </SidePanel>
   )

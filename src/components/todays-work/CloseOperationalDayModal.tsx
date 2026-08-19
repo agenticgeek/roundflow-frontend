@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   CloseDaySummaryCard,
   CloseDaySummaryCardTone,
@@ -6,7 +6,6 @@ import type {
   CloseDayUnfinishedOptionId,
 } from '@/content/todays-work'
 import { todaysWorkContent } from '@/content/todays-work'
-import type { TodayKpi } from '@/api/today.api'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import {
   Modal,
@@ -16,130 +15,55 @@ import {
   modalWarningPanelClass,
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
-import { useCloseToday } from '@/features/today/hooks/useToday'
-import { formatMoney } from '@/features/today/lib/mappers'
-import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
-import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 type CloseDayStep = 'review' | 'confirm'
 
 interface CloseOperationalDayModalProps {
   open: boolean
-  dateLabel: string
-  kpi?: TodayKpi
   onClose: () => void
 }
 
-function unfinishedCountFromKpi(kpi?: TodayKpi) {
-  if (!kpi) return 0
-  return Math.max(0, kpi.totalStops - kpi.completed - kpi.skipped)
-}
-
-function summaryCardsFromKpi(kpi?: TodayKpi): CloseDaySummaryCard[] {
-  const unfinished = unfinishedCountFromKpi(kpi)
-  return [
-    {
-      id: 'completed',
-      label: 'Completed Jobs',
-      value: String(kpi?.completed ?? 0),
-      tone: 'primary',
-      icon: 'check-circle',
-    },
-    {
-      id: 'skipped',
-      label: 'Skipped Jobs',
-      value: String(kpi?.skipped ?? 0),
-      tone: 'warning',
-      icon: 'x-circle',
-    },
-    {
-      id: 'outstanding',
-      label: 'Outstanding',
-      value: String(unfinished),
-      tone: 'danger',
-      icon: 'alert-circle',
-    },
-    { id: 'issues', label: 'Issues', value: String(kpi?.issues ?? 0), tone: 'default' },
-    {
-      id: 'payment-holds',
-      label: 'Payment Holds',
-      value: String(kpi?.paymentHolds ?? 0),
-      tone: 'default',
-    },
-    {
-      id: 'revenue',
-      label: 'Revenue',
-      value: formatMoney(kpi?.valueCompleted ?? 0),
-      tone: 'default',
-    },
-  ]
-}
-
-/** Multi-step close-of-day workflow — POST /today/close. */
-export function CloseOperationalDayModal({
-  open,
-  dateLabel,
-  kpi,
-  onClose,
-}: CloseOperationalDayModalProps) {
-  const { closeOperationalDayModal } = todaysWorkContent
+/** Multi-step close-of-day workflow — opened from the Today's Work header. */
+export function CloseOperationalDayModal({ open, onClose }: CloseOperationalDayModalProps) {
+  const { closeOperationalDayModal, header } = todaysWorkContent
   const { showToast } = useToast()
-  const { canMutate } = useAppBootstrap()
-  const closeToday = useCloseToday()
   const [step, setStep] = useState<CloseDayStep>('review')
   const [unfinishedOption, setUnfinishedOption] = useState<CloseDayUnfinishedOptionId | null>(null)
   const [confirmInfoOpen, setConfirmInfoOpen] = useState(false)
 
   const { unfinishedJobs, confirm, alerts } = closeOperationalDayModal
-  const unfinishedCount = unfinishedCountFromKpi(kpi)
-  const issuesCount = kpi?.issues ?? 0
-  const summaryCards = useMemo(() => summaryCardsFromKpi(kpi), [kpi])
+  const unfinishedCount = unfinishedJobs.count
+  const issuesCount = 2
 
   useEffect(() => {
     if (!open) return
     setStep('review')
-    setUnfinishedOption(unfinishedCount > 0 ? null : 'mark-as-skipped')
+    setUnfinishedOption(null)
     setConfirmInfoOpen(false)
-  }, [open, unfinishedCount])
+  }, [open])
 
   const unfinishedTitle = unfinishedJobs.title.replace('{count}', String(unfinishedCount))
   const unfinishedAlert = alerts.unfinished.replace('{count}', String(unfinishedCount))
   const issuesAlert = alerts.issues.replace('{count}', String(issuesCount))
-  const closingDateLabel = closeOperationalDayModal.closingDateLabel.replace('{date}', dateLabel)
+  const closingDateLabel = closeOperationalDayModal.closingDateLabel.replace('{date}', header.date)
   const pushConfirmation = unfinishedJobs.pushConfirmation
     .replace('{count}', String(unfinishedCount))
-    .replace('{schedule}', 'the next working day')
-    .replace('{technician}', 'assigned technicians')
+    .replace('{schedule}', unfinishedJobs.pushSchedule)
+    .replace('{technician}', unfinishedJobs.technician)
 
   function handleClose() {
-    if (closeToday.isPending) return
     onClose()
   }
 
   function handleReviewPrimary() {
-    if (unfinishedCount > 0 && !unfinishedOption) return
+    if (!unfinishedOption) return
     setStep('confirm')
   }
 
-  async function handleFinalConfirm() {
-    if (!canMutate || closeToday.isPending) return
-    const action =
-      unfinishedOption === 'push-to-tomorrow' ? 'push_to_tomorrow' : 'mark_as_skipped'
-
-    try {
-      await closeToday.mutateAsync({ unfinishedAction: action })
-      onClose()
-      showToast(closeOperationalDayModal.successToast)
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409) {
-        showToast('Day already closed')
-        onClose()
-        return
-      }
-      if (error instanceof ApiError && error.status === 400) return
-      showToast(error instanceof Error ? error.message : 'Could not close the day')
-    }
+  function handleFinalConfirm() {
+    onClose()
+    showToast(closeOperationalDayModal.successToast)
   }
 
   const reviewPrimaryLabel =
@@ -171,7 +95,7 @@ export function CloseOperationalDayModal({
             <ModalButton
               compact
               variant="primary"
-              disabled={(unfinishedCount > 0 && !unfinishedOption) || !canMutate}
+              disabled={!unfinishedOption}
               onClick={handleReviewPrimary}
             >
               {reviewPrimaryLabel}
@@ -179,21 +103,11 @@ export function CloseOperationalDayModal({
           </ModalFooter>
         ) : (
           <ModalFooter compact>
-            <ModalButton
-              compact
-              variant="secondary"
-              disabled={closeToday.isPending}
-              onClick={() => setStep('review')}
-            >
+            <ModalButton compact variant="secondary" onClick={() => setStep('review')}>
               {closeOperationalDayModal.actions.cancel}
             </ModalButton>
-            <ModalButton
-              compact
-              variant="primary"
-              disabled={!canMutate || closeToday.isPending}
-              onClick={() => void handleFinalConfirm()}
-            >
-              {closeToday.isPending ? 'Closing…' : closeOperationalDayModal.actions.closeDay}
+            <ModalButton compact variant="primary" onClick={handleFinalConfirm}>
+              {closeOperationalDayModal.actions.closeDay}
             </ModalButton>
           </ModalFooter>
         )
@@ -206,7 +120,7 @@ export function CloseOperationalDayModal({
       {step === 'review' ? (
         <ReviewStep
           summaryTitle={closeOperationalDayModal.summaryTitle}
-          summaryCards={summaryCards}
+          summaryCards={closeOperationalDayModal.summaryCards}
           unfinishedTitle={unfinishedTitle}
           unfinishedOptions={unfinishedJobs.options}
           unfinishedOption={unfinishedOption}
@@ -215,16 +129,12 @@ export function CloseOperationalDayModal({
           unfinishedAlert={unfinishedAlert}
           issuesAlert={issuesAlert}
           reviewInfo={closeOperationalDayModal.reviewInfo}
-          showUnfinishedChooser={unfinishedCount > 0}
         />
       ) : (
         <ConfirmStep
           closingDateLabel={closingDateLabel}
           unfinishedOption={unfinishedOption}
           confirm={confirm}
-          completedLabel={`${kpi?.completed ?? 0} job${kpi?.completed === 1 ? '' : 's'}`}
-          revenueLabel={formatMoney(kpi?.valueCompleted ?? 0)}
-          issuesLabel={`${issuesCount} — require follow-up`}
           confirmInfoOpen={confirmInfoOpen}
           onToggleConfirmInfo={() => setConfirmInfoOpen((current) => !current)}
         />
@@ -244,7 +154,6 @@ function ReviewStep({
   unfinishedAlert,
   issuesAlert,
   reviewInfo,
-  showUnfinishedChooser,
 }: {
   summaryTitle: string
   summaryCards: readonly CloseDaySummaryCard[]
@@ -256,7 +165,6 @@ function ReviewStep({
   unfinishedAlert: string
   issuesAlert: string
   reviewInfo: { title: string; items: readonly string[] }
-  showUnfinishedChooser: boolean
 }) {
   return (
     <>
@@ -269,35 +177,31 @@ function ReviewStep({
         </div>
       </section>
 
-      {showUnfinishedChooser ? (
-        <>
-          <section className="space-y-2">
-            <p className="text-sm font-semibold text-foreground">{unfinishedTitle}</p>
-            {unfinishedOptions.map((option) => (
-              <UnfinishedOption
-                key={option.id}
-                option={option}
-                selected={unfinishedOption === option.id}
-                onSelect={() => onSelectUnfinished(option.id)}
-              />
-            ))}
-          </section>
+      <section className="space-y-2">
+        <p className="text-sm font-semibold text-foreground">{unfinishedTitle}</p>
+        {unfinishedOptions.map((option) => (
+          <UnfinishedOption
+            key={option.id}
+            option={option}
+            selected={unfinishedOption === option.id}
+            onSelect={() => onSelectUnfinished(option.id)}
+          />
+        ))}
+      </section>
 
-          {unfinishedOption === 'push-to-tomorrow' ? (
-            <div className="animate-fade-in flex gap-3 rounded-none border border-primary/25 bg-accent-surface px-4 py-3">
-              <DashboardIcon name="calendar" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <p className="text-sm font-medium text-primary">{pushConfirmation}</p>
-            </div>
-          ) : null}
-
-          <div className={modalWarningPanelClass}>
-            <div className="flex gap-2">
-              <DashboardIcon name="alert-circle" className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-              <p>{unfinishedAlert}</p>
-            </div>
-          </div>
-        </>
+      {unfinishedOption === 'push-to-tomorrow' ? (
+        <div className="animate-fade-in flex gap-3 rounded-none border border-primary/25 bg-accent-surface px-4 py-3">
+          <DashboardIcon name="calendar" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p className="text-sm font-medium text-primary">{pushConfirmation}</p>
+        </div>
       ) : null}
+
+      <div className={modalWarningPanelClass}>
+        <div className="flex gap-2">
+          <DashboardIcon name="alert-circle" className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <p>{unfinishedAlert}</p>
+        </div>
+      </div>
 
       <div className="rounded-none border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger">
         <div className="flex gap-2">
@@ -322,24 +226,18 @@ function ConfirmStep({
   closingDateLabel,
   unfinishedOption,
   confirm,
-  completedLabel,
-  revenueLabel,
-  issuesLabel,
   confirmInfoOpen,
   onToggleConfirmInfo,
 }: {
   closingDateLabel: string
   unfinishedOption: CloseDayUnfinishedOptionId | null
   confirm: typeof todaysWorkContent.closeOperationalDayModal.confirm
-  completedLabel: string
-  revenueLabel: string
-  issuesLabel: string
   confirmInfoOpen: boolean
   onToggleConfirmInfo: () => void
 }) {
   const unfinishedLabel = unfinishedOption
     ? confirm.unfinishedLabels[unfinishedOption]
-    : confirm.unfinishedLabels['mark-as-skipped']
+    : confirm.unfinishedLabels['push-to-tomorrow']
 
   return (
     <>
@@ -359,19 +257,19 @@ function ConfirmStep({
           icon="check-circle"
           iconClass="text-success"
           label={confirm.rows.completedToday}
-          value={completedLabel}
+          value={confirm.completedToday}
         />
         <ConfirmRow
           icon="check-circle"
           iconClass="text-success"
           label={confirm.rows.revenueEarned}
-          value={revenueLabel}
+          value={confirm.revenue}
         />
         <ConfirmRow
           icon="alert"
           iconClass="text-danger"
           label={confirm.rows.activeIssues}
-          value={issuesLabel}
+          value={confirm.activeIssues}
           valueClass="text-danger"
           labelClass="text-danger"
         />

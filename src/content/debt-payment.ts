@@ -9,13 +9,7 @@ export type DebtStatusTab =
 
 export type DebtContactStatus = 'not-contacted' | 'contacted'
 
-export type DebtPaymentMethod =
-  | 'GoCardless'
-  | 'BACS'
-  | 'Cash'
-  | 'Standing Order'
-  | 'Cheque'
-  | 'Stripe'
+export type DebtPaymentMethod = 'GoCardless' | 'BACS' | 'Cash' | 'Standing Order'
 
 export type DebtVisitPaymentStatus = 'paid' | 'unpaid'
 
@@ -27,9 +21,6 @@ export interface DebtRecentVisit {
 
 export interface DebtCustomerRecord {
   id: string
-  invoiceId?: string
-  invoiceNumber?: string
-  customerId?: string
   customer: string
   address: string
   amountOwed: string
@@ -40,8 +31,6 @@ export interface DebtCustomerRecord {
   contactStatus: DebtContactStatus
   lastContact?: string
   hasAlert?: boolean
-  badDebt?: boolean
-  holdNextClean?: boolean
   phone: string
   email: string
   invoiceDate: string
@@ -80,16 +69,9 @@ export const debtPaymentContent = {
         { value: 'gocardless', label: 'GoCardless' },
         { value: 'bacs', label: 'BACS' },
         { value: 'cash', label: 'Cash' },
-        { value: 'cheque', label: 'Cheque' },
-        { value: 'stripe', label: 'Stripe' },
+        { value: 'standing-order', label: 'Standing Order' },
       ],
     },
-  },
-  menu: {
-    flagBadDebt: 'Flag Bad Debt',
-    clearBadDebt: 'Clear Bad Debt',
-    holdNextClean: 'Hold Next Clean',
-    clearHold: 'Clear Hold',
   },
   metrics: [
     {

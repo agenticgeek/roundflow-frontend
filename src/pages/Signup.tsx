@@ -57,9 +57,8 @@ export default function Signup() {
 
       // Confirm-email ON: duplicate confirmed accounts return 200 with
       // identities: [] and send no mail. Do not show "email sent".
-      const user = data.user
       const alreadyRegistered =
-        Boolean(user) && (user?.identities?.length ?? 0) === 0
+        Boolean(data.user) && (data.user.identities?.length ?? 0) === 0
       if (alreadyRegistered) {
         setError(authContent.errors.alreadyRegistered)
         return false

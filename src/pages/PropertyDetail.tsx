@@ -9,7 +9,6 @@ import {
   PropertyDetailNotFound,
   PropertyDetailScreen,
 } from '@/components/property-detail/PropertyDetailScreen'
-import { PropertyDetailSkeleton } from '@/components/property-detail/PropertyDetailSkeleton'
 import { useCustomer, useCustomers } from '@/features/customers/hooks/useCustomers'
 import {
   customerDetailToNotes,
@@ -18,12 +17,6 @@ import {
   customerDetailToVisits,
   customerListRowToRecord,
 } from '@/features/customers/lib/mappers'
-import { useCustomerInvoices } from '@/features/invoices/hooks/useInvoices'
-import {
-  applyCustomerInvoicesToPayments,
-  applyCustomerInvoicesToVisits,
-} from '@/features/invoices/lib/mappers'
-import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
@@ -49,9 +42,7 @@ export default function PropertyDetail() {
     return match?.customerId ?? ''
   }, [listQuery.data?.customers, propertyId, state?.customerId])
 
-  const { canMutate } = useAppBootstrap()
   const detailQuery = useCustomer(customerId, Boolean(customerId))
-  const invoicesQuery = useCustomerInvoices(customerId, Boolean(customerId) && canMutate)
 
   const property = useMemo(
     () => (detailQuery.data ? customerDetailToPropertyRecord(detailQuery.data) : null),
@@ -62,18 +53,12 @@ export default function PropertyDetail() {
     if (!detailQuery.data) return null
     const payments = customerDetailToPayments(detailQuery.data)
     return {
-      visits: applyCustomerInvoicesToVisits(
-        customerDetailToVisits(detailQuery.data),
-        invoicesQuery.data,
-      ),
+      visits: customerDetailToVisits(detailQuery.data),
       // null = TECHNICIAN (endpoint omits payments); array = loaded
-      payments:
-        payments === undefined
-          ? null
-          : applyCustomerInvoicesToPayments(payments, invoicesQuery.data),
+      payments: payments === undefined ? null : payments,
       notes: customerDetailToNotes(detailQuery.data),
     }
-  }, [detailQuery.data, invoicesQuery.data])
+  }, [detailQuery.data])
 
   const customerRecordForModal = useMemo((): CustomerPropertyRecord | null => {
     if (!detailQuery.data?.customer?.id || !property) return null
@@ -126,7 +111,9 @@ export default function PropertyDetail() {
       mainMaxWidthClass="max-w-7xl"
     >
       {resolving ? (
-        <PropertyDetailSkeleton />
+        <PanelCard interactive={false} className="py-16 text-center text-sm text-muted">
+          Loading property…
+        </PanelCard>
       ) : detailQuery.isError ? (
         <PanelCard interactive={false} className="py-16 text-center text-sm text-muted">
           <p>Could not load this customer.</p>

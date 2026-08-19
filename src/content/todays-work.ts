@@ -15,7 +15,6 @@ export interface TodaysWorkRound {
   status: TodaysWorkRoundStatus
   round: string
   technician: string
-  technicianId?: string | null
   technicianInitial: string
   progressCompleted: number
   progressTotal: number

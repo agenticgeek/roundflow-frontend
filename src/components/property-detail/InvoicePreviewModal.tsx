@@ -1,65 +1,103 @@
-import type { InvoicePreview } from '@/api/invoices.api'
+import type { PropertyDetailRecord, PropertyVisitRecord } from '@/content/property-detail'
 import { propertyDetailContent } from '@/content/property-detail'
 import { site } from '@/content/site'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaShadowClass } from '@/components/dashboard/dashboard-styles'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
-import {
-  formatInvoiceDate,
-  formatInvoiceDateLong,
-  formatInvoiceMoney,
-  formatInvoiceNumber,
-  paymentMethodLabel,
-  vatPercentLabel,
-} from '@/features/invoices/lib/mappers'
 import { cn } from '@/lib/utils'
 
 interface InvoicePreviewModalProps {
   open: boolean
-  preview: InvoicePreview | undefined
-  dueDate?: string
-  notes?: string
-  generating?: boolean
-  sendEmail?: boolean
+  property: PropertyDetailRecord
+  visit: PropertyVisitRecord
+  invoiceNumber: string
   onClose: () => void
   onEditDetails: () => void
-  onGenerate?: () => void
 }
 
+/** Section caps — light gray, medium weight. */
 const invoiceCapsClass = 'text-[11px] font-medium uppercase tracking-[0.1em] text-muted/55'
+/** Secondary body copy — address, contact, sub-lines. */
 const invoiceMetaClass = 'text-sm font-normal leading-snug text-muted'
+/** Primary body values — dates, technician, subtotal amounts. */
 const invoiceValueClass = 'text-sm font-normal text-foreground'
+/** Emphasised labels — customer name, service title, line amount. */
 const invoiceStrongClass = 'text-sm font-bold text-foreground'
+/** Thin rules between invoice blocks. */
 const invoiceRuleClass = 'border-border/55'
 
-/** Invoice document preview — populated from GET /invoices/preview. */
+function formatAmount(price: string) {
+  const numeric = price.replace(/[£,\s]/g, '')
+  if (!numeric) return '£0.00'
+  return `£${Number(numeric).toFixed(2)}`
+}
+
+function formatInvoiceNumber(value: string) {
+  return value.startsWith('#') ? value : `#${value}`
+}
+
+function splitAddress(address: string) {
+  const parts = address.split(',').map((part) => part.trim())
+  if (parts.length >= 2) {
+    return {
+      street: parts.slice(0, -1).join(', '),
+      postcode: parts[parts.length - 1],
+    }
+  }
+  return { street: address, postcode: '' }
+}
+
+function formatVisitDateLong(dateStr: string) {
+  const [day, month, year] = dateStr.split('/').map(Number)
+  if (!day || !month || !year) return dateStr
+  return new Date(year, month - 1, day).toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function paymentMethodLabel(property: PropertyDetailRecord) {
+  if (!property.paymentMethod || property.paymentMethod === '—') {
+    return propertyDetailContent.generateInvoiceModal.paymentMethod.defaultMethod
+  }
+  return property.paymentMethod
+}
+
+function technicianName(name: string) {
+  return name.includes(' ') ? name : `${name} Smith`
+}
+
+function visitSubtitle(round: string, visitDate: string) {
+  return propertyDetailContent.invoicePreviewModal.serviceSubtitle
+    .replace('{round}', round)
+    .replace('{visitDateFormatted}', formatVisitDateLong(visitDate))
+}
+
+/** Invoice document preview — opened from Generate Invoice modal. */
 export function InvoicePreviewModal({
   open,
-  preview,
-  dueDate,
-  notes,
-  generating = false,
-  sendEmail = false,
+  property,
+  visit,
+  invoiceNumber,
   onClose,
   onEditDetails,
-  onGenerate,
 }: InvoicePreviewModalProps) {
-  const { invoicePreviewModal, generateInvoiceModal } = propertyDetailContent
+  const { invoicePreviewModal } = propertyDetailContent
   const { showToast } = useToast()
-
-  if (!preview) return null
-
-  const amount = formatInvoiceMoney(preview.total)
-  const paymentMethod = paymentMethodLabel(preview.paymentMethod)
+  const amount = formatAmount(visit.price)
+  const paymentMethod = paymentMethodLabel(property)
+  const { street, postcode } = splitAddress(property.fullAddress)
   const subtitle = invoicePreviewModal.subtitle
-    .replace('{customer}', preview.customer.name)
-    .replace('{visitDate}', formatInvoiceDate(preview.visitDate))
+    .replace('{customer}', property.customerName)
+    .replace('{visitDate}', visit.visitDate)
 
   return (
     <Modal
       open={open}
-      onClose={generating ? () => undefined : onClose}
+      onClose={onClose}
       title={invoicePreviewModal.title}
       subtitle={subtitle}
       showCloseButton
@@ -74,8 +112,7 @@ export function InvoicePreviewModal({
           <button
             type="button"
             onClick={onEditDetails}
-            disabled={generating}
-            className="inline-flex items-center gap-1.5 px-1 text-sm font-medium text-muted transition-colors hover:text-foreground disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-1 text-sm font-medium text-muted transition-colors hover:text-foreground"
           >
             <DashboardIcon name="arrow-left" className="h-4 w-4" />
             {invoicePreviewModal.actions.editDetails}
@@ -85,38 +122,20 @@ export function InvoicePreviewModal({
               compact
               variant="secondary"
               className="gap-2 rounded-lg"
-              disabled={generating}
               onClick={() => showToast(invoicePreviewModal.printToast)}
             >
               <DashboardIcon name="print" className="h-4 w-4" />
               {invoicePreviewModal.actions.print}
             </ModalButton>
-            {onGenerate ? (
-              <ModalButton
-                compact
-                variant="primary"
-                className={`gap-2 rounded-lg ${dashboardCtaShadowClass}`}
-                disabled={generating}
-                onClick={onGenerate}
-              >
-                <DashboardIcon name="send" className="h-4 w-4" />
-                {generating
-                  ? 'Saving…'
-                  : sendEmail
-                    ? generateInvoiceModal.actions.generate
-                    : generateInvoiceModal.actions.draft}
-              </ModalButton>
-            ) : (
-              <ModalButton
-                compact
-                variant="primary"
-                className={`gap-2 rounded-lg ${dashboardCtaShadowClass}`}
-                onClick={() => showToast(invoicePreviewModal.downloadToast)}
-              >
-                <DashboardIcon name="download" className="h-4 w-4" />
-                {invoicePreviewModal.actions.downloadPdf}
-              </ModalButton>
-            )}
+            <ModalButton
+              compact
+              variant="primary"
+              className={`gap-2 rounded-lg ${dashboardCtaShadowClass}`}
+              onClick={() => showToast(invoicePreviewModal.downloadToast)}
+            >
+              <DashboardIcon name="download" className="h-4 w-4" />
+              {invoicePreviewModal.actions.downloadPdf}
+            </ModalButton>
           </div>
         </div>
       }
@@ -132,9 +151,7 @@ export function InvoicePreviewModal({
             <p className="text-[26px] font-bold tracking-[0.18em] text-white">
               {invoicePreviewModal.invoiceHeading}
             </p>
-            <p className="mt-0.5 text-sm font-normal text-white/45">
-              {formatInvoiceNumber(preview.invoiceNumber)}
-            </p>
+            <p className="mt-0.5 text-sm font-normal text-white/45">{formatInvoiceNumber(invoiceNumber)}</p>
           </div>
         </div>
 
@@ -142,34 +159,19 @@ export function InvoicePreviewModal({
           <div>
             <p className={invoiceCapsClass}>{invoicePreviewModal.billTo}</p>
             <div className="mt-3 space-y-0.5">
-              <p className={invoiceStrongClass}>{preview.customer.name}</p>
-              <p className={invoiceMetaClass}>{preview.customer.addressLine}</p>
-              {preview.customer.postcode ? (
-                <p className={invoiceMetaClass}>{preview.customer.postcode}</p>
-              ) : null}
-              {preview.customer.email ? (
-                <p className={invoiceMetaClass}>{preview.customer.email}</p>
-              ) : null}
-              {preview.customer.phone ? (
-                <p className={invoiceMetaClass}>{preview.customer.phone}</p>
-              ) : null}
+              <p className={invoiceStrongClass}>{property.customerName}</p>
+              <p className={invoiceMetaClass}>{street}</p>
+              {postcode ? <p className={invoiceMetaClass}>{postcode}</p> : null}
+              <p className={invoiceMetaClass}>{property.email}</p>
+              <p className={invoiceMetaClass}>{property.phone}</p>
             </div>
           </div>
           <div className="sm:text-right">
             <p className={invoiceCapsClass}>{invoicePreviewModal.invoiceDetails}</p>
             <dl className="mt-3 space-y-2">
-              <DetailRow
-                label={invoicePreviewModal.fields.invoiceDate}
-                value={formatInvoiceDate(preview.invoiceDate)}
-              />
-              <DetailRow
-                label={invoicePreviewModal.fields.visitDate}
-                value={formatInvoiceDate(preview.visitDate)}
-              />
-              <DetailRow
-                label={invoicePreviewModal.fields.dueDate}
-                value={formatInvoiceDate(dueDate || preview.dueDate)}
-              />
+              <DetailRow label={invoicePreviewModal.fields.invoiceDate} value={invoicePreviewModal.defaultInvoiceDate} />
+              <DetailRow label={invoicePreviewModal.fields.visitDate} value={visit.visitDate} />
+              <DetailRow label={invoicePreviewModal.fields.dueDate} value={invoicePreviewModal.defaultDueDate} />
               <DetailRow label={invoicePreviewModal.fields.payment} value={paymentMethod} />
             </dl>
           </div>
@@ -191,32 +193,21 @@ export function InvoicePreviewModal({
               </tr>
             </thead>
             <tbody>
-              {preview.lineItems.map((item, index) => (
-                <tr key={`${item.description}-${index}`} className={cn('border-b', invoiceRuleClass)}>
-                  <td className="py-4 pr-4 align-top">
-                    <p className={invoiceStrongClass}>{item.description}</p>
-                    <p className={cn('mt-1 text-xs', invoiceMetaClass)}>
-                      {formatInvoiceDateLong(preview.visitDate)}
-                    </p>
-                  </td>
-                  <td className={cn('py-4 pr-4 align-top', invoiceValueClass)}>
-                    {item.technicianName || '—'}
-                  </td>
-                  <td className={cn('py-4 text-right align-top', invoiceStrongClass)}>
-                    {formatInvoiceMoney(item.amount)}
-                  </td>
-                </tr>
-              ))}
+              <tr className={cn('border-b', invoiceRuleClass)}>
+                <td className="py-4 pr-4 align-top">
+                  <p className={invoiceStrongClass}>{invoicePreviewModal.serviceTitle}</p>
+                  <p className={cn('mt-1 text-xs', invoiceMetaClass)}>{visitSubtitle(visit.round, visit.visitDate)}</p>
+                </td>
+                <td className={cn('py-4 pr-4 align-top', invoiceValueClass)}>{technicianName(visit.technician)}</td>
+                <td className={cn('py-4 text-right align-top', invoiceStrongClass)}>{amount}</td>
+              </tr>
             </tbody>
           </table>
 
           <div className="mt-4 flex justify-end">
             <dl className="w-full max-w-[220px] space-y-2">
-              <TotalRow
-                label={invoicePreviewModal.totals.subtotal}
-                value={formatInvoiceMoney(preview.subtotal)}
-              />
-              <TotalRow label={vatPercentLabel(preview)} value={formatInvoiceMoney(preview.vatAmount)} />
+              <TotalRow label={invoicePreviewModal.totals.subtotal} value={amount} />
+              <TotalRow label={invoicePreviewModal.totals.vat} value="£0.00" />
               <div className={cn('flex items-center justify-between border-t pt-3', invoiceRuleClass)}>
                 <dt className="text-sm font-bold text-foreground">{invoicePreviewModal.totals.totalDue}</dt>
                 <dd className="text-base font-bold text-foreground">{amount}</dd>
@@ -225,13 +216,8 @@ export function InvoicePreviewModal({
           </div>
         </div>
 
-        {notes?.trim() ? (
-          <p className={cn('border-t px-6 py-3 text-sm text-muted', invoiceRuleClass)}>{notes.trim()}</p>
-        ) : null}
-
         <p className={cn('border-t px-6 py-4 text-center text-xs font-normal text-muted/55', invoiceRuleClass)}>
-          {preview.business.name}
-          {preview.business.email ? ` · ${preview.business.email}` : ''}
+          {invoicePreviewModal.footer}
         </p>
       </div>
     </Modal>

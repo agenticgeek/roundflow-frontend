@@ -1,5 +1,4 @@
 export type TechnicianStatus = 'in-progress' | 'available' | 'off-duty'
-export type TechnicianAppStatus = 'PENDING_INVITE' | 'ACTIVE' | 'INACTIVE'
 export type PhotoReviewStatus = 'approved' | 'pending' | 'flagged'
 
 export interface TechnicianRound {
@@ -19,10 +18,8 @@ export interface TechnicianRecord {
   phone: string
   email: string
   areas: string[]
-  serviceAreaId?: string | null
   notes: string
   status: TechnicianStatus
-  appStatus?: TechnicianAppStatus
   appActive: boolean
   memberSince: string
   revenue: string
@@ -90,14 +87,14 @@ export const techniciansContent = {
     optional: 'optional',
     appAccess: 'App Access',
     appAccessActive: 'App Access Active',
-    inviteBySms: 'Send App Invite',
-    inviteDescription: 'Technician will receive an email invite to join RoundFlow',
-    inviteNotice: 'An invite email will be sent to the address above once you save.',
+    inviteBySms: 'Send App Invite via SMS',
+    inviteDescription: 'Technician will receive a link to download the RoundFlow mobile app',
+    inviteNotice: 'A text message will be sent to the mobile number above once you save.',
     inviteSent: 'App invite already sent.',
     resend: 'Resend invite?',
     danger: 'Danger Zone',
-    dangerDescription: 'Deactivate this technician. They stay in history but cannot be assigned to new rounds.',
-    remove: 'Deactivate Technician',
+    dangerDescription: 'This will permanently remove James from all rounds.',
+    remove: 'Remove Technician',
     cancel: 'Cancel',
     save: 'Save Changes',
     add: 'Add Technician',
@@ -160,10 +157,8 @@ export const techniciansContent = {
     approveDescription:
       'This will mark all 24 photos in the current view as approved. This action cannot be undone.',
     approve: 'Approve All',
-    removeTitle: 'Deactivate this technician?',
-    removeDescription:
-      'They will be marked inactive and cannot be assigned to rounds. Existing scheduled visits are not changed — reassign those separately if needed.',
-    remove: 'Deactivate',
+    removeTitle: 'Are you sure you want to remove the technician James from the system?',
+    remove: 'Remove',
     cancel: 'Cancel',
   },
   technicians: [

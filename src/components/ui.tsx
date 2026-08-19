@@ -194,12 +194,10 @@ export function Toggle({
   checked,
   onChange,
   ariaLabel,
-  disabled = false,
 }: {
   checked: boolean
   onChange: (checked: boolean) => void
   ariaLabel: string
-  disabled?: boolean
 }) {
   return (
     <button
@@ -207,15 +205,10 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
-      disabled={disabled}
-      onClick={() => {
-        if (disabled) return
-        onChange(!checked)
-      }}
+      onClick={() => onChange(!checked)}
       className={cn(
         'relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
         checked ? 'bg-primary' : 'bg-border',
-        disabled && 'cursor-not-allowed opacity-50',
       )}
     >
       <span

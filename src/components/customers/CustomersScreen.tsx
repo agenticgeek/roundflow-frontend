@@ -8,7 +8,6 @@ import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { dashboardCtaClass, dashboardHoverCardClass } from '@/components/dashboard/dashboard-styles'
 import { Input, MultiSelect, Select } from '@/components/ui'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
-import { CustomersScreenSkeleton } from '@/components/customers/CustomersSkeletons'
 import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { customerListRowToRecord, formatMoney } from '@/features/customers/lib/mappers'
 import { useRounds } from '@/features/rounds/hooks/useRounds'
@@ -133,10 +132,6 @@ export function CustomersScreen() {
     ]
   }, [roundsQuery.data])
 
-  if (customersQuery.isPending) {
-    return <CustomersScreenSkeleton />
-  }
-
   return (
     <div className="space-y-5">
       <header>
@@ -144,9 +139,11 @@ export function CustomersScreen() {
           {customersContent.header.title}
         </h1>
         <p className="mt-1 text-sm text-muted">
-          {customersQuery.isError
-            ? 'Could not load customers.'
-            : `Showing ${filteredRecords.length} customer${filteredRecords.length === 1 ? '' : 's'}`}
+          {customersQuery.isPending
+            ? 'Loading customers…'
+            : customersQuery.isError
+              ? 'Could not load customers.'
+              : `Showing ${filteredRecords.length} customer${filteredRecords.length === 1 ? '' : 's'}`}
         </p>
       </header>
 
@@ -208,7 +205,11 @@ export function CustomersScreen() {
       </div>
 
       <section className="space-y-3">
-        {customersQuery.isError ? (
+        {customersQuery.isPending ? (
+          <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
+            Loading customers…
+          </PanelCard>
+        ) : customersQuery.isError ? (
           <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
             <p>Could not load customers.</p>
             <button
