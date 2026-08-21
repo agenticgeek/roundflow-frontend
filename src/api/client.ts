@@ -26,9 +26,14 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const { accessToken, headers, ...requestInit } = init
   const { data } = await supabase.auth.getSession()
   const token = accessToken ?? data.session?.access_token ?? ''
+  if (!token) {
+    throw new ApiError(401, 'Not signed in')
+  }
+
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
     ...requestInit,
     headers: {
+      Accept: 'application/json',
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
       ...(headers ?? {}),
