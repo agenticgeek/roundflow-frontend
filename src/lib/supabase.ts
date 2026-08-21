@@ -1,12 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
-import { authBaseUrl } from '@/lib/env'
 
-const supabaseUrl = authBaseUrl()
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(
+  /\/$/,
+  '',
+)
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
-    'Missing auth env. Set VITE_API_URL (or VITE_SUPABASE_URL) and VITE_SUPABASE_ANON_KEY in .env',
+    'Missing Supabase environment variables. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env',
   )
 }
 

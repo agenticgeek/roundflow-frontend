@@ -12,7 +12,7 @@ export const IS_PROD = import.meta.env.PROD
 /**
  * Same-origin prefix used by the Vite dev proxy (`vite.config.ts`).
  * Browser calls `/__rf/auth/me` → Vite forwards to `VITE_API_URL/auth/me`
- * so localhost:5173 does not hit CORS (preflight OPTIONS has no Bearer → 401).
+ * so localhost:5173 does not hit CORS on the RoundFlow API.
  */
 export const DEV_API_PROXY_PREFIX = '/__rf'
 
@@ -22,16 +22,6 @@ export function apiBaseUrl(): string {
   const url = import.meta.env.VITE_API_URL
   if (!url) {
     throw new Error('Missing VITE_API_URL. Configure the RoundFlow API before loading server data.')
-  }
-  return url.replace(/\/$/, '')
-}
-
-/** GoTrue / login host — same proxy in dev so POST /auth/v1/token is same-origin. */
-export function authBaseUrl(): string {
-  if (IS_DEV) return `${window.location.origin}${DEV_API_PROXY_PREFIX}`
-  const url = import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_API_URL
-  if (!url) {
-    throw new Error('Missing VITE_API_URL (or VITE_SUPABASE_URL) for auth.')
   }
   return url.replace(/\/$/, '')
 }
