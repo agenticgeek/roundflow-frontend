@@ -27,11 +27,10 @@ import type {
 } from '@/content/property-detail'
 
 const FREQUENCY_LABELS: Record<CleaningFrequency, string> = {
-  FORTNIGHTLY: 'Fortnightly',
   FOUR_WEEKLY: 'Every 4 weeks',
   SIX_WEEKLY: 'Every 6 weeks',
   EIGHT_WEEKLY: 'Every 8 weeks',
-  MONTHLY: 'Monthly',
+  TWELVE_WEEKLY: 'Every 12 weeks',
 }
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -180,6 +179,9 @@ export function customerDetailToPropertyRecord(
     accessNotes: property?.accessNotes?.trim() || 'No access notes',
     riskNotes: property?.riskNotes?.trim() || 'No risk notes',
     phone: customer.phone ?? '',
+    // CONTRACT-DIFF: the generated CustomerDetail.customer response type hasn't caught up
+    // with landline yet, even though the Create/Update Customer input schemas already have it.
+    landline: (customer as { landline?: string | null }).landline ?? '',
     email: customer.email ?? '',
     serviceType: plan?.serviceName ?? undefined,
     planStatus: mapPlanStatus(plan?.status, hasRound, onHold),

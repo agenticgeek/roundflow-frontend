@@ -22,6 +22,7 @@ interface EditCustomerRecordModalProps {
 interface EditCustomerForm {
   fullName: string
   phone: string
+  landline: string
   email: string
   streetAddress: string
   postcode: string
@@ -52,8 +53,10 @@ function priceValue(price: string) {
 }
 
 function frequencyOptionValue(frequency: string) {
-  if (frequency.toLowerCase().includes('8')) return 'every-8-weeks'
-  if (frequency.toLowerCase().includes('month')) return 'monthly'
+  const normalized = frequency.toLowerCase()
+  if (normalized.includes('12')) return 'every-12-weeks'
+  if (normalized.includes('8')) return 'every-8-weeks'
+  if (normalized.includes('6')) return 'every-6-weeks'
   return 'every-4-weeks'
 }
 
@@ -74,6 +77,7 @@ function buildForm(property: PropertyDetailRecord): EditCustomerForm {
   return {
     fullName: property.customerName,
     phone: property.phone,
+    landline: property.landline,
     email: property.email,
     streetAddress: street,
     postcode,
@@ -127,9 +131,9 @@ function IconInput({
 }
 
 function toApiFrequency(value: string): CleaningFrequency {
+  if (value === 'every-12-weeks') return 'TWELVE_WEEKLY'
   if (value === 'every-8-weeks') return 'EIGHT_WEEKLY'
-  if (value === 'monthly') return 'MONTHLY'
-  if (value === 'fortnightly') return 'FORTNIGHTLY'
+  if (value === 'every-6-weeks') return 'SIX_WEEKLY'
   return 'FOUR_WEEKLY'
 }
 
@@ -197,6 +201,7 @@ export function EditCustomerRecordModal({
       await updateCustomer.mutateAsync({
         name: form.fullName.trim(),
         phone: form.phone.trim() || null,
+        landline: form.landline.trim() || null,
         email: form.email.trim() || null,
         addressLine: form.streetAddress.trim(),
         postcode: form.postcode.trim(),
@@ -275,16 +280,25 @@ export function EditCustomerRecordModal({
               className={cn(modalInputClass, 'rounded-lg bg-card')}
             />
           </Field>
-          <Field label={editCustomerModal.fields.email} size="sm" labelWeight="medium">
+          <Field label={editCustomerModal.fields.landline} size="sm" labelWeight="medium">
             <IconInput
-              icon="mail"
-              type="email"
-              value={form.email}
-              onChange={(event) => updateField('email', event.target.value)}
+              icon="phone"
+              value={form.landline}
+              onChange={(event) => updateField('landline', event.target.value)}
               className={cn(modalInputClass, 'rounded-lg bg-card')}
             />
           </Field>
         </div>
+
+        <Field label={editCustomerModal.fields.email} size="sm" labelWeight="medium">
+          <IconInput
+            icon="mail"
+            type="email"
+            value={form.email}
+            onChange={(event) => updateField('email', event.target.value)}
+            className={cn(modalInputClass, 'rounded-lg bg-card')}
+          />
+        </Field>
       </ModalSection>
 
       <ModalSection icon="home" title={editCustomerModal.sections.propertyAddress}>

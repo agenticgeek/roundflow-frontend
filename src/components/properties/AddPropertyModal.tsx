@@ -19,7 +19,7 @@ import { useServiceAreas, useServices, useTechnicians } from '@/features/setting
 import { settingsServiceAreasToRows, settingsTechniciansToRows } from '@/features/settings/lib/mappers'
 import { useCreateProperty } from '@/features/properties/hooks/useProperties'
 import { useRound, useRounds } from '@/features/rounds/hooks/useRounds'
-import type { PaymentMethod, PropertyCreateInput } from '@/api/types'
+import type { PaymentMethod, PropertyCreateInput, PropertyType } from '@/api/types'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useToast } from '@/components/ui/toast'
 import { errorMessage } from '@/lib/errors'
@@ -375,9 +375,10 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       postcode: draft.postcode.trim(),
       price,
       phone: draft.phone.trim() || undefined,
+      landline: draft.landline.trim() || undefined,
       email: draft.email.trim() || undefined,
       propertyName: draft.propertyName.trim() || undefined,
-      propertyType: draft.propertyType || undefined,
+      propertyType: (draft.propertyType || undefined) as PropertyType | undefined,
       serviceAreaId: draft.serviceArea,
       serviceId: realId(draft.serviceId),
       paymentMethod: (draft.paymentMethod || undefined) as PaymentMethod | undefined,
@@ -520,6 +521,7 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
             onBack={handleSubBack}
             onContinue={isLastStep ? () => void saveProperty() : handleSubContinue}
             continueLabel={continueLabel}
+            loading={isLastStep && createProperty.isPending}
           />
         </div>
       </div>

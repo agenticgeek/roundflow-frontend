@@ -31,12 +31,22 @@ export interface BusinessProfileData {
   currency: string
 }
 
+/** Business bank account printed in the invoice footer for bank-transfer payers. */
+export interface BankDetailsForm {
+  accountName: string
+  bankName: string
+  /** Display format `12-34-56`. */
+  sortCode: string
+  accountNumber: string
+}
+
 export interface PaymentSetupData {
   goCardlessConnected: boolean
   stripeConnected: boolean
   defaultPaymentRule: string
   vatApplicable: boolean
   debtHoldEnabled: boolean
+  bankDetails: BankDetailsForm
 }
 
 export interface CatalogueService {
@@ -53,7 +63,7 @@ export interface ServiceCatalogueData {
   services: CatalogueService[]
 }
 
-export type RecurringCycle = '1-week' | '2-week' | '3-week' | '4-week'
+export type RecurringCycle = '4-week' | '6-week' | '8-week' | '12-week'
 
 export type CleanMethod = 'traditional' | 'water-fed-pole'
 
@@ -61,17 +71,19 @@ export interface RoundSettingsData {
   recurringCycle: RecurringCycle
   cleanMethods: CleanMethod[]
   autoGenerateVisits: boolean
-  reminderTiming: string
-  reminderTimeOfDay: string
+  reminderTiming: string[]
+  reminderTimeOfDay: string[]
 }
 
-export type MessageChannel = 'sms' | 'whatsapp'
+export type MessageChannel = 'sms' | 'whatsapp' | 'email'
 
 export interface MessageTemplate {
   id: string
   name: string
   channel: MessageChannel
   body: string
+  /** Email channel only. */
+  subject?: string | null
 }
 
 export interface SmsTemplatesData {
@@ -140,6 +152,7 @@ export interface PropertyDraft {
   customerName: string
   propertyName: string
   phone: string
+  landline: string
   email: string
   fullAddress: string
   postcode: string

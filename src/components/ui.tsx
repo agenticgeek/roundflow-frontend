@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import type { DropdownSize as InputSize } from '@/components/ui/dropdown'
 
 export { MultiSelect, Select } from '@/components/ui/dropdown'
+export { Spinner } from '@/components/ui/spinner'
 export type {
   DropdownOption as SelectOption,
   DropdownSize,

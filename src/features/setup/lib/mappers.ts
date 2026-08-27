@@ -16,18 +16,21 @@ import type {
   TechnicianAppStatus,
   TechnicianInput,
 } from '@/api/types'
-import type { SetupStep2Input } from '@/api/setup.api'
+import type { SetupStep2Input, SetupStep5Input, SetupStep5Template } from '@/api/setup.api'
 import { daysToCycleLength, cycleLengthToDays } from '@/lib/cycle-length'
+import { bankDetailsFromForm, bankDetailsToForm } from '@/lib/bank-details'
 import { deriveTechnicianAppStatus } from '@/api/types'
 import type {
   ActivateSystemData,
   AssignTechniciansData,
   BusinessProfileData,
   CatalogueService,
+  MessageChannel,
   PaymentSetupData,
   PropertyDraft,
   PropertyRecord,
   RoundSettingsData,
+  SmsTemplatesData,
   ServiceArea as WizardServiceArea,
   ServiceAreaData,
   ServiceCatalogueData,
@@ -36,7 +39,9 @@ import type {
 } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 
-const DAY_UI_TO_API: Record<string, string> = {
+type DayOfWeek = components['schemas']['DayOfWeek']
+
+const DAY_UI_TO_API: Record<string, DayOfWeek> = {
   mon: 'MON',
   tue: 'TUE',
   wed: 'WED',
@@ -104,7 +109,9 @@ export function businessProfileFromForm(values: BusinessProfileData) {
     companyNumber: values.companyNumber.trim() || undefined,
     vatRegistered: values.vatRegistered ?? undefined,
     vatRegistration: values.vatNumber.trim() || undefined,
-    defaultWorkingDays: values.workingDays.map((day) => DAY_UI_TO_API[day] ?? day.toUpperCase()),
+    defaultWorkingDays: values.workingDays.map(
+      (day) => DAY_UI_TO_API[day] ?? (day.toUpperCase() as DayOfWeek),
+    ),
     timezone: values.timezone,
     currency: values.currency,
   }
@@ -123,6 +130,7 @@ export function paymentSetupToForm(
       PAYMENT_RULE_API_TO_UI[data.paymentRule ?? ''] ?? defaults.defaultPaymentRule,
     vatApplicable: data.vatInInvoices ?? defaults.vatApplicable,
     debtHoldEnabled: data.debtHoldEnabled ?? defaults.debtHoldEnabled,
+    bankDetails: bankDetailsToForm(data.bankDetails),
   }
 }
 
@@ -133,6 +141,7 @@ export function paymentSetupFromForm(values: PaymentSetupData): SetupStep2Input 
     vatInInvoices: values.vatApplicable,
     gocardlessConnected: values.goCardlessConnected,
     stripeConnected: values.stripeConnected,
+    bankDetails: bankDetailsFromForm(values.bankDetails),
   }
 }
 
@@ -180,6 +189,44 @@ export function roundSettingsFromForm(values: RoundSettingsData) {
   return {
     defaultCycleLength: cycleLengthToDays(values.recurringCycle),
   }
+}
+
+const CHANNEL_API_TO_UI: Record<string, MessageChannel> = {
+  SMS: 'sms',
+  WHATSAPP: 'whatsapp',
+  EMAIL: 'email',
+}
+
+const CHANNEL_UI_TO_API: Record<MessageChannel, SetupStep5Input['channel']> = {
+  sms: 'SMS',
+  whatsapp: 'WHATSAPP',
+  email: 'EMAIL',
+}
+
+/** Server list → wizard form. Falls back to the seeded defaults so step 5 can always reach ≥1 template. */
+export function messageTemplatesToForm(
+  rows: SetupStep5Template[] | undefined,
+): SmsTemplatesData {
+  if (!rows?.length) return setupWizardContent.smsTemplates.defaults
+  return {
+    templates: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      channel: CHANNEL_API_TO_UI[row.channel ?? 'SMS'] ?? 'sms',
+      body: row.body,
+      subject: row.subject ?? null,
+    })),
+  }
+}
+
+/** Wizard form → `POST /setup/step/5` bulk-replace payload. */
+export function messageTemplatesFromForm(values: SmsTemplatesData): SetupStep5Input[] {
+  return values.templates.map((template) => ({
+    name: template.name.trim(),
+    channel: CHANNEL_UI_TO_API[template.channel] ?? 'SMS',
+    body: template.body.trim(),
+    ...(template.channel === 'email' ? { subject: template.subject?.trim() || null } : {}),
+  }))
 }
 
 function toWizardAppStatus(
@@ -298,6 +345,7 @@ export function step9BundlesToRecords(
     customerName: bundle.customer.name,
     propertyName: bundle.property.propertyName ?? bundle.customer.name,
     phone: bundle.customer.phone ?? '',
+    landline: bundle.customer.landline ?? '',
     email: bundle.customer.email ?? '',
     fullAddress: bundle.property.addressLine,
     postcode: bundle.property.postcode,
@@ -331,6 +379,7 @@ export function propertyDraftToStep9Input(draft: PropertyDraft): SetupStep9Input
     roundId: draft.round,
     ...(draft.propertyName.trim() ? { propertyName: draft.propertyName.trim() } : {}),
     ...(draft.phone.trim() ? { phone: draft.phone.trim() } : {}),
+    ...(draft.landline.trim() ? { landline: draft.landline.trim() } : {}),
     ...(draft.email.trim() ? { email: draft.email.trim() } : {}),
     ...(serviceAreaId ? { serviceAreaId } : {}),
     ...(draft.propertyType

@@ -35,11 +35,10 @@ const DAY_OPTIONS = [
 ] as const
 
 const FREQUENCY_OPTIONS = [
-  { value: 'FORTNIGHTLY', label: 'Fortnightly' },
   { value: 'FOUR_WEEKLY', label: 'Four weekly' },
   { value: 'SIX_WEEKLY', label: 'Six weekly' },
   { value: 'EIGHT_WEEKLY', label: 'Eight weekly' },
-  { value: 'MONTHLY', label: 'Monthly' },
+  { value: 'TWELVE_WEEKLY', label: 'Twelve weekly' },
 ] as const
 
 export function FirstRoundStep({

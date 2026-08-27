@@ -39,6 +39,7 @@ export interface PropertyDetailRecord {
   accessNotes: string
   riskNotes: string
   phone: string
+  landline: string
   email: string
   serviceType?: string
   planStatus?: PropertyPlanStatus
@@ -115,6 +116,7 @@ export const propertyDetailContent = {
     fields: {
       fullName: 'Full Name',
       phone: 'Phone Number',
+      landline: 'Landline Number',
       email: 'Email Address',
       streetAddress: 'Street Address',
       postcode: 'Postcode',
@@ -137,8 +139,9 @@ export const propertyDetailContent = {
     ],
     frequencyOptions: [
       { value: 'every-4-weeks', label: 'Every 4 weeks' },
+      { value: 'every-6-weeks', label: 'Every 6 weeks' },
       { value: 'every-8-weeks', label: 'Every 8 weeks' },
-      { value: 'monthly', label: 'Monthly' },
+      { value: 'every-12-weeks', label: 'Every 12 weeks' },
     ],
     cleanMethodOptions: [
       { value: 'water-fed-pole', label: 'Water Fed Pole' },
@@ -300,13 +303,40 @@ export const propertyDetailContent = {
       propertyType: 'Property Type',
       accessNotes: 'Access Notes',
       riskNotes: 'Risk Notes',
+      changeFrequency: 'Change Frequency',
     },
     contact: {
       title: 'Contact Information',
       name: 'Name',
       phone: 'Phone',
+      landline: 'Landline',
       email: 'Email',
     },
+  },
+  changeFrequencyModal: {
+    title: 'Change Service Frequency',
+    labels: {
+      customer: 'Customer',
+      address: 'Address',
+      currentFrequency: 'Current Frequency',
+      currentRound: 'Current Round',
+      newFrequency: 'New Frequency',
+    },
+    placeholder: 'Select new frequency',
+    currentBadge: 'Current',
+    helper:
+      'The system will automatically find or create a matching round in the same service area.',
+    actions: {
+      cancel: 'Cancel',
+      submit: 'Change Frequency',
+    },
+    successToast: 'Service frequency updated',
+    options: [
+      { value: 'FOUR_WEEKLY', label: 'Every 4 weeks' },
+      { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
+      { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
+      { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
+    ],
   },
   servicePlan: {
     title: 'Service Plan Details',
@@ -505,6 +535,7 @@ export const propertyDetailContent = {
       accessNotes: 'No access notes',
       riskNotes: 'No risk notes',
       phone: '+44 7700 900000',
+      landline: '+44 1665 600000',
       email: 'customer@example.com',
     },
     '45-bondgate-within': {
@@ -531,6 +562,7 @@ export const propertyDetailContent = {
       accessNotes: 'Ring doorbell on arrival',
       riskNotes: 'No risk notes',
       phone: '+44 7700 900001',
+      landline: '',
       email: 'mary.johnson@example.com',
     },
     '78-narrowgate': {
@@ -557,6 +589,7 @@ export const propertyDetailContent = {
       accessNotes: 'Rear lane access only',
       riskNotes: 'Steep driveway',
       phone: '+44 7700 900002',
+      landline: '+44 1665 600002',
       email: 'robert.williams@example.com',
     },
     '23-bailiffgate': {
@@ -583,6 +616,7 @@ export const propertyDetailContent = {
       accessNotes: 'Front door only',
       riskNotes: 'No risk notes',
       phone: '+44 7700 900003',
+      landline: '',
       email: 'sarah.brown@example.com',
     },
     '56-fenkle-street': {
@@ -609,6 +643,7 @@ export const propertyDetailContent = {
       accessNotes: 'No special instructions',
       riskNotes: 'No risk notes',
       phone: '+44 7700 900004',
+      landline: '',
       email: 'david.miller@example.com',
     },
   } satisfies Record<string, PropertyDetailRecord>,
@@ -746,6 +781,7 @@ function fromCustomerRecord(record: CustomerPropertyRecord): PropertyDetailRecor
     accessNotes: 'No access notes',
     riskNotes: 'No risk notes',
     phone: '+44 7700 900000',
+    landline: '',
     email: 'customer@example.com',
     needsAssignment: isUnassigned,
     serviceType: 'Window Cleaning',

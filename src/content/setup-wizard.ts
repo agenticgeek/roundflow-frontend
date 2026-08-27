@@ -97,6 +97,21 @@ export interface SetupWizardContent {
       vatApplicable: { label: string; description: string }
       debtHoldEnabled: { label: string; description: string }
     }
+    bankDetails: {
+      heading: string
+      description: string
+      fields: {
+        accountName: { label: string; placeholder: string }
+        bankName: { label: string; optional: string; placeholder: string }
+        sortCode: { label: string; placeholder: string }
+        accountNumber: { label: string; placeholder: string }
+      }
+      validation: {
+        accountNameRequired: string
+        sortCodeInvalid: string
+        accountNumberInvalid: string
+      }
+    }
     paymentRules: SelectOption[]
     defaults: PaymentSetupData
   }
@@ -147,7 +162,9 @@ export interface SetupWizardContent {
     recurringCycles: readonly { id: RecurringCycle; label: string }[]
     cleanMethods: readonly { id: CleanMethod; label: string }[]
     reminderTimings: SelectOption[]
+    reminderTimingPlaceholder: string
     reminderTimesOfDay: SelectOption[]
+    reminderTimeOfDayPlaceholder: string
     defaults: RoundSettingsData
   }
   smsTemplates: {
@@ -159,10 +176,12 @@ export interface SetupWizardContent {
       edit: string
       smsMessage: string
       whatsappMessage: string
+      emailMessage: string
     }
     channelLabels: {
       sms: string
       whatsapp: string
+      email: string
     }
     editModal: {
       title: string
@@ -294,6 +313,7 @@ export interface SetupWizardContent {
       customerName: { label: string; placeholder: string }
       propertyName: { label: string; optional: string; placeholder: string }
       phone: { label: string; placeholder: string }
+      landline: { label: string; optional: string; placeholder: string }
       email: { label: string; optional: string; placeholder: string }
       fullAddress: { label: string; placeholder: string }
       postcode: { label: string; placeholder: string }
@@ -347,6 +367,8 @@ export interface SetupWizardContent {
     readyDescription: string
     actions: { activate: string }
     cycleOptions: SelectOption[]
+    validation: { roundsRequired: string }
+    emptyRounds: string
     defaults: ActivateSystemData
   }
   reviewLaunch: {
@@ -706,6 +728,22 @@ export const setupWizardContent = {
         description: 'Block service if payment is overdue',
       },
     },
+    bankDetails: {
+      heading: 'Bank Account Details',
+      description:
+        'Printed in the invoice footer so customers paying by bank transfer know where to send payment.',
+      fields: {
+        accountName: { label: 'Account Name', placeholder: 'e.g. Alnwick Window Cleaning Ltd' },
+        bankName: { label: 'Bank Name', optional: '(optional)', placeholder: 'e.g. Barclays' },
+        sortCode: { label: 'Sort Code', placeholder: '12-34-56' },
+        accountNumber: { label: 'Account Number', placeholder: '12345678' },
+      },
+      validation: {
+        accountNameRequired: 'Account name is required when adding bank details.',
+        sortCodeInvalid: 'Sort code must be 6 digits (e.g. 12-34-56).',
+        accountNumberInvalid: 'Account number must be 8 digits.',
+      },
+    },
     paymentRules: [
       { value: 'collect-after-visit', label: 'Collect after Visit' },
       { value: 'collect-before-visit', label: 'Collect before Visit' },
@@ -717,6 +755,7 @@ export const setupWizardContent = {
       defaultPaymentRule: 'collect-after-visit',
       vatApplicable: true,
       debtHoldEnabled: true,
+      bankDetails: { accountName: '', bankName: '', sortCode: '', accountNumber: '' },
     },
   },
   serviceCatalogue: {
@@ -832,7 +871,7 @@ export const setupWizardContent = {
       },
       reminderTiming: {
         label: 'Pre-Clean Reminder Timing',
-        description: 'Reminders are sent at 7 PM the evening prior to the scheduled clean.',
+        description: 'Choose one or more times reminders are sent to customers before the scheduled clean.',
       },
       reminderTimeOfDay: {
         label: 'Pre-Clean Reminder Timing',
@@ -840,33 +879,33 @@ export const setupWizardContent = {
       },
     },
     recurringCycles: [
-      { id: '1-week', label: 'Week' },
-      { id: '2-week', label: '2-week' },
-      { id: '3-week', label: '3-week' },
       { id: '4-week', label: '4-week' },
+      { id: '6-week', label: '6-week' },
+      { id: '8-week', label: '8-week' },
+      { id: '12-week', label: '12-week' },
     ],
     cleanMethods: [
       { id: 'traditional', label: 'Traditional' },
       { id: 'water-fed-pole', label: 'Water-fed Pole' },
     ],
     reminderTimings: [
-      { value: '6pm-evening-prior', label: '6 PM the evening prior' },
-      { value: '7pm-evening-prior', label: '7 PM the evening prior' },
-      { value: 'morning-of', label: 'Morning of the clean' },
-      { value: '2-hours-before', label: '2 hours before' },
+      { value: 'EVENING_BEFORE', label: 'Evening before the clean' },
+      { value: 'TWO_HOURS_BEFORE', label: '2 hours before the clean' },
     ],
+    reminderTimingPlaceholder: 'Select reminder timings',
     reminderTimesOfDay: [
       { value: '18:00', label: '6:00 PM' },
       { value: '19:00', label: '7:00 PM' },
       { value: '20:00', label: '8:00 PM' },
       { value: '21:00', label: '9:00 PM' },
     ],
+    reminderTimeOfDayPlaceholder: 'Select times of day',
     defaults: {
       recurringCycle: '4-week',
       cleanMethods: ['traditional', 'water-fed-pole'],
       autoGenerateVisits: true,
-      reminderTiming: '7pm-evening-prior',
-      reminderTimeOfDay: '19:00',
+      reminderTiming: ['EVENING_BEFORE'],
+      reminderTimeOfDay: ['19:00'],
     },
   },
   smsTemplates: {
@@ -878,10 +917,12 @@ export const setupWizardContent = {
       edit: 'Edit',
       smsMessage: 'SMS Message',
       whatsappMessage: 'WhatsApp Message',
+      emailMessage: 'Email Message',
     },
     channelLabels: {
       sms: 'SMS',
       whatsapp: 'WhatsApp',
+      email: 'Email',
     },
     editModal: {
       title: 'Edit Template',
@@ -1095,6 +1136,7 @@ export const setupWizardContent = {
         placeholder: 'Property Name',
       },
       phone: { label: 'Phone Number', placeholder: '+66 XXX-XXX' },
+      landline: { label: 'Landline Number', optional: '(optional)', placeholder: '+66 XXX-XXX' },
       email: { label: 'Email', optional: '(optional)', placeholder: 'customer@example.com' },
       fullAddress: { label: 'Full Address', placeholder: 'Street#X, 25th Avenue Park' },
       postcode: { label: 'Postcode', placeholder: 'NE66 1AA' },
@@ -1133,11 +1175,10 @@ export const setupWizardContent = {
       { value: 'CONSERVATORY', label: 'Conservatory' },
     ],
     cleaningFrequencies: [
-      { value: 'FORTNIGHTLY', label: 'Fortnightly' },
       { value: 'FOUR_WEEKLY', label: 'Every 4 weeks' },
       { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
       { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
-      { value: 'MONTHLY', label: 'Monthly' },
+      { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
     ],
     vatOptions: [
       { value: '', label: 'Select' },
@@ -1150,7 +1191,7 @@ export const setupWizardContent = {
       { value: 'STRIPE', label: 'Stripe' },
       { value: 'CASH', label: 'Cash' },
       { value: 'CHEQUE', label: 'Cheque' },
-      { value: 'BACS', label: 'BACS' },
+      { value: 'BACS', label: 'Bank Transfer' },
     ],
     preferredDays: [
       { value: '', label: 'Select' },
@@ -1173,6 +1214,7 @@ export const setupWizardContent = {
       customerName: '',
       propertyName: '',
       phone: '',
+      landline: '',
       email: '',
       fullAddress: '',
       postcode: '',
@@ -1224,13 +1266,15 @@ export const setupWizardContent = {
     readyDescription: 'This will generate the first set of visits and make them available for your team.',
     actions: { activate: 'Generate Visits' },
     cycleOptions: [
-      { value: '1', label: '1 week' },
-      { value: '2', label: '2 weeks' },
       { value: '4', label: '4 weeks' },
       { value: '6', label: '6 weeks' },
       { value: '8', label: '8 weeks' },
       { value: '12', label: '12 weeks' },
     ],
+    validation: {
+      roundsRequired: 'Select at least one round, or switch to All Rounds.',
+    },
+    emptyRounds: 'No rounds configured yet — choose All Rounds, or add a round in the First Round step.',
     defaults: {
       generateVisitsMode: 'all',
       startDate: '',

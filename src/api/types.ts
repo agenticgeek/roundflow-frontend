@@ -101,6 +101,7 @@ export type SetupStep9Input = {
   roundId: string
   propertyName?: string
   phone?: string
+  landline?: string
   email?: string
   serviceAreaId?: string
   propertyType?: PropertyType
@@ -116,6 +117,7 @@ export type SetupStep9Bundle = {
     id: string
     name: string
     phone?: string | null
+    landline?: string | null
     email?: string | null
   }
   property: {

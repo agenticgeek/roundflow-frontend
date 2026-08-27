@@ -7,6 +7,7 @@ import type {
 } from '@/content/property-detail'
 import { propertyDetailContent } from '@/content/property-detail'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
+import { ChangeFrequencyModal } from '@/components/property-detail/ChangeFrequencyModal'
 import { EditCustomerRecordModal } from '@/components/property-detail/EditCustomerRecordModal'
 import { PauseServiceModal } from '@/components/property-detail/PauseServiceModal'
 import { SendPropertyMessageModal } from '@/components/property-detail/SendPropertyMessageModal'
@@ -73,6 +74,7 @@ export function PropertyDetailScreen({
   const [activeTab, setActiveTab] = useState<PropertyDetailTabId>('overview')
   const [assignOpen, setAssignOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [frequencyOpen, setFrequencyOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
   const [messageOpen, setMessageOpen] = useState(false)
   const { actions, assignment, statusLabels, paymentStatusLabels, summary, summaryCards, tabs, overview } =
@@ -250,13 +252,11 @@ export function PropertyDetailScreen({
 
         <div key={activeTab} className="animate-fade-in p-6">
           {activeTab === 'overview' ? (
-            <>
-              <h2 className="text-base font-semibold text-foreground">{overview.propertyDetails.title}</h2>
-              <dl className="mt-5 grid gap-6 sm:grid-cols-2">
-                <OverviewField label={overview.propertyDetails.fullAddress} value={property.fullAddress} />
-                <OverviewField label={overview.propertyDetails.propertyType} value={property.propertyType} />
-              </dl>
-            </>
+            <OverviewTab
+              property={property}
+              canMutate={canMutate}
+              onChangeFrequency={() => setFrequencyOpen(true)}
+            />
           ) : activeTab === 'service-plan' ? (
             <ServicePlanTab
               property={property}
@@ -279,7 +279,14 @@ export function PropertyDetailScreen({
         </div>
       </section>
 
+      {activeTab === 'overview' ? <ContactInformationCard property={property} /> : null}
+
       <AssignToRoundModal open={assignOpen} record={customerRecord} onClose={() => setAssignOpen(false)} />
+      <ChangeFrequencyModal
+        open={frequencyOpen}
+        property={property}
+        onClose={() => setFrequencyOpen(false)}
+      />
       <EditCustomerRecordModal
         open={editOpen}
         property={property}
@@ -335,12 +342,104 @@ function SummaryRow({
   )
 }
 
-function OverviewField({ label, value }: { label: string; value: string }) {
+function OverviewTab({
+  property,
+  canMutate,
+  onChangeFrequency,
+}: {
+  property: PropertyDetailRecord
+  canMutate: boolean
+  onChangeFrequency: () => void
+}) {
+  const { overview } = propertyDetailContent
+
   return (
-    <div>
+    <article>
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="text-base font-semibold text-foreground">{overview.propertyDetails.title}</h2>
+        {canMutate ? (
+          <button
+            type="button"
+            onClick={onChangeFrequency}
+            className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-primary transition-opacity hover:opacity-80"
+          >
+            <DashboardIcon name="edit" className="h-4 w-4" />
+            {overview.propertyDetails.changeFrequency}
+          </button>
+        ) : null}
+      </div>
+      <dl className="mt-5 grid gap-6 sm:grid-cols-2">
+        <div>
+          <OverviewField
+            label={overview.propertyDetails.fullAddress}
+            value={property.fullAddress}
+          />
+          <OverviewField
+            className="mt-6"
+            label={overview.propertyDetails.accessNotes}
+            value={property.accessNotes}
+          />
+        </div>
+        <div>
+          <OverviewField
+            label={overview.propertyDetails.propertyType}
+            value={property.propertyType}
+          />
+          <OverviewField
+            className="mt-6"
+            label={overview.propertyDetails.riskNotes}
+            value={property.riskNotes}
+          />
+        </div>
+      </dl>
+    </article>
+  )
+}
+
+function ContactInformationCard({ property }: { property: PropertyDetailRecord }) {
+  const { overview } = propertyDetailContent
+
+  return (
+    <article className={cn(cardClass, 'overflow-hidden')}>
+      <h2 className="border-b border-border bg-surface px-5 py-3 text-base font-semibold text-foreground">
+        {overview.contact.title}
+      </h2>
+      <ul className="space-y-3.5 px-5 py-5">
+        <ContactRow icon="user" value={property.customerName} />
+        <ContactRow icon="phone" value={property.phone.trim() || '—'} />
+        <ContactRow icon="phone" label={overview.contact.landline} value={property.landline.trim() || '—'} />
+        <ContactRow icon="mail" value={property.email.trim() || '—'} />
+      </ul>
+    </article>
+  )
+}
+
+function OverviewField({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: string
+  className?: string
+}) {
+  return (
+    <div className={className}>
       <dt className="text-sm font-semibold text-foreground">{label}</dt>
       <dd className="mt-1.5 text-sm text-foreground">{value}</dd>
     </div>
+  )
+}
+
+function ContactRow({ icon, label, value }: { icon: string; label?: string; value: string }) {
+  return (
+    <li className="flex items-center gap-3 text-sm text-foreground">
+      <DashboardIcon name={icon} className="h-4 w-4 shrink-0 text-muted" />
+      <span>
+        {label ? <span className="text-muted">{label}: </span> : null}
+        {value}
+      </span>
+    </li>
   )
 }
 

@@ -277,9 +277,18 @@ export interface MultiSelectProps {
   inputSize?: DropdownSize
   disabled?: boolean
   'aria-label'?: string
+  /**
+   * `summary` (default, filter semantics): empty/all → `label`, one → its label, many → `label (N)`.
+   * `values` (form-field semantics): trigger lists every selected option label, comma-separated;
+   * empty → `placeholder` (falls back to `label`).
+   */
+  displayMode?: 'summary' | 'values'
+  placeholder?: string
+  /** Render the select-all row at the top of the menu (default true). */
+  showAllOption?: boolean
 }
 
-/** Checkbox multi-select dropdown — used for Customers status filter. */
+/** Checkbox multi-select dropdown — used for Customers status filter and multi-value settings fields. */
 export function MultiSelect({
   options,
   value,
@@ -290,6 +299,9 @@ export function MultiSelect({
   inputSize = 'default',
   disabled,
   'aria-label': ariaLabel,
+  displayMode = 'summary',
+  placeholder,
+  showAllOption = true,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -300,12 +312,21 @@ export function MultiSelect({
 
   const optionValues = options.map((option) => option.value)
   const allSelected = optionValues.length > 0 && optionValues.every((optionValue) => value.includes(optionValue))
-  const triggerLabel =
-    allSelected || value.length === 0
+  const showValues = displayMode === 'values'
+  const selectedLabels = options
+    .filter((option) => value.includes(option.value))
+    .map((option) => option.label)
+  const triggerLabel = showValues
+    ? selectedLabels.length > 0
+      ? selectedLabels.join(', ')
+      : (placeholder ?? label)
+    : allSelected || value.length === 0
       ? label
       : value.length === 1
         ? (options.find((option) => option.value === value[0])?.label ?? label)
         : `${label} (${value.length})`
+  // In filter mode "nothing selected" means "all"; in values mode it means empty.
+  const allRowChecked = allSelected || (!showValues && value.length === 0)
 
   function toggleAll() {
     onChange(allSelected ? [] : [...optionValues])
@@ -332,7 +353,15 @@ export function MultiSelect({
         onClick={() => setOpen((current) => !current)}
         className={cn(dropdownTriggerClass, dropdownSizeClass[inputSize], className, 'rounded-lg')}
       >
-        <span className="truncate">{triggerLabel}</span>
+        <span
+          className={cn(
+            'truncate',
+            showValues && selectedLabels.length === 0 && 'font-normal text-muted',
+          )}
+          title={showValues && selectedLabels.length > 1 ? triggerLabel : undefined}
+        >
+          {triggerLabel}
+        </span>
         <DashboardIcon
           name="chevron-down"
           className={cn('h-4 w-4 shrink-0 text-muted transition-transform', open && 'rotate-180')}
@@ -340,7 +369,9 @@ export function MultiSelect({
       </button>
 
       <DropdownMenuPortal open={open} triggerRef={triggerRef} menuRef={menuRef} labelledBy={triggerId}>
-        <DropdownItem label={allLabel} checked={allSelected || value.length === 0} onSelect={toggleAll} />
+        {showAllOption ? (
+          <DropdownItem label={allLabel} checked={allRowChecked} onSelect={toggleAll} />
+        ) : null}
         {options.map((option) => (
           <DropdownItem
             key={option.value}

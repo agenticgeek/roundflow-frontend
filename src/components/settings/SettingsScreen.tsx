@@ -3,6 +3,8 @@ import type { SettingsSectionId } from '@/content/settings'
 import { settingsContent } from '@/content/settings'
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { CatalogueService } from '@/types/setup-wizard'
+import { BankDetailsFields } from '@/components/setup-wizard/BankDetailsFields'
+import { validateBankDetails } from '@/lib/bank-details'
 import {
   useBusinessProfile,
   useConnectPayment,
@@ -45,7 +47,7 @@ import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError } from '@/lib/errors'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
-import { Field, FieldError, Input, Select, Toggle } from '@/components/ui'
+import { Field, FieldError, Input, MultiSelect, Select, Toggle } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
 import { useToast } from '@/components/ui/toast'
@@ -454,6 +456,11 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   async function save() {
     if (!canMutate) return
     setFormError(null)
+    const bankError = validateBankDetails(values.bankDetails)
+    if (bankError) {
+      setFormError(bankError)
+      return
+    }
     try {
       await update.mutateAsync(settingsPaymentFromForm(values))
       setDraft(null)
@@ -564,6 +571,18 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
           />
         </div>
 
+        <div className="border-t border-border pt-5">
+          <BankDetailsFields
+            values={values.bankDetails}
+            onChange={(bankDetails) => {
+              updateField('bankDetails', bankDetails)
+              if (formError) setFormError(null)
+            }}
+            disabled={!editing}
+            labelWeight="semibold"
+          />
+        </div>
+
         {formError ? <FieldError message={formError} /> : null}
       </div>
 
@@ -593,9 +612,11 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
   }
 
   const values = draft ?? settingsRoundToForm(query.data)
-  const { fields, recurringCycles, days } = {
+  const { fields, recurringCycles, reminderTimings, reminderTimingPlaceholder, days } = {
     fields: setupWizardContent.roundSettings.fields,
     recurringCycles: setupWizardContent.roundSettings.recurringCycles,
+    reminderTimings: setupWizardContent.roundSettings.reminderTimings,
+    reminderTimingPlaceholder: setupWizardContent.roundSettings.reminderTimingPlaceholder,
     days: setupWizardContent.businessProfile.days,
   }
 
@@ -677,6 +698,21 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
             onChange={(workingDays) => setDraft({ ...values, workingDays })}
           />
         </Field>
+
+        <div>
+          <p className="text-sm font-medium text-foreground">{fields.reminderTiming.label}</p>
+          <p className="mt-0.5 text-sm text-muted">{fields.reminderTiming.description}</p>
+          <MultiSelect
+            className="mt-3"
+            displayMode="values"
+            showAllOption={false}
+            label={fields.reminderTiming.label}
+            placeholder={reminderTimingPlaceholder}
+            value={values.reminderTiming}
+            onChange={(reminderTiming) => setDraft({ ...values, reminderTiming })}
+            options={reminderTimings}
+          />
+        </div>
 
         {formError ? <FieldError message={formError} /> : null}
       </div>

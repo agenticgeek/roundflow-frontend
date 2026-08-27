@@ -223,6 +223,7 @@ export function AddPropertyStep({
                   : addPropertyContent.actions.addProperty
                 : undefined
             }
+            loading={subStep === subSteps.length - 1 && adding}
           />
         </div>
       </div>
@@ -308,19 +309,32 @@ export function PropertyDetailsPanel({
             />
           </Field>
           <Field
-            label={<LabelWithHint label={fields.email.label} hint={fields.email.optional} />}
+            label={<LabelWithHint label={fields.landline.label} hint={fields.landline.optional} />}
             labelWeight="medium"
             size="sm"
           >
             <Input
               inputSize="sm"
-              type="email"
-              value={draft.email}
-              onChange={(e) => onChange('email', e.target.value)}
-              placeholder={fields.email.placeholder}
+              type="tel"
+              value={draft.landline}
+              onChange={(e) => onChange('landline', e.target.value)}
+              placeholder={fields.landline.placeholder}
             />
           </Field>
         </div>
+        <Field
+          label={<LabelWithHint label={fields.email.label} hint={fields.email.optional} />}
+          labelWeight="medium"
+          size="sm"
+        >
+          <Input
+            inputSize="sm"
+            type="email"
+            value={draft.email}
+            onChange={(e) => onChange('email', e.target.value)}
+            placeholder={fields.email.placeholder}
+          />
+        </Field>
       </div>
 
       <SectionHeading>{sections.address}</SectionHeading>

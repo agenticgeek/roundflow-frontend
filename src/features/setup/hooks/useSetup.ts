@@ -117,7 +117,8 @@ export function useSetupStep5(enabled = true) {
 export function useSaveStep5() {
   const invalidate = useInvalidateSetupStep(5)
   return useMutation({
-    mutationFn: setupApi.saveStep5,
+    mutationFn: (templates: Parameters<typeof setupApi.saveStep5>[0]) =>
+      setupApi.saveStep5(templates),
     onSuccess: invalidate,
   })
 }

@@ -1,5 +1,6 @@
 import { api } from '@/api/client'
 import type { components } from '@/api/types.gen'
+import type { BankDetailsPayload } from '@/lib/bank-details'
 import type {
   BusinessSettings,
   DeferredStatus,
@@ -14,7 +15,10 @@ import type {
 
 export type BusinessProfilePatch = components['schemas']['BusinessProfileUpdateInput']
 export type RoundSettingsPatch = components['schemas']['RoundSettingsUpdateInput']
-export type PaymentSettingsPatch = components['schemas']['PaymentRulesUpdateInput']
+// CONTRACT-DIFF: `bankDetails` (invoice footer) lives on BusinessSettings but isn't in the payment-rules input schema yet.
+export type PaymentSettingsPatch = components['schemas']['PaymentRulesUpdateInput'] & {
+  bankDetails?: BankDetailsPayload | null
+}
 
 function jsonRequest(method: 'POST' | 'PATCH', body?: unknown): RequestInit {
   return {

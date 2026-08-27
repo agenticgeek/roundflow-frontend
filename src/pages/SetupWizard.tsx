@@ -12,6 +12,8 @@ import {
   paymentSetupFromForm,
   paymentSetupToForm,
   pendingTechniciansFromForm,
+  messageTemplatesFromForm,
+  messageTemplatesToForm,
   propertyDraftToStep9Input,
   roundSettingsFromForm,
   roundSettingsToForm,
@@ -46,6 +48,7 @@ import {
   useSetupStep2,
   useSetupStep3,
   useSetupStep4,
+  useSetupStep5,
   useSetupStep6,
   useSetupStep7,
   useSetupStep8,
@@ -88,13 +91,14 @@ import type {
   PaymentSetupData,
   PropertyDraft,
   RoundSettingsData,
+  SmsTemplatesData,
   ServiceAreaData,
   ServiceCatalogueData,
   TechnicianManagementData,
 } from '@/types/setup-wizard'
 import type { FirstRoundFormValues } from '@/features/setup/lib/mappers'
 
-const FORM_STEP_NUMBERS = new Set([1, 2, 3, 4, 6, 7, 8, 9, 10, 11])
+const FORM_STEP_NUMBERS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
 
 const ROUND_DAY_OPTIONS = [
   { value: '', label: 'Select day' },
@@ -138,6 +142,7 @@ export default function SetupWizard() {
   const step2 = useSetupStep2(step === 2)
   const step3 = useSetupStep3(step === 3 || step === 9)
   const step4 = useSetupStep4(step === 4)
+  const step5 = useSetupStep5(step === 5)
   const step6 = useSetupStep6(step === 6 || step === 10)
   const step7 = useSetupStep7(step === 7 || step === 8 || step === 9)
   const step8 = useSetupStep8(step === 8 || step === 9 || step === 11)
@@ -248,7 +253,9 @@ export default function SetupWizard() {
           )
           break
         case 5:
-          await saveStep5.mutateAsync()
+          await saveStep5.mutateAsync(
+            messageTemplatesFromForm(values as SmsTemplatesData),
+          )
           break
         case 6:
           await saveStep6.mutateAsync(
@@ -323,7 +330,7 @@ export default function SetupWizard() {
   async function handleContinue() {
     if (!canMutate) return
 
-    if (step === 5 || step === 9) {
+    if (step === 9) {
       const saved = await persistCurrentStep()
       if (saved) goNext()
       return
@@ -415,9 +422,18 @@ export default function SetupWizard() {
           />
         )
       case 5:
+        if (step5.isPending) return <WizardFormSkeleton fields={3} />
+        if (step5.isError) {
+          return (
+            <StepError
+              message="Could not load message templates."
+              onRetry={() => step5.refetch()}
+            />
+          )
+        }
         return (
           <SmsTemplatesStep
-            initialValues={setupWizardContent.smsTemplates.defaults}
+            initialValues={messageTemplatesToForm(step5.data)}
             onSubmit={handleStepSubmit}
           />
         )

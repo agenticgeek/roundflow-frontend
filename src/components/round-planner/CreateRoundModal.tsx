@@ -28,8 +28,7 @@ type Frequency =
   | 'FOUR_WEEKLY'
   | 'SIX_WEEKLY'
   | 'EIGHT_WEEKLY'
-  | 'MONTHLY'
-  | 'FORTNIGHTLY'
+  | 'TWELVE_WEEKLY'
 
 interface DraftProperty {
   id: string
@@ -54,8 +53,7 @@ const FREQUENCIES: { value: Frequency; label: string; default?: boolean }[] = [
   { value: 'FOUR_WEEKLY', label: 'Every 4 weeks', default: true },
   { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
   { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
-  { value: 'MONTHLY', label: 'Monthly' },
-  { value: 'FORTNIGHTLY', label: 'Fortnightly' },
+  { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
 ]
 
 const INITIAL_PROPERTIES: DraftProperty[] = [
