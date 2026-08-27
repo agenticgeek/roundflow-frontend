@@ -77,7 +77,7 @@ export function PropertyDetailScreen({
   const [frequencyOpen, setFrequencyOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
   const [messageOpen, setMessageOpen] = useState(false)
-  const { actions, assignment, statusLabels, paymentStatusLabels, summary, summaryCards, tabs, overview } =
+  const { actions, assignment, statusLabels, paymentStatusLabels, summary, summaryCards, tabs } =
     propertyDetailContent
   const resumeProperty = useResumeProperty()
   const { canMutate } = useAppBootstrap()
