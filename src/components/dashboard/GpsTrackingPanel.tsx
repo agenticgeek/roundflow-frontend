@@ -1,12 +1,13 @@
 import type { TechnicianLocation } from '@/content/dashboard'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
-import {
-  dashboardHoverCardClass,
-  dashboardPressableClass,
-  toneBgClass,
-  toneTextClass,
-} from '@/components/dashboard/dashboard-styles'
+import { toneBgClass, toneTextClass } from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
+
+interface GpsComingSoon {
+  badge: string
+  title: string
+  description: string
+}
 
 interface GpsTrackingPanelProps {
   title: string
@@ -18,6 +19,7 @@ interface GpsTrackingPanelProps {
   technicians: readonly TechnicianLocation[]
   selectedTechnician: string | null
   onSelectTechnician: (name: string) => void
+  comingSoon: GpsComingSoon
 }
 
 /** Map pin — highlights when its technician card is selected. */
@@ -108,7 +110,10 @@ function MapPlaceholder({
   )
 }
 
-/** Live GPS panel — pin + card selection stay in sync. */
+/**
+ * Live GPS panel — no GPS provider is integrated yet, so the mocked map and
+ * technician cards are blurred behind a "Coming Soon" overlay.
+ */
 export function GpsTrackingPanel({
   title,
   statusLabel,
@@ -119,47 +124,39 @@ export function GpsTrackingPanel({
   technicians,
   selectedTechnician,
   onSelectTechnician,
+  comingSoon,
 }: GpsTrackingPanelProps) {
   return (
-    <section className="rounded-xl border border-border bg-background shadow-sm">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-2">
-          <DashboardIcon name="gps" className="h-5 w-5 text-primary" />
-          <h2 className="text-base font-medium text-foreground">{title}</h2>
+    <section className="relative overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+      <div aria-hidden="true" className="pointer-events-none blur-sm select-none">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-2">
+            <DashboardIcon name="gps" className="h-5 w-5 text-primary" />
+            <h2 className="text-base font-medium text-foreground">{title}</h2>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            {statusLabel}
+          </span>
         </div>
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
-          {statusLabel}
-        </span>
-      </div>
 
-      <div className="grid gap-5 p-4 sm:p-5 xl:grid-cols-[1fr_280px]">
-        <MapPlaceholder
-          technicians={technicians}
-          title={mapTitle}
-          subtitle={mapSubtitle}
-          caption={mapCaption}
-          selectedTechnician={selectedTechnician}
-          onSelectTechnician={onSelectTechnician}
-        />
+        <div className="grid gap-5 p-4 sm:p-5 xl:grid-cols-[1fr_280px]">
+          <MapPlaceholder
+            technicians={technicians}
+            title={mapTitle}
+            subtitle={mapSubtitle}
+            caption={mapCaption}
+            selectedTechnician={selectedTechnician}
+            onSelectTechnician={onSelectTechnician}
+          />
 
-        <div>
-          <p className="text-sm font-semibold text-foreground">{techniciansTitle}</p>
-          <div className="mt-5 space-y-4">
-            {technicians.map((technician) => {
-              const selected = selectedTechnician === technician.name
-
-              return (
-                <button
+          <div>
+            <p className="text-sm font-semibold text-foreground">{techniciansTitle}</p>
+            <div className="mt-5 space-y-4">
+              {technicians.map((technician) => (
+                <div
                   key={technician.name}
-                  type="button"
-                  onClick={() => onSelectTechnician(technician.name)}
-                  className={cn(
-                    'w-full rounded-xl border bg-background p-4 text-left shadow-sm',
-                    dashboardHoverCardClass,
-                    dashboardPressableClass,
-                    selected ? 'border-primary/30 ring-1 ring-primary/20' : 'border-border',
-                  )}
+                  className="w-full rounded-xl border border-border bg-background p-4 text-left shadow-sm"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -172,11 +169,20 @@ export function GpsTrackingPanel({
                   {technician.current ? (
                     <p className="mt-1 text-xs text-muted">Current: {technician.current}</p>
                   ) : null}
-                </button>
-              )
-            })}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
+      </div>
+
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/50 px-6 text-center">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+          <DashboardIcon name="gps" className="h-3.5 w-3.5" />
+          {comingSoon.badge}
+        </span>
+        <h2 className="text-base font-semibold text-foreground">{comingSoon.title}</h2>
+        <p className="max-w-xs text-sm text-muted">{comingSoon.description}</p>
       </div>
     </section>
   )

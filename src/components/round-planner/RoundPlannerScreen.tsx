@@ -275,7 +275,7 @@ export function RoundPlannerScreen({
         </PanelCard>
       ) : null}
 
-      {noRounds ? (
+      {noRounds && interactions.view !== 'map' ? (
         <EmptyState title={content.states.noRounds} description={content.states.noRoundsHint}>
           {canMutate && onAddRound ? (
             <button type="button" onClick={onAddRound} className={cn(dashboardCtaClass, 'mt-4 px-4 py-2')}>
@@ -309,7 +309,7 @@ export function RoundPlannerScreen({
         </div>
       ) : null}
 
-      {interactions.view === 'map' && !noRounds ? (
+      {interactions.view === 'map' ? (
         <div className="animate-fade-in">
           <RoundPlannerMapView stops={filteredStops} currency={currency} />
         </div>

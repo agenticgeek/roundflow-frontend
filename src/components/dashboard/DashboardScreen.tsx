@@ -57,6 +57,7 @@ export function DashboardScreen({ interactions }: DashboardScreenProps) {
         technicians={gps.technicians}
         selectedTechnician={interactions.selectedGpsTechnician}
         onSelectTechnician={interactions.setSelectedGpsTechnician}
+        comingSoon={gps.comingSoon}
       />
 
       <TechnicianKpis

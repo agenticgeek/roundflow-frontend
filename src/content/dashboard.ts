@@ -303,6 +303,11 @@ export const dashboardContent = {
         position: { x: 40, y: 38 },
       },
     ] satisfies TechnicianLocation[],
+    comingSoon: {
+      badge: 'Coming Soon',
+      title: 'Live GPS tracking is on the way',
+      description: 'Real-time technician locations are coming soon.',
+    },
   },
   kpis: {
     title: 'Technician KPIs',
