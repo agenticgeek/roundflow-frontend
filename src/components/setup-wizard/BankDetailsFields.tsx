@@ -1,7 +1,7 @@
 import type { BankDetailsForm } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, FieldError, Input } from '@/components/ui'
-import { formatSortCode } from '@/lib/bank-details'
+import { stripSpaces } from '@/lib/bank-details'
 
 interface BankDetailsFieldsProps {
   values: BankDetailsForm
@@ -38,7 +38,7 @@ export function BankDetailsFields({
         <Field label={fields.accountName.label} labelWeight={labelWeight}>
           <Input
             value={values.accountName}
-            onChange={(event) => set('accountName', event.target.value)}
+            onChange={(event) => set('accountName', stripSpaces(event.target.value))}
             placeholder={fields.accountName.placeholder}
             disabled={disabled}
             autoComplete="off"
@@ -57,17 +57,6 @@ export function BankDetailsFields({
             value={values.bankName}
             onChange={(event) => set('bankName', event.target.value)}
             placeholder={fields.bankName.placeholder}
-            disabled={disabled}
-            autoComplete="off"
-          />
-        </Field>
-        <Field label={fields.sortCode.label} labelWeight={labelWeight}>
-          <Input
-            inputMode="numeric"
-            maxLength={8}
-            value={values.sortCode}
-            onChange={(event) => set('sortCode', formatSortCode(event.target.value))}
-            placeholder={fields.sortCode.placeholder}
             disabled={disabled}
             autoComplete="off"
           />

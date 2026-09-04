@@ -134,14 +134,15 @@ function StepError({ message, onRetry }: { message: string; onRetry: () => void 
 export default function SetupWizard() {
   const navigate = useNavigate()
   const { setupStatus, canMutate } = useAppBootstrap()
-  const { step, stepIndex, goNext, goBack, skipStep, isFirstStep, isLastStep } = useWizardStep()
+  const { step, stepIndex, goToStep, goNext, goBack, skipStep, isFirstStep, isLastStep } =
+    useWizardStep()
   const currentStep = SETUP_STEPS[stepIndex]
   const completedSteps = stepCompletionFlags(setupStatus, SETUP_STEP_COUNT)
 
   const step1 = useSetupStep1(step === 1)
   const step2 = useSetupStep2(step === 2)
   const step3 = useSetupStep3(step === 3 || step === 9)
-  const step4 = useSetupStep4(step === 4)
+  const step4 = useSetupStep4(step === 4 || step === 8)
   const step5 = useSetupStep5(step === 5)
   const step6 = useSetupStep6(step === 6 || step === 10)
   const step7 = useSetupStep7(step === 7 || step === 8 || step === 9)
@@ -294,8 +295,14 @@ export default function SetupWizard() {
       }
       return true
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) {
+      if (error instanceof ApiError && (error.status === 400 || error.status === 409)) {
         setFormError(error.message)
+        // A rejected bulk-replace (e.g. "still referenced") leaves the confirm
+        // modal stuck open over a local list that already dropped the item —
+        // close it and refetch so the item reappears instead of vanishing.
+        setPendingBulkReplace(null)
+        if (step === 3) void step3.refetch()
+        if (step === 7) void step7.refetch()
         return false
       }
       throw error
@@ -470,7 +477,9 @@ export default function SetupWizard() {
           />
         )
       case 8: {
-        if (step8.isPending || step7.isPending) return <WizardFormSkeleton fields={3} />
+        if (step8.isPending || step7.isPending || step4.isPending) {
+          return <WizardFormSkeleton fields={3} />
+        }
         if (step8.isError) {
           return (
             <StepError
@@ -481,7 +490,11 @@ export default function SetupWizard() {
         }
         return (
           <FirstRoundStep
-            initialValues={firstRoundToForm(step8.data, step7.data)}
+            initialValues={firstRoundToForm(
+              step8.data,
+              step7.data,
+              step4.data?.defaultCycleLength,
+            )}
             serviceAreaOptions={serviceAreaOptions}
             onSubmit={handleStepSubmit}
           />
@@ -591,6 +604,7 @@ export default function SetupWizard() {
         currentIndex={stepIndex}
         completedSteps={completedSteps}
         onSkip={setupStatus?.setupCompleted ? undefined : handleSkip}
+        onStepClick={(index) => goToStep(index + 1)}
       />
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">

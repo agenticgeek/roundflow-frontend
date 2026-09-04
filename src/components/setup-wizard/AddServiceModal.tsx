@@ -6,6 +6,7 @@ import { Modal, ModalButton, ModalFooter, ModalToggleRow } from '@/components/ui
 import type { SelectOption } from '@/components/ui'
 
 const DEFAULT_CATEGORY_ID = 'window-cleaning'
+const MAX_SERVICE_PRICE = 100_000
 
 export interface AddServiceModalProps {
   open: boolean
@@ -45,6 +46,7 @@ export function AddServiceModal({
 
   const [form, setForm] = useState(() => createEmptyFormState(defaultCategoryId))
   const [nameError, setNameError] = useState<string | null>(null)
+  const [priceError, setPriceError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -63,6 +65,7 @@ export function AddServiceModal({
     }
 
     setNameError(null)
+    setPriceError(null)
   }, [open, editingService, defaultCategoryId])
 
   function handleConfirm() {
@@ -72,8 +75,11 @@ export function AddServiceModal({
       return
     }
 
-    const parsedPrice = Number.parseFloat(form.price.replace(/,/g, ''))
-    const price = Number.isFinite(parsedPrice) ? parsedPrice : 0
+    const price = Number.parseFloat(form.price.replace(/,/g, ''))
+    if (!Number.isFinite(price) || price <= 0 || price > MAX_SERVICE_PRICE) {
+      setPriceError(validation.priceInvalid)
+      return
+    }
 
     onSave({
       id: editingService?.id ?? `service-${Date.now()}`,
@@ -141,13 +147,16 @@ export function AddServiceModal({
         </Field>
 
         <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-4">
-          <Field label={fields.price.label} labelWeight="medium" size="sm">
+          <Field label={fields.price.label} labelWeight="medium" size="sm" error={priceError}>
             <Input
               inputSize="sm"
               type="text"
               inputMode="decimal"
               value={form.price}
-              onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
+              onChange={(event) => {
+                setForm((prev) => ({ ...prev, price: event.target.value }))
+                if (priceError) setPriceError(null)
+              }}
               placeholder={fields.price.placeholder}
             />
           </Field>

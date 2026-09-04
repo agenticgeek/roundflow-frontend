@@ -1,9 +1,15 @@
 import type { FormEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Technician, TechnicianManagementData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
+import { technicianDetailPath } from '@/config/routes'
 import { Field, FieldError, Input, Select } from '@/components/ui'
+import { DropdownMenuPortal, useDropdownDismiss } from '@/components/ui/dropdown'
 import { cn } from '@/lib/utils'
+
+const MOBILE_PATTERN = /^[+\d][\d\s()-]{6,19}$/
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface TechnicianManagementStepProps {
   initialValues: TechnicianManagementData
@@ -70,6 +76,7 @@ function MoreOptionsIcon() {
 }
 
 export function TechnicianManagementStep({ initialValues, onSubmit }: TechnicianManagementStepProps) {
+  const navigate = useNavigate()
   const { technicianManagement } = setupWizardContent
   const { addForm, columns, appStatusLabels, roleOptions, actions } = technicianManagement
 
@@ -79,9 +86,21 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
   const [formError, setFormError] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
+  const menuContainerRef = useRef<HTMLDivElement>(null)
+  const menuTriggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useDropdownDismiss(Boolean(openMenuId), () => setOpenMenuId(null), menuContainerRef, menuRef)
+
   const roleLabels = useMemo(
     () => Object.fromEntries(roleOptions.filter((o) => o.value).map((o) => [o.value, o.label])),
     [roleOptions],
+  )
+
+  // Only technicians already saved to the backend (loaded from step 6) have a real
+  // detail page — ones just added locally in this session don't exist there yet.
+  const persistedIds = useMemo(
+    () => new Set(initialValues.technicians.map((technician) => technician.id)),
+    [initialValues.technicians],
   )
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -104,6 +123,7 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
   function addTechnician() {
     const fullName = form.fullName.trim()
     const mobile = form.mobile.trim()
+    const email = form.email.trim()
 
     if (!fullName) {
       setFormError(addForm.validation.nameRequired)
@@ -113,6 +133,14 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
       setFormError(addForm.validation.mobileRequired)
       return
     }
+    if (!MOBILE_PATTERN.test(mobile)) {
+      setFormError(addForm.validation.mobileInvalid)
+      return
+    }
+    if (email && !EMAIL_PATTERN.test(email)) {
+      setFormError(addForm.validation.emailInvalid)
+      return
+    }
 
     setTechnicians((prev) => [
       ...prev,
@@ -120,10 +148,13 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
         id: `tech-${Date.now()}`,
         fullName,
         mobile,
-        email: form.email.trim(),
+        email,
         role: form.role,
         defaultArea: form.defaultArea.trim(),
-        appStatus: 'active',
+        // No profile/invite exists until this step is saved — matches the real
+        // technicians model, where app status only becomes active once a linked
+        // profile accepts its invite.
+        appStatus: 'pending',
       },
     ])
 
@@ -291,8 +322,12 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
                 />
               </div>
 
-              <div className="relative flex justify-end">
+              <div
+                ref={openMenuId === technician.id ? menuContainerRef : undefined}
+                className="relative flex justify-end"
+              >
                 <button
+                  ref={openMenuId === technician.id ? menuTriggerRef : undefined}
                   type="button"
                   aria-label={actions.moreOptions}
                   onClick={() =>
@@ -303,17 +338,33 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
                   <MoreOptionsIcon />
                 </button>
 
-                {openMenuId === technician.id ? (
-                  <div className="absolute top-full right-0 z-10 mt-1 min-w-[7rem] rounded-lg border border-border bg-background py-1 shadow-lg">
+                <DropdownMenuPortal
+                  open={openMenuId === technician.id}
+                  triggerRef={menuTriggerRef}
+                  menuRef={menuRef}
+                  role="menu"
+                  align="end"
+                  minWidth={180}
+                >
+                  {persistedIds.has(technician.id) ? (
                     <button
                       type="button"
-                      onClick={() => deleteTechnician(technician.id)}
-                      className="w-full px-3 py-1.5 text-left text-sm text-danger transition-colors hover:bg-surface"
+                      role="menuitem"
+                      onClick={() => navigate(technicianDetailPath(technician.id))}
+                      className="w-full px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface"
                     >
-                      {actions.delete}
+                      {actions.viewDetails}
                     </button>
-                  </div>
-                ) : null}
+                  ) : null}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => deleteTechnician(technician.id)}
+                    className="w-full px-3 py-1.5 text-left text-sm text-danger transition-colors hover:bg-surface"
+                  >
+                    {actions.delete}
+                  </button>
+                </DropdownMenuPortal>
               </div>
             </li>
           ))}

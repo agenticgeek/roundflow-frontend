@@ -1,6 +1,3 @@
-import type { CustomerPropertyRecord } from '@/content/customers'
-import { customersContent } from '@/content/customers'
-
 export type PropertyDetailTabId =
   | 'overview'
   | 'service-plan'
@@ -156,6 +153,17 @@ export const propertyDetailContent = {
       cancel: 'Cancel',
       save: 'Save Changes',
     },
+    validation: {
+      fullNameRequired: "Enter the customer's full name.",
+      phoneRequired: 'Enter a phone number.',
+      phoneInvalid: 'Enter a valid phone number.',
+      landlineInvalid: 'Enter a valid landline number.',
+      emailInvalid: 'Enter a valid email address.',
+      streetAddressRequired: 'Enter the street address.',
+      postcodeRequired: 'Enter a postcode.',
+      postcodeInvalid: 'Enter a valid UK postcode.',
+      priceInvalid: 'Enter a price greater than 0.',
+    },
     successToast: 'Customer record updated',
   },
   assignment: {
@@ -209,8 +217,6 @@ export const propertyDetailContent = {
       cancel: 'Cancel',
       pause: 'Pause Service',
     },
-    defaultStartDate: '22/05/2026',
-    defaultResumeDate: '22/06/2026',
   },
   sendMessageModal: {
     title: 'Send Message',
@@ -510,316 +516,7 @@ export const propertyDetailContent = {
     description: 'This property could not be loaded. Return to the previous screen to try again.',
     action: 'Go back',
   },
-  records: {
-    '12-market-street': {
-      id: '12-market-street',
-      customerName: 'John Smith',
-      shortAddress: '12 Market Street, NE66 1SS',
-      fullAddress: '12 Market Street, NE66 1SS',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£35',
-      cleanMethod: 'Water Fed Pole',
-      nextDue: '15/06/2026',
-      lastCompleted: '20/05/2026',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'paid',
-      outstandingBalance: '£0',
-      paymentMethod: 'GoCardless',
-      lastPayment: '15/05/2026',
-      issuesCount: 0,
-      nextVisitStatus: 'Scheduled',
-      accessNotes: 'No access notes',
-      riskNotes: 'No risk notes',
-      phone: '+44 7700 900000',
-      landline: '+44 1665 600000',
-      email: 'customer@example.com',
-    },
-    '45-bondgate-within': {
-      id: '45-bondgate-within',
-      customerName: 'Mary Johnson',
-      shortAddress: '45 Bondgate Within, NE66 1LX',
-      fullAddress: '45 Bondgate Within, NE66 1LX',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£28',
-      cleanMethod: 'Water Fed Pole',
-      nextDue: '15/06/2026',
-      lastCompleted: '20/05/2026',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'paid',
-      outstandingBalance: '£0',
-      paymentMethod: 'GoCardless',
-      lastPayment: '15/05/2026',
-      issuesCount: 0,
-      nextVisitStatus: 'Scheduled',
-      accessNotes: 'Ring doorbell on arrival',
-      riskNotes: 'No risk notes',
-      phone: '+44 7700 900001',
-      landline: '',
-      email: 'mary.johnson@example.com',
-    },
-    '78-narrowgate': {
-      id: '78-narrowgate',
-      customerName: 'Robert Williams',
-      shortAddress: '78 Narrowgate, NE66 1JG',
-      fullAddress: '78 Narrowgate, NE66 1JG',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£42',
-      cleanMethod: 'Traditional',
-      nextDue: '15/06/2026',
-      lastCompleted: '20/05/2026',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'hold',
-      outstandingBalance: '£42',
-      paymentMethod: 'GoCardless',
-      lastPayment: '15/04/2026',
-      issuesCount: 1,
-      nextVisitStatus: 'Payment hold',
-      accessNotes: 'Rear lane access only',
-      riskNotes: 'Steep driveway',
-      phone: '+44 7700 900002',
-      landline: '+44 1665 600002',
-      email: 'robert.williams@example.com',
-    },
-    '23-bailiffgate': {
-      id: '23-bailiffgate',
-      customerName: 'Sarah Brown',
-      shortAddress: '23 Bailiffgate, NE66 1LX',
-      fullAddress: '23 Bailiffgate, NE66 1LX',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£32',
-      cleanMethod: 'Water Fed Pole',
-      nextDue: '15/06/2026',
-      lastCompleted: '—',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'paid',
-      outstandingBalance: '£0',
-      paymentMethod: 'GoCardless',
-      lastPayment: '15/05/2026',
-      issuesCount: 0,
-      nextVisitStatus: 'Scheduled',
-      accessNotes: 'Front door only',
-      riskNotes: 'No risk notes',
-      phone: '+44 7700 900003',
-      landline: '',
-      email: 'sarah.brown@example.com',
-    },
-    '56-fenkle-street': {
-      id: '56-fenkle-street',
-      customerName: 'David Miller',
-      shortAddress: '56 Fenkle Street, NE66 1JG',
-      fullAddress: '56 Fenkle Street, NE66 1JG',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£25',
-      cleanMethod: 'Water Fed Pole',
-      nextDue: '15/06/2026',
-      lastCompleted: '—',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'paid',
-      outstandingBalance: '£0',
-      paymentMethod: 'Cash',
-      lastPayment: '15/05/2026',
-      issuesCount: 0,
-      nextVisitStatus: 'Scheduled',
-      accessNotes: 'No special instructions',
-      riskNotes: 'No risk notes',
-      phone: '+44 7700 900004',
-      landline: '',
-      email: 'david.miller@example.com',
-    },
-  } satisfies Record<string, PropertyDetailRecord>,
-  visitRecords: {
-    default: [
-      {
-        id: 'visit-1',
-        visitDate: '15/05/2026',
-        round: 'Alnwick Monday',
-        technician: 'James',
-        status: 'completed',
-        payment: 'paid',
-        price: '£35',
-        invoice: 'generate',
-      },
-      {
-        id: 'visit-2',
-        visitDate: '18/04/2026',
-        round: 'Alnwick Monday',
-        technician: 'James',
-        status: 'completed',
-        payment: 'paid',
-        price: '£35',
-        invoice: 'generate',
-      },
-      {
-        id: 'visit-3',
-        visitDate: '22/05/2026',
-        round: 'Alnwick Monday',
-        technician: 'James',
-        status: 'scheduled',
-        payment: 'pending',
-        price: '£35',
-        invoice: 'sent',
-      },
-    ] satisfies PropertyVisitRecord[],
-  },
-  paymentRecords: {
-    default: [
-      {
-        id: 'payment-1',
-        visitDate: '20 Jun 2026',
-        visitDateRaw: '20/06/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'unpaid',
-        invoice: 'none',
-        action: 'generate',
-      },
-      {
-        id: 'payment-2',
-        visitDate: '20 May 2026',
-        visitDateRaw: '20/05/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'paid',
-        invoice: 'sent',
-        action: 'download',
-      },
-      {
-        id: 'payment-3',
-        visitDate: '18 Apr 2026',
-        visitDateRaw: '18/04/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'paid',
-        invoice: 'sent',
-        action: 'download',
-      },
-      {
-        id: 'payment-4',
-        visitDate: '21 Mar 2026',
-        visitDateRaw: '21/03/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'paid',
-        invoice: 'none',
-        action: 'generate',
-      },
-      {
-        id: 'payment-5',
-        visitDate: '15 Feb 2026',
-        visitDateRaw: '15/02/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'paid',
-        invoice: 'sent',
-        action: 'download',
-      },
-    ] satisfies PropertyPaymentRecord[],
-  },
-  noteRecords: {
-    default: [
-      {
-        id: 'note-1',
-        category: 'internal',
-        body: 'Regular customer, always pays on time. Prefers morning visits.',
-        author: 'Admin',
-        addedOn: '10 Mar 2026',
-      },
-    ] satisfies PropertyNoteRecord[],
-  },
 } as const
-
-function fromCustomerRecord(record: CustomerPropertyRecord): PropertyDetailRecord {
-  const isUnassigned = Boolean(record.needsAssignment)
-
-  return {
-    id: record.propertyId,
-    customerRecordId: record.id,
-    customerName: record.customer,
-    shortAddress: record.address,
-    fullAddress: record.address,
-    serviceStatus: isUnassigned ? 'unassigned' : record.status === 'hold' ? 'hold' : 'active',
-    roundLabel: record.round,
-    propertyType: 'Residential',
-    frequency: record.frequency,
-    price: record.price,
-    cleanMethod: 'Water Fed Pole',
-    nextDue: isUnassigned ? 'Pending Assignment' : record.nextDue,
-    lastCompleted: isUnassigned ? '—' : '20/05/2026',
-    assignedRound: isUnassigned ? '—' : record.round,
-    technician: isUnassigned ? '—' : record.technician,
-    paymentStatus: isUnassigned ? 'pending' : record.paymentStatus,
-    outstandingBalance: isUnassigned ? '—' : record.amountDue ?? '£0',
-    paymentMethod: isUnassigned ? '—' : 'GoCardless',
-    lastPayment: isUnassigned ? '—' : '15/05/2026',
-    issuesCount: isUnassigned ? 0 : record.paymentStatus === 'hold' ? 1 : 0,
-    nextVisitStatus: isUnassigned ? 'Unscheduled' : record.status === 'hold' ? 'Payment hold' : 'Scheduled',
-    accessNotes: 'No access notes',
-    riskNotes: 'No risk notes',
-    phone: '+44 7700 900000',
-    landline: '',
-    email: 'customer@example.com',
-    needsAssignment: isUnassigned,
-    serviceType: 'Window Cleaning',
-    planStatus: isUnassigned ? 'pending' : record.status === 'hold' ? 'hold' : 'active',
-  }
-}
-
-function formatPaymentAmount(price: string) {
-  const numeric = price.replace(/[£,\s]/g, '')
-  if (!numeric) return '£0.00'
-  return `£${Number(numeric).toFixed(2)}`
-}
-
-function technicianDisplayName(name: string) {
-  return name.includes(' ') ? name : `${name} Smith`
-}
-
-export function getPropertyNotes(property: PropertyDetailRecord): PropertyNoteRecord[] {
-  return propertyDetailContent.noteRecords.default.map((note) => ({
-    ...note,
-    id: `${property.id}-${note.id}`,
-  }))
-}
-
-export function getPropertyPaymentHistory(property: PropertyDetailRecord): PropertyPaymentRecord[] {
-  const hasAssignedRound = property.assignedRound !== '—' && property.assignedRound !== 'Not Assigned'
-  const hasAssignedTechnician =
-    property.technician !== '—' && property.technician !== 'Not assigned'
-  const amount = formatPaymentAmount(property.price)
-
-  return propertyDetailContent.paymentRecords.default.map((record) => ({
-    ...record,
-    id: `${property.id}-${record.id}`,
-    round: hasAssignedRound ? property.assignedRound : record.round,
-    technician: hasAssignedTechnician ? technicianDisplayName(property.technician) : record.technician,
-    amount,
-  }))
-}
 
 export function paymentRecordToVisitRecord(record: PropertyPaymentRecord): PropertyVisitRecord {
   const [firstName] = record.technician.split(' ')
@@ -838,25 +535,3 @@ export function paymentRecordToVisitRecord(record: PropertyPaymentRecord): Prope
   }
 }
 
-export function getPropertyVisitHistory(property: PropertyDetailRecord): PropertyVisitRecord[] {
-  const hasAssignedRound = property.assignedRound !== '—' && property.assignedRound !== 'Not Assigned'
-  const hasAssignedTechnician =
-    property.technician !== '—' && property.technician !== 'Not assigned'
-
-  return propertyDetailContent.visitRecords.default.map((visit) => ({
-    ...visit,
-    id: `${property.id}-${visit.id}`,
-    round: hasAssignedRound ? property.assignedRound : visit.round,
-    technician: hasAssignedTechnician ? property.technician : visit.technician,
-    price: property.price,
-  }))
-}
-
-export function getPropertyDetail(propertyId: string | undefined): PropertyDetailRecord | null {
-  if (!propertyId) return null
-
-  const customerRecord = customersContent.records.find((record) => record.propertyId === propertyId)
-  if (customerRecord) return fromCustomerRecord(customerRecord)
-
-  return propertyDetailContent.records[propertyId as keyof typeof propertyDetailContent.records] ?? null
-}

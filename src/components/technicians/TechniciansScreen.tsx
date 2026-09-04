@@ -38,6 +38,7 @@ import {
   useTechniciansList,
   useUpdateTechnician,
 } from '@/features/technicians/hooks/useTechnicians'
+import { useRoundDetails, useRounds } from '@/features/rounds/hooks/useRounds'
 import {
   formatOverviewDate,
   overviewMetricsFromList,
@@ -78,9 +79,29 @@ export function TechniciansScreen() {
   const updateTechnician = useUpdateTechnician()
   const sendInvite = useSendTechnicianInvite()
 
+  // GET /technicians carries no round data — fan out per-round detail to show real round counts.
+  const roundsQuery = useRounds()
+  const activeRounds = useMemo(
+    () => (roundsQuery.data ?? []).filter((round) => round.status !== 'ARCHIVED'),
+    [roundsQuery.data],
+  )
+  const roundIds = useMemo(() => activeRounds.map((round) => round.id), [activeRounds])
+  const roundDetails = useRoundDetails(roundIds)
+  const roundNamesByTechnicianId = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const round of activeRounds) {
+      for (const technician of roundDetails.byRoundId.get(round.id)?.technicians ?? []) {
+        const existing = map.get(technician.id)
+        if (existing) existing.push(round.name)
+        else map.set(technician.id, [round.name])
+      }
+    }
+    return map
+  }, [activeRounds, roundDetails.byRoundId])
+
   const listRows = useMemo(
-    () => technicianListToUi(listQuery.data),
-    [listQuery.data],
+    () => technicianListToUi(listQuery.data, roundNamesByTechnicianId),
+    [listQuery.data, roundNamesByTechnicianId],
   )
   const metrics = useMemo(
     () => overviewMetricsFromList(listQuery.data),

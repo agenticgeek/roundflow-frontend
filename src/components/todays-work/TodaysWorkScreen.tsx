@@ -86,6 +86,7 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
           <TodaysWorkRoundsTable
             columns={table.columns}
             emptyLabel={table.emptyLabel}
+            noVisitsToday={interactions.hasNoVisitsToday}
             rows={interactions.filteredRounds}
             selectedRoundId={interactions.selectedRound?.id ?? null}
             onSelectRound={interactions.openRoundDetail}

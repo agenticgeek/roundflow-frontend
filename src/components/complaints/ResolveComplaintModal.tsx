@@ -5,6 +5,7 @@ interface ResolveComplaintModalProps {
   open: boolean
   onClose: () => void
   onConfirm: () => void
+  resolving?: boolean
 }
 
 /** Confirmation shown before a complaint is marked resolved. */
@@ -12,6 +13,7 @@ export function ResolveComplaintModal({
   open,
   onClose,
   onConfirm,
+  resolving = false,
 }: ResolveComplaintModalProps) {
   const content = complaintsContent.resolve
 
@@ -39,9 +41,10 @@ export function ResolveComplaintModal({
         <button
           type="button"
           onClick={onConfirm}
-          className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          disabled={resolving}
+          className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {content.confirm}
+          {resolving ? 'Resolving…' : content.confirm}
         </button>
       </div>
     </Modal>

@@ -1,53 +1,14 @@
 import type { DashboardTone } from '@/content/dashboard'
+import type { PlannerDayStatus, PlannerPeriod, PlannerStatusFilter } from '@/features/rounds/lib/planner'
 
 export type RoundPlannerView = 'calendar' | 'map' | 'list'
-
-export type RoundPlannerDayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday'
-
-export type RoundPlannerRoundStatus = 'in-progress' | 'completed' | 'scheduled'
-
-export type RoundPlannerPropertyStatus = 'completed' | 'payment-hold' | 'scheduled'
-
-export interface RoundPlannerWeek {
-  id: string
-  label: string
-  value: string
-}
-
-export interface RoundPlannerRound {
-  id: string
-  title: string
-  stops: number
-  value: string
-  technician: string
-  status: RoundPlannerRoundStatus
-  statusLabel: string
-  completedStops: number
-  estimatedTime: string
-  paymentHolds: number
-  properties: RoundPlannerProperty[]
-}
-
-export interface RoundPlannerProperty {
-  id: string
-  address: string
-  customer: string
-  price: string
-  status: RoundPlannerPropertyStatus
-}
-
-export interface RoundPlannerDay {
-  id: string
-  weekId: string
-  dateLabel: string
-  dayOfWeek: RoundPlannerDayOfWeek
-  rounds: RoundPlannerRound[]
-}
 
 export interface RoundPlannerMetric {
   label: string
   value: string
   tone?: DashboardTone
+  /** Shown as a suffix hint, e.g. "est." for the duration heuristic. */
+  hint?: string
 }
 
 export interface RoundPlannerSelectOption {
@@ -67,75 +28,32 @@ export interface RoundPlannerMessageTemplate {
   body: string
 }
 
-export type RoundPlannerListStatus = 'completed' | 'hold' | 'scheduled'
+/** Visit statuses returned on planner stops. */
+export type PlannerVisitStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED'
 
-export interface RoundPlannerListItem {
-  id: string
-  propertyId: string
-  address: string
-  customer: string
-  round: string
-  price: string
-  status: RoundPlannerListStatus
-  technician: string
-  lastCompleted: string
-  frequency: string
-  nextDue: string
-  paymentStatus: 'paid' | 'hold' | 'pending'
-  paymentMethod: string
-  access: string
-  risk?: string
+export const plannerDayStatusLabels: Record<PlannerDayStatus, string> = {
+  not_started: 'Scheduled',
+  in_progress: 'In progress',
+  completed: 'Completed',
 }
 
-export type RemovePropertyOptionId =
-  | 'remove-from-round-only'
-  | 'pause-after-visit'
-  | 'move-to-another-round'
-  | 'delete-recurring'
-
-export interface RoundPlannerRemovePropertyOption {
-  id: RemovePropertyOptionId
-  title: string
-}
-
-export type PauseDurationId = 'date-range' | 'indefinite'
-
-export interface RoundPlannerPauseDurationOption {
-  id: PauseDurationId
-  title: string
-  description: string
-}
-
-const weekDays: RoundPlannerDayOfWeek[] = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-]
-
-function buildWeekDays(
-  weekId: string,
-  mondayLabel: string,
-  roundsByDay: Partial<Record<RoundPlannerDayOfWeek, RoundPlannerRound[]>>,
-): RoundPlannerDay[] {
-  const labels = mondayLabel.split('|')
-
-  return weekDays.map((dayOfWeek, index) => ({
-    id: `${weekId}-${dayOfWeek.toLowerCase()}`,
-    weekId,
-    dateLabel: labels[index] ?? '',
-    dayOfWeek,
-    rounds: roundsByDay[dayOfWeek] ?? [],
-  }))
+export const plannerVisitStatusLabels: Record<PlannerVisitStatus, string> = {
+  SCHEDULED: 'Scheduled',
+  IN_PROGRESS: 'In progress',
+  COMPLETED: 'Completed',
+  SKIPPED: 'Skipped',
 }
 
 export const roundPlannerContent = {
   header: {
     title: 'Round Planner',
     subtitle: 'Manage cleaning rounds, properties, technicians, and visit schedules',
-    cycleLabel: 'Cycle: 6 May – 2 June',
-    syncLabel: 'Sync cycle',
+    cyclePrefix: 'Cycle:',
+    weekPrefix: 'Week:',
+    syncLabel: 'Refresh planner',
+    previousPeriod: 'Previous period',
+    nextPeriod: 'Next period',
+    today: 'Today',
   },
   views: [
     { id: 'calendar', label: 'Calendar' },
@@ -143,14 +61,57 @@ export const roundPlannerContent = {
     { id: 'list', label: 'List' },
   ] satisfies { id: RoundPlannerView; label: string }[],
   filters: {
-    week: { label: 'Week' },
-    area: { label: 'Area' },
+    round: { label: 'Round', allLabel: 'All rounds' },
+    period: {
+      label: 'Period',
+      options: [
+        { value: 'week', label: 'Week' },
+        { value: 'cycle', label: 'Cycle' },
+      ] satisfies { value: PlannerPeriod; label: string }[],
+    },
     search: { label: 'Search', placeholder: 'Search property, customer, postcode...' },
-    technician: { label: 'Technician' },
-    status: { label: 'Status' },
+    technician: {
+      label: 'Technician',
+      allLabel: 'All technicians',
+      unavailableOnCalendar: 'Technician filter applies to List and Map views only',
+    },
+    status: {
+      label: 'Status',
+      options: [
+        { value: 'all', label: 'All statuses' },
+        { value: 'not_started', label: 'Scheduled' },
+        { value: 'in_progress', label: 'In progress' },
+        { value: 'completed', label: 'Completed' },
+      ] satisfies { value: PlannerStatusFilter; label: string }[],
+    },
   },
   actions: {
     addRound: 'Add Round',
+  },
+  kpis: {
+    totalStops: 'Total Stops',
+    roundValue: 'Round Value',
+    estimatedDuration: 'Estimated Duration',
+    estimatedHint: 'est.',
+    completion: 'Completion',
+    paymentHolds: 'Payment Holds',
+    issues: 'Issues',
+  },
+  states: {
+    loading: 'Loading planner…',
+    error: 'Could not load the planner.',
+    retry: 'Try again',
+    noRounds: 'No rounds yet',
+    noRoundsHint: 'Create a round to start planning visits.',
+    noVisitsInWindow: 'No visits in this period',
+    noVisitsHint:
+      'Visits are generated during setup or added as one-off jobs. Adding a property or round on its own does not create visits.',
+  },
+  calendar: {
+    emptyLabel: 'No rounds',
+    dayHeaders: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    stops: 'stops',
+    unassigned: 'Unassigned',
   },
   detailPanel: {
     metrics: {
@@ -160,7 +121,11 @@ export const roundPlannerContent = {
       estimatedTime: 'Estimated Time',
     },
     paymentHold: 'payment hold',
-    propertiesTitle: 'Properties',
+    paymentHolds: 'payment holds',
+    propertiesTitle: 'Stops',
+    noStops: 'No stops on this date.',
+    loadingStops: 'Loading stops…',
+    technicianUnassigned: 'Unassigned',
     actions: {
       openMap: 'Open in Map View',
       openList: 'Open in List View',
@@ -211,142 +176,6 @@ export const roundPlannerContent = {
       apply: 'Apply Weather Hold',
     },
     successToast: 'Applied Weather Hold successfully',
-  },
-  removePropertyModal: {
-    title: 'Remove Property from Round',
-    titles: {
-      'remove-from-round-only': 'Remove Property from Round',
-      'pause-after-visit': 'Pause Property Service',
-      'move-to-another-round': 'Move Property from Round',
-      'delete-recurring': 'Delete Recurring Service',
-    } satisfies Record<RemovePropertyOptionId, string>,
-    fields: {
-      customer: 'Customer',
-      address: 'Address',
-      currentRound: 'Current Round',
-      price: 'Price',
-      frequency: 'Frequency',
-      status: 'Status',
-      propertyDetails: 'Property Details',
-      recurringRemoval: 'Recurring Removal',
-      notifyCustomer: 'Notify customer',
-      notifyCustomerDescription: 'Send SMS about the change to this customer',
-      summary: 'Summary',
-    },
-    extension: {
-      visitCreation: {
-        title: 'Visit Creation',
-        visitDate: 'Visit Date',
-        assignedTechnician: 'Assigned Technician',
-        visitStatus: 'Visit Status',
-        price: 'Price',
-      },
-      assignRound: {
-        title: 'Assign New Round',
-        selectRound: 'Select Round',
-      },
-      notes: {
-        label: 'Notes (optional)',
-        placeholder: 'Add any notes…',
-      },
-      pause: {
-        reasonForPause: 'Reason for Pause',
-        pauseDuration: 'Pause Duration',
-        startDate: 'Start Date',
-        resumeDate: 'Resume Date',
-        notifyBySms: 'Notify customer by SMS',
-        notifyBySmsDescription: 'Send a message to let them know their service is paused',
-        smsPreview:
-          "Hi {customer_name}, we're temporarily pausing your window cleaning service as requested. We'll be in touch to reschedule when you're ready. Thanks!",
-        smsMeta: '142 characters · 1 SMS',
-        visitsCancelledTitle: 'Upcoming visits will be cancelled',
-        visitsCancelledDescription:
-          'Any scheduled visits during the pause period will not be generated. Payment collection will also be suspended.',
-        reasons: [
-          { value: 'customer-holiday', label: 'Customer Holiday/ Away' },
-          { value: 'payment-issue', label: 'Payment issue' },
-          { value: 'property-access', label: 'Property access problem' },
-          { value: 'customer-request', label: 'Customer request' },
-        ] satisfies RoundPlannerSelectOption[],
-        durationOptions: [
-          {
-            id: 'date-range',
-            title: 'Specific date range',
-            description: 'Service will automatically resume on the end date',
-          },
-          {
-            id: 'indefinite',
-            title: 'Indefinite pause',
-            description: 'Must be manually resumed — no scheduled visits will be generated',
-          },
-        ] satisfies RoundPlannerPauseDurationOption[],
-        defaults: {
-          reason: 'customer-holiday',
-          startDate: '22/05/2026',
-          resumeDate: '22/06/2026',
-          durationId: 'date-range' as PauseDurationId,
-        },
-      },
-      delete: {
-        message:
-          'This permanently deletes the recurring service plan. A final visit will still be created for the assigned technician.',
-      },
-    },
-    deleteConfirmModal: {
-      title: 'Confirm deletion',
-      message: 'Are you sure you want to delete this Customer/Property from the system?',
-      cancel: 'Cancel',
-      confirm: 'Delete',
-      successToast: 'Customer/property deleted from the system',
-    },
-    warning:
-      'This will: create a visit for the technician, remove the property from the recurring round, and stop future recurring visits from this round.',
-    visitDateLabel: '20 May 2026',
-    defaults: {
-      visitDate: '20 May 2026',
-      visitStatus: 'scheduled',
-      moveVisitDate: '20/08/2025',
-      moveVisitStatus: 'completed',
-    },
-    visitStatuses: [
-      { value: 'scheduled', label: 'Scheduled' },
-      { value: 'completed', label: 'Completed' },
-      { value: 'skipped', label: 'Skipped' },
-    ] satisfies RoundPlannerSelectOption[],
-    targetRounds: [
-      { value: '', label: 'Select Round' },
-      { value: 'alnwick-monday', label: 'Alnwick Monday' },
-      { value: 'alnwick-tuesday', label: 'Alnwick Tuesday' },
-      { value: 'morpeth-wednesday', label: 'Morpeth Wednesday' },
-      { value: 'bamburgh-friday', label: 'Bamburgh Friday' },
-    ] satisfies RoundPlannerSelectOption[],
-    technicianOptions: [
-      { value: 'james', label: 'James' },
-      { value: 'sarah', label: 'Sarah' },
-    ] satisfies RoundPlannerSelectOption[],
-    options: [
-      { id: 'remove-from-round-only', title: 'Remove from this recurring round only' },
-      { id: 'pause-after-visit', title: 'Pause service plan after this visit' },
-      { id: 'move-to-another-round', title: 'Move to another round instead' },
-      { id: 'delete-recurring', title: 'Delete recurring service completely' },
-    ] satisfies RoundPlannerRemovePropertyOption[],
-    summaryOutcomes: {
-      'remove-from-round-only': 'Future visits stopped',
-      'pause-after-visit': 'Service paused after visit',
-      'move-to-another-round': 'Will move to another round',
-      'delete-recurring': 'Recurring service deleted',
-    } satisfies Record<RemovePropertyOptionId, string>,
-    actions: {
-      cancel: 'Cancel',
-      confirm: {
-        'remove-from-round-only': 'Remove',
-        'pause-after-visit': 'Pause',
-        'move-to-another-round': 'Move Round',
-        'delete-recurring': 'Delete',
-      } satisfies Record<RemovePropertyOptionId, string>,
-    },
-    successToast: 'Property removed from round',
-    deleteSuccessToast: 'Customer/property deleted from the system',
   },
   messageCustomersModal: {
     title: 'Message Customers',
@@ -406,44 +235,9 @@ export const roundPlannerContent = {
     },
     successToast: 'Message sent successfully',
   },
-  allWeeksOption: { value: 'all', label: 'Week' },
-  weeks: [
-    { id: 'week-1', value: 'week-1', label: 'Week 1 · 6–10 May' },
-    { id: 'week-2', value: 'week-2', label: 'Week 2 · 13–17 May' },
-    { id: 'week-3', value: 'week-3', label: 'Week 3 · 20–24 May' },
-    { id: 'week-4', value: 'week-4', label: 'Week 4 · 27–31 May' },
-  ] satisfies RoundPlannerWeek[],
-  areas: [
-    { value: 'alnwick', label: 'Alnwick' },
-    { value: 'morpeth', label: 'Morpeth' },
-    { value: 'bamburgh', label: 'Bamburgh' },
-  ] satisfies RoundPlannerSelectOption[],
-  technicians: [
-    { value: 'all', label: 'Technician' },
-    { value: 'james', label: 'James' },
-    { value: 'sarah', label: 'Sarah' },
-  ] satisfies RoundPlannerSelectOption[],
-  statuses: [
-    { value: 'all', label: 'Status' },
-    { value: 'in-progress', label: 'In progress' },
-    { value: 'completed', label: 'Completed' },
-    { value: 'scheduled', label: 'Scheduled' },
-  ] satisfies RoundPlannerSelectOption[],
-  metrics: [
-    { label: 'Total Stops', value: '10' },
-    { label: 'Round Value', value: '£1,880' },
-    { label: 'Estimated Duration', value: '13 hrs' },
-    { label: 'Completion', value: '68%' },
-    { label: 'Payment Holds', value: '2', tone: 'warning' },
-    { label: 'Issues', value: '0', tone: 'danger' },
-  ] satisfies RoundPlannerMetric[],
-  calendar: {
-    emptyLabel: 'No rounds',
-    dayHeaders: weekDays,
-  },
   mapView: {
-    propertiesTitle: 'Properties',
-    noProperties: 'No properties match the selected filters.',
+    propertiesTitle: 'Stops',
+    noProperties: 'No stops on this date.',
     controls: {
       zoomIn: 'Zoom in',
       zoomOut: 'Zoom out',
@@ -456,297 +250,52 @@ export const roundPlannerContent = {
       { label: 'Payment Hold', status: 'payment-hold' },
       { label: 'Issue', status: 'issue' },
     ],
-    statusLabels: {
-      scheduled: 'scheduled',
-      completed: 'completed',
-      'payment-hold': 'hold',
+    comingSoon: {
+      badge: 'Coming Soon',
+      title: 'Map view is on the way',
+      description: 'Live pin locations for every stop are coming soon. Use List view to see all stops for the day in the meantime.',
     },
   },
   listView: {
     actions: {
       bulkMessage: 'Bulk Message Round',
       addOneOffJob: 'Add One-off Job',
-      removeProperty: 'Remove property',
+      previousDay: 'Previous day',
+      nextDay: 'Next day',
     },
+    dateLabel: 'Date',
     columns: {
       property: 'Property / Customer',
       round: 'Round',
       price: 'Price',
       status: 'Status',
       technician: 'Technician',
-      lastCompleted: 'Last Completed',
+      completedAt: 'Completed',
       action: 'Action',
     },
-    emptyLabel: 'No properties match the selected filters.',
+    emptyLabel: 'No stops match the selected filters.',
+    noVisits: 'No visits on this date.',
+    routeOrderHint: 'Stops are listed in route order.',
+    badges: {
+      paymentHold: 'Payment hold',
+      issue: 'Issue',
+    },
     details: {
       title: 'Details',
-      frequency: 'Frequency',
-      nextDue: 'Next Due',
-      payment: 'Payment',
-      method: 'Method',
+      postcode: 'Postcode',
+      propertyName: 'Property',
+      completedAt: 'Completed at',
+      issues: 'Issues',
+      noIssues: 'No issues reported.',
       viewFull: 'View Full Details',
     },
-    notes: {
-      title: 'Notes',
-      access: 'Access',
-      risk: 'Risk',
-    },
-    statusLabels: {
-      completed: 'Completed',
-      hold: 'hold',
-      scheduled: 'scheduled',
-      paid: 'paid',
-      pending: 'pending',
-    },
-    items: [
-      {
-        id: 'list-1',
-        propertyId: '12-market-street',
-        address: '12 Market Street',
-        customer: 'John Smith',
-        round: 'Alnwick Monday',
-        price: '£35',
-        status: 'completed',
-        technician: 'James',
-        lastCompleted: '5/6/2026',
-        frequency: 'Every 4 weeks',
-        nextDue: '6/3/2026',
-        paymentStatus: 'paid',
-        paymentMethod: 'GoCardless',
-        access: 'Key under mat, side gate access',
-        risk: 'Dog in back garden',
-      },
-      {
-        id: 'list-2',
-        propertyId: '45-bondgate-within',
-        address: '45 Bondgate Within',
-        customer: 'Mary Johnson',
-        round: 'Alnwick Monday',
-        price: '£28',
-        status: 'completed',
-        technician: 'James',
-        lastCompleted: '5/6/2026',
-        frequency: 'Every 4 weeks',
-        nextDue: '6/3/2026',
-        paymentStatus: 'paid',
-        paymentMethod: 'GoCardless',
-        access: 'Ring doorbell on arrival',
-      },
-      {
-        id: 'list-3',
-        propertyId: '78-narrowgate',
-        address: '78 Narrowgate',
-        customer: 'Robert Williams',
-        round: 'Alnwick Monday',
-        price: '£42',
-        status: 'hold',
-        technician: 'James',
-        lastCompleted: '5/6/2026',
-        frequency: 'Every 4 weeks',
-        nextDue: '6/3/2026',
-        paymentStatus: 'hold',
-        paymentMethod: 'GoCardless',
-        access: 'Rear lane access only',
-      },
-      {
-        id: 'list-4',
-        propertyId: '23-bailiffgate',
-        address: '23 Bailiffgate',
-        customer: 'Sarah Brown',
-        round: 'Alnwick Monday',
-        price: '£32',
-        status: 'scheduled',
-        technician: 'James',
-        lastCompleted: '—',
-        frequency: 'Every 4 weeks',
-        nextDue: '6/3/2026',
-        paymentStatus: 'paid',
-        paymentMethod: 'GoCardless',
-        access: 'Front door only',
-      },
-      {
-        id: 'list-5',
-        propertyId: '56-fenkle-street',
-        address: '56 Fenkle Street',
-        customer: 'David Miller',
-        round: 'Alnwick Monday',
-        price: '£25',
-        status: 'scheduled',
-        technician: 'James',
-        lastCompleted: '—',
-        frequency: 'Every 4 weeks',
-        nextDue: '6/3/2026',
-        paymentStatus: 'paid',
-        paymentMethod: 'Cash',
-        access: 'No special instructions',
-      },
-    ] satisfies RoundPlannerListItem[],
+    unassigned: 'Unassigned',
   },
-  days: [
-    ...buildWeekDays('week-1', 'May 6|May 7|May 8|May 9|May 10', {
-      Monday: [
-        {
-          id: 'round-alnwick-mon',
-          title: 'Alnwick Monday',
-          stops: 5,
-          value: '£940',
-          technician: 'James',
-          status: 'in-progress',
-          statusLabel: 'In-progress',
-          completedStops: 2,
-          estimatedTime: '6.5 hrs',
-          paymentHolds: 1,
-          properties: [
-            {
-              id: 'alnwick-mon-1',
-              address: '12 Market Street',
-              customer: 'John Smith',
-              price: '£35',
-              status: 'completed',
-            },
-            {
-              id: 'alnwick-mon-2',
-              address: '45 Bondgate Within',
-              customer: 'Mary Johnson',
-              price: '£28',
-              status: 'completed',
-            },
-            {
-              id: 'alnwick-mon-3',
-              address: '78 Narrowgate',
-              customer: 'Robert Williams',
-              price: '£42',
-              status: 'payment-hold',
-            },
-            {
-              id: 'alnwick-mon-4',
-              address: '23 Bailiffgate',
-              customer: 'Sarah Brown',
-              price: '£32',
-              status: 'scheduled',
-            },
-            {
-              id: 'alnwick-mon-5',
-              address: '56 Fenkle Street',
-              customer: 'David Miller',
-              price: '£25',
-              status: 'scheduled',
-            },
-          ],
-        },
-      ],
-      Tuesday: [
-        {
-          id: 'round-alnwick-tue',
-          title: 'Alnwick Tuesday',
-          stops: 5,
-          value: '£940',
-          technician: 'Sarah',
-          status: 'completed',
-          statusLabel: 'Completed',
-          completedStops: 5,
-          estimatedTime: '6.5 hrs',
-          paymentHolds: 0,
-          properties: [
-            {
-              id: 'alnwick-tue-1',
-              address: '2 Castle View',
-              customer: 'Alice Cooper',
-              price: '£44',
-              status: 'completed',
-            },
-            {
-              id: 'alnwick-tue-2',
-              address: '14 High Street',
-              customer: 'John Smith',
-              price: '£35',
-              status: 'completed',
-            },
-            {
-              id: 'alnwick-tue-3',
-              address: '6 Hilltop Road',
-              customer: 'Chris Adams',
-              price: '£30',
-              status: 'completed',
-            },
-            {
-              id: 'alnwick-tue-4',
-              address: '9 River Lane',
-              customer: 'Alice Cooper',
-              price: '£42',
-              status: 'completed',
-            },
-            {
-              id: 'alnwick-tue-5',
-              address: '11 Field Drive',
-              customer: 'Lisa Morgan',
-              price: '£32',
-              status: 'completed',
-            },
-          ],
-        },
-      ],
-      Wednesday: [
-        {
-          id: 'round-morpeth-wed',
-          title: 'Morpeth Wednesday',
-          stops: 5,
-          value: '£940',
-          technician: 'James',
-          status: 'in-progress',
-          statusLabel: 'In-progress',
-          completedStops: 2,
-          estimatedTime: '6.5 hrs',
-          paymentHolds: 1,
-          properties: [
-            {
-              id: 'morpeth-wed-1',
-              address: '12 Market Street',
-              customer: 'John Smith',
-              price: '£35',
-              status: 'completed',
-            },
-            {
-              id: 'morpeth-wed-2',
-              address: '45 Bondgate Within',
-              customer: 'Mary Johnson',
-              price: '£28',
-              status: 'completed',
-            },
-            {
-              id: 'morpeth-wed-3',
-              address: '78 Narrowgate',
-              customer: 'Robert Williams',
-              price: '£42',
-              status: 'payment-hold',
-            },
-            {
-              id: 'morpeth-wed-4',
-              address: '23 Bailiffgate',
-              customer: 'Sarah Brown',
-              price: '£32',
-              status: 'scheduled',
-            },
-            {
-              id: 'morpeth-wed-5',
-              address: '56 Fenkle Street',
-              customer: 'David Miller',
-              price: '£25',
-              status: 'scheduled',
-            },
-          ],
-        },
-      ],
-    }),
-    ...buildWeekDays('week-2', 'May 13|May 14|May 15|May 16|May 17', {}),
-    ...buildWeekDays('week-3', 'May 20|May 21|May 22|May 23|May 24', {}),
-    ...buildWeekDays('week-4', 'May 27|May 28|May 29|May 30|May 31', {}),
-  ] satisfies RoundPlannerDay[],
   defaults: {
-    weekId: 'all',
-    areaId: 'alnwick',
+    roundId: 'all',
+    period: 'week' as PlannerPeriod,
     technicianId: 'all',
-    statusId: 'all',
+    statusId: 'all' as PlannerStatusFilter,
     view: 'calendar' as RoundPlannerView,
     search: '',
   },

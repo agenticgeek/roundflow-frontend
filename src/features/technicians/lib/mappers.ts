@@ -56,7 +56,7 @@ function workloadToRounds(workload: TechnicianTodayWorkload[] | undefined): Tech
   }))
 }
 
-function roundsFromNames(roundNames: string[] | undefined): TechnicianRound[] {
+export function roundsFromNames(roundNames: string[] | undefined): TechnicianRound[] {
   return (roundNames ?? []).map((name, index) => ({
     id: `round-${index}`,
     name,
@@ -67,7 +67,7 @@ function roundsFromNames(roundNames: string[] | undefined): TechnicianRound[] {
   }))
 }
 
-function toBaseRecord(item: TechnicianListItem): TechnicianRecord {
+function toBaseRecord(item: TechnicianListItem, roundNames?: string[]): TechnicianRecord {
   const name = item.name?.trim() || 'Unnamed technician'
   return {
     id: item.id,
@@ -89,12 +89,19 @@ function toBaseRecord(item: TechnicianListItem): TechnicianRecord {
     timeOnJob: '—',
     complaints: 0,
     issues: 0,
-    rounds: [],
+    rounds: roundsFromNames(roundNames),
   }
 }
 
-export function technicianListToUi(items: TechnicianListItem[] | undefined): TechnicianRecord[] {
-  return (items ?? []).map(toBaseRecord)
+/**
+ * `GET /technicians` carries no round data — pass a technicianId → round names
+ * map (built from `GET /rounds` + per-round detail) to show real round counts.
+ */
+export function technicianListToUi(
+  items: TechnicianListItem[] | undefined,
+  roundNamesByTechnicianId?: Map<string, string[]>,
+): TechnicianRecord[] {
+  return (items ?? []).map((item) => toBaseRecord(item, roundNamesByTechnicianId?.get(item.id)))
 }
 
 export function technicianDetailToUi(detail: TechnicianDetail | undefined): TechnicianRecord | null {

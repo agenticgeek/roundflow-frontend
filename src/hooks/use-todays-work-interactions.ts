@@ -38,6 +38,7 @@ export function useTodaysWorkInteractions() {
   )
   const dateLabel = formatTodayDateLabel(todayQuery.data?.date)
   const dayClosed = todayQuery.data?.dayClosed === true
+  const hasNoVisitsToday = todayQuery.isSuccess && (todayQuery.data?.rounds.length ?? 0) === 0
 
   const refresh = useCallback(() => {
     void todayQuery.refetch().then(() => {
@@ -141,6 +142,7 @@ export function useTodaysWorkInteractions() {
     technicians,
     dateLabel,
     dayClosed,
+    hasNoVisitsToday,
     todayQuery,
   }
 }

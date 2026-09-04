@@ -52,7 +52,6 @@ export const techniciansContent = {
   overview: {
     title: 'Technicians',
     subtitle: "Monitor your team's activity, performance and assigned rounds.",
-    date: 'Monday 18 May 2026',
     add: 'Add Technician',
     metrics: [
       { label: 'Active now', value: '1', accent: true },
@@ -73,7 +72,6 @@ export const techniciansContent = {
     info: 'Technician Info',
     workload: 'Workload Summary',
     edit: 'Edit Details',
-    issueFlagged: '1 issue flagged on Alnwick Monday',
   },
   form: {
     addTitle: 'Add Technician',
@@ -166,45 +164,6 @@ export const techniciansContent = {
     remove: 'Deactivate',
     cancel: 'Cancel',
   },
-  technicians: [
-    {
-      id: 'james',
-      name: 'James Smith',
-      initials: 'J',
-      role: 'Lead Technician',
-      phone: '07123 456789',
-      email: 'james@example.com',
-      areas: ['Alnwick', 'Morpeth'],
-      notes: 'Prefers morning shifts. Has own equipment.',
-      status: 'in-progress',
-      appActive: true,
-      memberSince: 'Jan 2024',
-      revenue: '£1,880',
-      revenuePerHour: '£22.80',
-      valueCompleted: '£4,100',
-      timeOnJob: '180h',
-      complaints: 1,
-      issues: 2,
-      rounds: [
-        {
-          id: 'alnwick-monday',
-          name: 'Alnwick Monday',
-          stops: 5,
-          completed: 2,
-          revenue: '£940',
-          status: 'in-progress',
-        },
-        {
-          id: 'morpeth-wednesday',
-          name: 'Morpeth Wednesday',
-          stops: 5,
-          completed: 0,
-          revenue: '£940',
-          status: 'in-progress',
-        },
-      ],
-    },
-  ] satisfies TechnicianRecord[],
   photoJobs: [
     {
       id: '12-market-street',

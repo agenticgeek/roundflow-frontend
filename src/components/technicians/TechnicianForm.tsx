@@ -7,6 +7,7 @@ import { Field, Input, Select, Textarea, Toggle } from '@/components/ui'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { useServiceAreas } from '@/features/settings/hooks/useSettings'
 import { settingsServiceAreasToRows } from '@/features/settings/lib/mappers'
+import { isValidEmail, isValidPhone } from '@/lib/contact'
 
 export type TechnicianFormValues = {
   name: string
@@ -86,8 +87,20 @@ export function TechnicianForm({
       setError('Enter a technician name.')
       return
     }
+    if (!phone.trim()) {
+      setError('Enter a phone number.')
+      return
+    }
+    if (!isValidPhone(phone)) {
+      setError('Enter a valid phone number.')
+      return
+    }
     if (sendInvite && !editing && !email.trim()) {
       setError('Email is required when sending an invite.')
+      return
+    }
+    if (email.trim() && !isValidEmail(email)) {
+      setError('Enter a valid email address.')
       return
     }
     setError(null)
@@ -128,7 +141,7 @@ export function TechnicianForm({
                 disabled={!canMutate || pending}
               />
             </Field>
-            <Field label={content.mobile} labelWeight="medium" size="sm">
+            <Field label={content.mobile} required labelWeight="medium" size="sm">
               <Input
                 type="tel"
                 inputSize="sm"

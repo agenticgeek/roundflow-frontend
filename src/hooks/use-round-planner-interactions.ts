@@ -1,152 +1,63 @@
-import { useCallback, useMemo, useState } from 'react'
-import type { RoundPlannerListItem, RoundPlannerRound, RoundPlannerView } from '@/content/round-planner'
+import { useCallback, useState } from 'react'
+import type { RoundPlannerView } from '@/content/round-planner'
 import { roundPlannerContent } from '@/content/round-planner'
+import type { PlannerPeriod, PlannerStatusFilter } from '@/features/rounds/lib/planner'
+import { todayIsoDate } from '@/features/rounds/lib/planner'
 
-export interface SelectedRoundDetail {
-  round: RoundPlannerRound
-  dateLabel: string
+export interface SelectedPlannerCard {
+  roundId: string
+  date: string
 }
 
-/** Round Planner UI state — week, filters, view mode, search. */
+/** Round Planner UI state — round, period/anchor, filters, view mode, selection. Data lives in the screen. */
 export function useRoundPlannerInteractions() {
-  const { defaults, days } = roundPlannerContent
+  const { defaults } = roundPlannerContent
 
-  const [weekId, setWeekId] = useState<string>(defaults.weekId)
-  const [areaId, setAreaId] = useState<string>(defaults.areaId)
+  const [roundId, setRoundId] = useState<string>(defaults.roundId)
+  const [period, setPeriod] = useState<PlannerPeriod>(defaults.period)
+  const [anchorDate, setAnchorDate] = useState<string>(() => todayIsoDate())
   const [technicianId, setTechnicianId] = useState<string>(defaults.technicianId)
-  const [statusId, setStatusId] = useState<string>(defaults.statusId)
+  const [statusId, setStatusId] = useState<PlannerStatusFilter>(defaults.statusId)
   const [view, setView] = useState<RoundPlannerView>(defaults.view)
   const [search, setSearch] = useState<string>(defaults.search)
-  const [syncing, setSyncing] = useState(false)
-  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null)
-  const [expandedListItemId, setExpandedListItemId] = useState<string | null>(null)
-  const [removePropertyItemId, setRemovePropertyItemId] = useState<string | null>(null)
+  const [selectedDate, setSelectedDate] = useState<string>(() => todayIsoDate())
+  const [selectedCard, setSelectedCard] = useState<SelectedPlannerCard | null>(null)
+  const [expandedStopId, setExpandedStopId] = useState<string | null>(null)
 
-  const syncCycle = useCallback(() => {
-    setSyncing(true)
-    window.setTimeout(() => setSyncing(false), 600)
-  }, [])
-
-  const filteredDays = useMemo(() => {
-    const weekFiltered =
-      weekId === 'all' ? days : days.filter((day) => day.weekId === weekId)
-
-    const query = search.trim().toLowerCase()
-
-    return weekFiltered
-      .map((day) => {
-        const rounds = day.rounds.filter((round) => {
-          if (technicianId !== 'all' && round.technician.toLowerCase() !== technicianId) {
-            return false
-          }
-          if (statusId !== 'all' && round.status !== statusId) {
-            return false
-          }
-          if (!query) return true
-
-          const haystack = [
-            round.title,
-            round.technician,
-            round.statusLabel,
-            day.dateLabel,
-            day.dayOfWeek,
-          ]
-            .join(' ')
-            .toLowerCase()
-
-          return haystack.includes(query)
-        })
-
-        return { ...day, rounds }
-      })
-      .filter((day) => {
-        if (!query) return true
-        return day.rounds.length > 0 || day.dateLabel.toLowerCase().includes(query)
-      })
-  }, [days, search, statusId, technicianId, weekId])
-
-  const visibleWeeks = useMemo(() => {
-    if (weekId === 'all') {
-      return roundPlannerContent.weeks
-    }
-
-    return roundPlannerContent.weeks.filter((week) => week.id === weekId)
-  }, [weekId])
-
-  const selectedRound = useMemo<SelectedRoundDetail | null>(() => {
-    if (!selectedRoundId) return null
-
-    for (const day of days) {
-      const round = day.rounds.find((item) => item.id === selectedRoundId)
-      if (round) {
-        return { round, dateLabel: day.dateLabel }
-      }
-    }
-
-    return null
-  }, [days, selectedRoundId])
-
-  const openRoundDetail = useCallback((roundId: string) => {
-    setSelectedRoundId(roundId)
+  const openRoundDetail = useCallback((card: SelectedPlannerCard) => {
+    setSelectedCard(card)
   }, [])
 
   const closeRoundDetail = useCallback(() => {
-    setSelectedRoundId(null)
+    setSelectedCard(null)
   }, [])
 
-  const filteredListItems = useMemo(() => {
-    const { items } = roundPlannerContent.listView
-    const query = search.trim().toLowerCase()
-
-    return items.filter((item) => {
-      if (technicianId !== 'all' && item.technician.toLowerCase() !== technicianId) {
-        return false
-      }
-
-      if (statusId !== 'all') {
-        const statusMatches =
-          (statusId === 'completed' && item.status === 'completed') ||
-          (statusId === 'scheduled' && item.status === 'scheduled') ||
-          (statusId === 'in-progress' && item.status === 'hold')
-
-        if (!statusMatches) return false
-      }
-
-      if (!query) return true
-
-      const haystack = [item.address, item.customer, item.round, item.technician]
-        .join(' ')
-        .toLowerCase()
-
-      return haystack.includes(query)
-    })
-  }, [search, statusId, technicianId])
-
-  const toggleListItem = useCallback((itemId: string) => {
-    setExpandedListItemId((current) => (current === itemId ? null : itemId))
+  const toggleStop = useCallback((visitId: string) => {
+    setExpandedStopId((current) => (current === visitId ? null : visitId))
   }, [])
 
-  const removePropertyItem = useMemo<RoundPlannerListItem | null>(() => {
-    if (!removePropertyItemId) return null
-
-    return (
-      roundPlannerContent.listView.items.find((item) => item.id === removePropertyItemId) ?? null
-    )
-  }, [removePropertyItemId])
-
-  const openRemoveProperty = useCallback((itemId: string) => {
-    setRemovePropertyItemId(itemId)
+  /** Jump from a calendar card into List/Map for that round and date. */
+  const openDayIn = useCallback((nextView: Exclude<RoundPlannerView, 'calendar'>, card: SelectedPlannerCard) => {
+    setRoundId(card.roundId)
+    setSelectedDate(card.date)
+    setAnchorDate(card.date)
+    setView(nextView)
+    setSelectedCard(null)
   }, [])
 
-  const closeRemoveProperty = useCallback(() => {
-    setRemovePropertyItemId(null)
+  const goToToday = useCallback(() => {
+    const today = todayIsoDate()
+    setAnchorDate(today)
+    setSelectedDate(today)
   }, [])
 
   return {
-    weekId,
-    setWeekId,
-    areaId,
-    setAreaId,
+    roundId,
+    setRoundId,
+    period,
+    setPeriod,
+    anchorDate,
+    setAnchorDate,
     technicianId,
     setTechnicianId,
     statusId,
@@ -155,19 +66,15 @@ export function useRoundPlannerInteractions() {
     setView,
     search,
     setSearch,
-    syncing,
-    syncCycle,
-    filteredDays,
-    visibleWeeks,
-    selectedRound,
+    selectedDate,
+    setSelectedDate,
+    selectedCard,
     openRoundDetail,
     closeRoundDetail,
-    filteredListItems,
-    expandedListItemId,
-    toggleListItem,
-    removePropertyItem,
-    openRemoveProperty,
-    closeRemoveProperty,
+    openDayIn,
+    expandedStopId,
+    toggleStop,
+    goToToday,
   }
 }
 

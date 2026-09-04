@@ -5,10 +5,11 @@ interface SetupBannerProps {
   currentIndex: number
   completedSteps?: boolean[]
   onSkip?: () => void
+  onStepClick?: (index: number) => void
 }
 
 /** Setup wizard top banner — title, subtitle, skip action, and horizontal stepper. */
-export function SetupBanner({ currentIndex, completedSteps, onSkip }: SetupBannerProps) {
+export function SetupBanner({ currentIndex, completedSteps, onSkip, onStepClick }: SetupBannerProps) {
   const { title, subtitle, footer } = setupWizardContent
 
   return (
@@ -34,7 +35,11 @@ export function SetupBanner({ currentIndex, completedSteps, onSkip }: SetupBanne
         </header>
 
         <div className="mt-6 sm:mt-8">
-          <SetupStepper currentIndex={currentIndex} completedSteps={completedSteps} />
+          <SetupStepper
+            currentIndex={currentIndex}
+            completedSteps={completedSteps}
+            onStepClick={onStepClick}
+          />
         </div>
       </div>
     </div>

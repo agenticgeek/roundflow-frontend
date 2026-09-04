@@ -11,13 +11,7 @@ import type {
   VisitPaymentStatus,
   VisitStatus,
 } from '@/content/property-detail'
-import {
-  getPropertyNotes,
-  getPropertyPaymentHistory,
-  getPropertyVisitHistory,
-  paymentRecordToVisitRecord,
-  propertyDetailContent,
-} from '@/content/property-detail'
+import { paymentRecordToVisitRecord, propertyDetailContent } from '@/content/property-detail'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Textarea } from '@/components/ui'
@@ -46,7 +40,7 @@ interface VisitHistoryTabProps {
 export function VisitHistoryTab({ property, visits: visitsProp }: VisitHistoryTabProps) {
   const { visitHistory } = propertyDetailContent
   const { canMutate } = useAppBootstrap()
-  const visits = visitsProp ?? getPropertyVisitHistory(property)
+  const visits = visitsProp ?? []
   const [invoiceVisit, setInvoiceVisit] = useState<PropertyVisitRecord | null>(null)
   const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
 
@@ -198,10 +192,7 @@ interface PaymentsTabProps {
 export function PaymentsTab({ property, payments: paymentsProp }: PaymentsTabProps) {
   const { paymentHistory } = propertyDetailContent
   const { canMutate } = useAppBootstrap()
-  const payments =
-    paymentsProp === null
-      ? []
-      : (paymentsProp ?? getPropertyPaymentHistory(property))
+  const payments = paymentsProp ?? []
   const [invoiceVisit, setInvoiceVisit] = useState<PropertyVisitRecord | null>(null)
   const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
   const visitsTotal = paymentHistory.visitsTotal.replace('{count}', String(payments.length))
@@ -384,9 +375,7 @@ export function NotesRiskTab({ property, notes: notesProp, customerId }: NotesRi
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const addNote = useAddPropertyNote(property.id)
-  const [notes, setNotes] = useState<PropertyNoteRecord[]>(
-    () => notesProp ?? getPropertyNotes(property),
-  )
+  const [notes, setNotes] = useState<PropertyNoteRecord[]>(() => notesProp ?? [])
   const [formOpen, setFormOpen] = useState(false)
   const [category, setCategory] = useState<PropertyNoteCategory>('internal')
   const [draft, setDraft] = useState('')

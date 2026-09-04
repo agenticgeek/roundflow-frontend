@@ -1,6 +1,7 @@
 import type { components } from '@/api/types.gen'
 import type {
   BusinessSettings,
+  CleaningFrequency,
   Round,
   RoundInput,
   Service,
@@ -29,6 +30,7 @@ import type {
   PaymentSetupData,
   PropertyDraft,
   PropertyRecord,
+  RecurringCycle,
   RoundSettingsData,
   SmsTemplatesData,
   ServiceArea as WizardServiceArea,
@@ -89,7 +91,6 @@ export function businessProfileToForm(
     businessName: data.businessName ?? defaults.businessName,
     businessPhone: data.phone ?? defaults.businessPhone,
     businessEmail: data.email ?? defaults.businessEmail,
-    serviceArea: defaults.serviceArea,
     companyNumber: data.companyNumber ?? defaults.companyNumber,
     vatNumber: data.vatRegistration ?? defaults.vatNumber,
     vatRegistered: data.vatRegistered ?? defaults.vatRegistered,
@@ -313,15 +314,27 @@ export interface FirstRoundFormValues {
   serviceAreaId: string
 }
 
+const RECURRING_CYCLE_TO_FREQUENCY: Record<RecurringCycle, CleaningFrequency> = {
+  '4-week': 'FOUR_WEEKLY',
+  '6-week': 'SIX_WEEKLY',
+  '8-week': 'EIGHT_WEEKLY',
+  '12-week': 'TWELVE_WEEKLY',
+}
+
 export function firstRoundToForm(
   rounds: Round[] | undefined,
   serviceAreas: ServiceArea[] | undefined,
+  /** Business's default recurring cycle (step 4) — prefills frequency for a first round. */
+  defaultCycleLengthDays?: number | null,
 ): FirstRoundFormValues {
   const round = rounds?.[0]
+  const defaultFrequency = round
+    ? undefined
+    : RECURRING_CYCLE_TO_FREQUENCY[daysToCycleLength(defaultCycleLengthDays)]
   return {
     name: round?.name ?? '',
     defaultDay: round?.defaultDay ?? 'MON',
-    frequency: round?.frequency ?? 'FOUR_WEEKLY',
+    frequency: round?.frequency ?? defaultFrequency ?? 'FOUR_WEEKLY',
     serviceAreaId: round?.serviceAreaId ?? serviceAreas?.[0]?.id ?? '',
   }
 }

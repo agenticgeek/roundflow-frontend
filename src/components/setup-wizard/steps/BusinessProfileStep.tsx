@@ -11,6 +11,18 @@ interface BusinessProfileStepProps {
   onSubmit: (values: BusinessProfileData) => void
 }
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+/** Loose enough for international formats; just guards against garbage input. */
+const PHONE_PATTERN = /^[+\d][\d\s()-]{6,19}$/
+
+/** Letters + digits only, uppercased, capped — for company/VAT registration numbers. */
+function filterRegistrationNumber(value: string, maxLength: number): string {
+  return value
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase()
+    .slice(0, maxLength)
+}
+
 function BusinessProfileIcon() {
   return (
     <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -30,6 +42,7 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
   const [error, setError] = useState<string | null>(null)
 
   function updateField<K extends keyof BusinessProfileData>(key: K, value: BusinessProfileData[K]) {
+    if (error) setError(null)
     setValues((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -41,9 +54,28 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
       setError(validation.required)
       return
     }
+    if (!EMAIL_PATTERN.test(values.businessEmail.trim())) {
+      setError(validation.emailInvalid)
+      return
+    }
+    if (!PHONE_PATTERN.test(values.businessPhone.trim())) {
+      setError(validation.phoneInvalid)
+      return
+    }
     if (values.vatRegistered === null) {
       setError(validation.vatRequired)
       return
+    }
+    if (values.vatRegistered) {
+      const vatNumber = values.vatNumber.trim()
+      if (!vatNumber) {
+        setError(validation.vatNumberRequired)
+        return
+      }
+      if (vatNumber.length < 5) {
+        setError(validation.vatNumberInvalid)
+        return
+      }
     }
 
     onSubmit(values)
@@ -90,27 +122,13 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
         </Field>
       </div>
 
-      <Field label={fields.serviceArea.label} labelWeight="medium">
-        <Input
-          value={values.serviceArea}
-          onChange={(e) => updateField('serviceArea', e.target.value)}
-          placeholder={fields.serviceArea.placeholder}
-        />
-      </Field>
-
       <Field label={fields.companyNumber.label} labelWeight="medium">
         <Input
           value={values.companyNumber}
-          onChange={(e) => updateField('companyNumber', e.target.value)}
+          onChange={(e) =>
+            updateField('companyNumber', filterRegistrationNumber(e.target.value, 15))
+          }
           placeholder={fields.companyNumber.placeholder}
-        />
-      </Field>
-
-      <Field label={fields.vatNumber.label} labelWeight="medium">
-        <Input
-          value={values.vatNumber}
-          onChange={(e) => updateField('vatNumber', e.target.value)}
-          placeholder={fields.vatNumber.placeholder}
         />
       </Field>
 
@@ -125,7 +143,10 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
               <input
                 type="checkbox"
                 checked={values.vatRegistered === option.value}
-                onChange={() => updateField('vatRegistered', option.value)}
+                onChange={() => {
+                  updateField('vatRegistered', option.value)
+                  if (!option.value) updateField('vatNumber', '')
+                }}
                 className="h-4 w-4 rounded border-border accent-foreground"
               />
               {option.label}
@@ -133,6 +154,16 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
           ))}
         </div>
       </div>
+
+      {values.vatRegistered ? (
+        <Field label={fields.vatNumber.label} required labelWeight="medium">
+          <Input
+            value={values.vatNumber}
+            onChange={(e) => updateField('vatNumber', filterRegistrationNumber(e.target.value, 12))}
+            placeholder={fields.vatNumber.placeholder}
+          />
+        </Field>
+      ) : null}
 
       <Field label={fields.workingDays.label} labelWeight="medium">
         <DaySelector

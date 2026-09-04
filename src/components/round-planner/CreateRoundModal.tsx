@@ -1,22 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
-import { Field, Input, Textarea, Toggle } from '@/components/ui'
+import { Field, Input, Textarea } from '@/components/ui'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useServiceAreas, useTechnicians } from '@/features/settings/hooks/useSettings'
-import {
-  useCreateRound,
-  useSetRoundTechnicians,
-} from '@/features/rounds/hooks/useRounds'
-import {
-  settingsServiceAreasToRows,
-  settingsTechniciansToRows,
-} from '@/features/settings/lib/mappers'
+import { useCreateServiceArea, useServiceAreas, useTechnicians } from '@/features/settings/hooks/useSettings'
+import { useCreateRound, useSetRoundTechnicians } from '@/features/rounds/hooks/useRounds'
+import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
+import { useCustomers } from '@/features/customers/hooks/useCustomers'
+import { settingsServiceAreasToRows, settingsTechniciansToRows } from '@/features/settings/lib/mappers'
+import type { CustomerListRow } from '@/api/types'
 import type { DayOfWeek } from '@/api/types'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useToast } from '@/components/ui/toast'
-import { ApiError } from '@/lib/errors'
-import { cn } from '@/lib/utils'
+import { ApiError, errorMessage } from '@/lib/errors'
+import { cn, formatCurrency } from '@/lib/utils'
 
 interface CreateRoundModalProps {
   open: boolean
@@ -24,20 +21,7 @@ interface CreateRoundModalProps {
 }
 
 type Step = 1 | 2 | 3 | 4 | 5
-type Frequency =
-  | 'FOUR_WEEKLY'
-  | 'SIX_WEEKLY'
-  | 'EIGHT_WEEKLY'
-  | 'TWELVE_WEEKLY'
-
-interface DraftProperty {
-  id: string
-  address: string
-  customer: string
-  postcode: string
-  price: number
-  round?: string
-}
+type Frequency = 'FOUR_WEEKLY' | 'SIX_WEEKLY' | 'EIGHT_WEEKLY' | 'TWELVE_WEEKLY'
 
 const STEPS = [
   { label: 'Round Details', icon: 'file' },
@@ -47,7 +31,7 @@ const STEPS = [
   { label: 'Review & Save', icon: 'check' },
 ] as const
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 
 const FREQUENCIES: { value: Frequency; label: string; default?: boolean }[] = [
   { value: 'FOUR_WEEKLY', label: 'Every 4 weeks', default: true },
@@ -56,38 +40,14 @@ const FREQUENCIES: { value: Frequency; label: string; default?: boolean }[] = [
   { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
 ]
 
-const INITIAL_PROPERTIES: DraftProperty[] = [
-  {
-    id: '14-high-street',
-    address: '14 High Street',
-    customer: 'John Smith',
-    postcode: 'NE66 1AA',
-    price: 35,
-    round: 'Alnwick Monday',
-  },
-  {
-    id: '22-green-road',
-    address: '22 Green Road',
-    customer: 'Mary Johnson',
-    postcode: 'NE66 1BB',
-    price: 28,
-  },
-  {
-    id: '7-castle-lane',
-    address: '7 Castle Lane',
-    customer: 'Peter Brown',
-    postcode: 'NE66 1CC',
-    price: 42,
-  },
-  {
-    id: '31-market-place',
-    address: '31 Market Place',
-    customer: 'Susan Davis',
-    postcode: 'NE66 1DD',
-    price: 30,
-    round: 'Alnwick Wednesday',
-  },
-]
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
 
 function Stepper({ step }: { step: Step }) {
   return (
@@ -126,11 +86,7 @@ function Stepper({ step }: { step: Step }) {
             <span
               className={cn(
                 'mt-2 truncate text-center text-[10px] font-medium sm:text-xs',
-                complete
-                  ? 'text-success'
-                  : active
-                    ? 'text-foreground'
-                    : 'text-muted',
+                complete ? 'text-success' : active ? 'text-foreground' : 'text-muted',
               )}
             >
               {item.label}
@@ -142,13 +98,7 @@ function Stepper({ step }: { step: Step }) {
   )
 }
 
-function ModalHeader({
-  step,
-  onClose,
-}: {
-  step: Step
-  onClose: () => void
-}) {
+function ModalHeader({ step, onClose }: { step: Step; onClose: () => void }) {
   return (
     <header className="flex items-center justify-between border-b border-border px-5 py-4 sm:px-7">
       <div className="flex items-center gap-3">
@@ -202,10 +152,7 @@ function ModalFooter({
         {STEPS.map((item, index) => (
           <span
             key={item.label}
-            className={cn(
-              'h-1.5 rounded-full transition-all',
-              index + 1 === step ? 'w-7 bg-primary' : 'w-3 bg-border',
-            )}
+            className={cn('h-1.5 rounded-full transition-all', index + 1 === step ? 'w-7 bg-primary' : 'w-3 bg-border')}
           />
         ))}
       </div>
@@ -219,7 +166,7 @@ function ModalFooter({
         {step === 5 ? (
           <>
             <DashboardIcon name="check" className="h-4 w-4" />
-            {saving ? 'Saving…' : 'Save & Generate Visits'}
+            {saving ? 'Saving…' : 'Save Round'}
           </>
         ) : (
           <>
@@ -234,27 +181,19 @@ function ModalFooter({
 
 function RoundDetailsStep({
   roundName,
-  areaName,
-  postcode,
   day,
   frequency,
   description,
   onRoundName,
-  onAreaName,
-  onPostcode,
   onDay,
   onFrequency,
   onDescription,
 }: {
   roundName: string
-  areaName: string
-  postcode: string
   day: string
   frequency: Frequency
   description: string
   onRoundName: (value: string) => void
-  onAreaName: (value: string) => void
-  onPostcode: (value: string) => void
   onDay: (value: string) => void
   onFrequency: (value: Frequency) => void
   onDescription: (value: string) => void
@@ -267,22 +206,6 @@ function RoundDetailsStep({
           value={roundName}
           onChange={(event) => onRoundName(event.target.value)}
           placeholder="e.g. Alnwick Monday"
-        />
-      </Field>
-      <Field label="Service area name" size="sm">
-        <Input
-          inputSize="sm"
-          value={areaName}
-          onChange={(event) => onAreaName(event.target.value)}
-          placeholder="e.g. Alnwick"
-        />
-      </Field>
-      <Field label="Post code sector (optional)" size="sm">
-        <Input
-          inputSize="sm"
-          value={postcode}
-          onChange={(event) => onPostcode(event.target.value)}
-          placeholder="e.g. NE66"
         />
       </Field>
 
@@ -322,9 +245,7 @@ function RoundDetailsStep({
                 )}
               >
                 <span className="flex items-center gap-2">
-                  {frequency === item.value ? (
-                    <span className="h-2 w-2 rounded-full bg-primary" />
-                  ) : null}
+                  {frequency === item.value ? <span className="h-2 w-2 rounded-full bg-primary" /> : null}
                   {item.label}
                 </span>
                 {item.default ? (
@@ -364,157 +285,111 @@ function AreasLoading() {
 }
 
 function PropertiesStep({
-  properties,
+  query,
+  onQuery,
+  results,
+  searching,
   selected,
-  search,
-  onSearch,
   onToggle,
-  onAdd,
 }: {
-  properties: DraftProperty[]
-  selected: Set<string>
-  search: string
-  onSearch: (value: string) => void
-  onToggle: (id: string) => void
-  onAdd: (property: DraftProperty) => void
+  query: string
+  onQuery: (value: string) => void
+  results: CustomerListRow[]
+  searching: boolean
+  selected: Map<string, CustomerListRow>
+  onToggle: (row: CustomerListRow) => void
 }) {
-  const [showAdd, setShowAdd] = useState(false)
-  const [address, setAddress] = useState('')
-  const [customer, setCustomer] = useState('')
-  const [postcode, setPostcode] = useState('')
-  const [price, setPrice] = useState('')
-
-  const filtered = properties.filter((property) =>
-    `${property.address} ${property.customer} ${property.postcode}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  )
-
-  function addProperty() {
-    if (!address.trim() || !customer.trim()) return
-    onAdd({
-      id: `property-${Date.now()}`,
-      address: address.trim(),
-      customer: customer.trim(),
-      postcode: postcode.trim(),
-      price: Number(price) || 0,
-    })
-    setAddress('')
-    setCustomer('')
-    setPostcode('')
-    setPrice('')
-    setShowAdd(false)
-  }
-
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <label className="relative flex-1">
-          <span className="sr-only">Search properties</span>
-          <DashboardIcon
-            name="search"
-            className="absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-muted"
-          />
-          <Input
-            inputSize="sm"
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-            placeholder="Search properties..."
-            className="pl-10"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => setShowAdd((value) => !value)}
-          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground"
-        >
-          <DashboardIcon name="plus" className="h-4 w-4" />
-          New Property
-        </button>
+      <div>
+        <p className="text-xs font-semibold tracking-wide text-foreground uppercase">Add existing properties</p>
+        <p className="mt-1 text-sm text-muted">
+          Search unassigned properties to attach to this round. You can also assign properties later from Customers.
+        </p>
       </div>
 
-      {showAdd ? (
-        <div className="rounded-2xl bg-accent-surface p-4">
-          <p className="text-xs font-semibold tracking-wide text-foreground uppercase">
-            Add new property inline
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Input
-              inputSize="sm"
-              value={address}
-              onChange={(event) => setAddress(event.target.value)}
-              placeholder="Address"
-              className="sm:col-span-2"
-            />
-            <Input
-              inputSize="sm"
-              value={customer}
-              onChange={(event) => setCustomer(event.target.value)}
-              placeholder="Customer name"
-            />
-            <Input
-              inputSize="sm"
-              value={postcode}
-              onChange={(event) => setPostcode(event.target.value)}
-              placeholder="Postcode"
-            />
-            <Input
-              inputSize="sm"
-              type="number"
-              value={price}
-              onChange={(event) => setPrice(event.target.value)}
-              placeholder="Price £"
-            />
-            <button
-              type="button"
-              onClick={addProperty}
-              disabled={!address.trim() || !customer.trim()}
-              className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+      <label className="relative block">
+        <span className="sr-only">Search properties</span>
+        <DashboardIcon name="search" className="absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-muted" />
+        <Input
+          inputSize="sm"
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder="Search by customer, address or postcode..."
+          className="pl-10"
+        />
+      </label>
+
+      {selected.size > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {[...selected.values()].map((row) => (
+            <span
+              key={row.propertyId}
+              className="inline-flex items-center gap-1.5 rounded-full bg-accent-surface px-3 py-1 text-xs font-medium text-accent"
             >
-              Add Property
-            </button>
-          </div>
+              {row.addressLine}
+              <button
+                type="button"
+                onClick={() => onToggle(row)}
+                aria-label={`Remove ${row.addressLine}`}
+                className="text-accent/70 hover:text-accent"
+              >
+                <DashboardIcon name="x-mark" className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
         </div>
       ) : null}
 
-      <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
-        {filtered.map((property) => (
-          <li key={property.id}>
-            <button
-              type="button"
-              onClick={() => onToggle(property.id)}
-              className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface"
-            >
-              <span
-                className={cn(
-                  'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border',
-                  selected.has(property.id)
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border',
-                )}
-              >
-                {selected.has(property.id) ? (
-                  <DashboardIcon name="check" className="h-3.5 w-3.5" />
-                ) : null}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
-                  {property.address}
-                  {property.round ? (
-                    <span className="rounded-full bg-warning-surface px-2 py-0.5 text-[10px] text-warning-foreground">
-                      {property.round}
+      {query.trim().length < 2 ? (
+        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
+          Type at least 2 characters to search.
+        </p>
+      ) : searching ? (
+        <div className="space-y-2">
+          {[0, 1, 2].map((item) => (
+            <Skeleton key={item} className="h-14 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : results.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
+          No unassigned properties match &quot;{query}&quot;.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
+          {results.map((row) => {
+            const isSelected = row.propertyId ? selected.has(row.propertyId) : false
+
+            return (
+              <li key={row.propertyId}>
+                <button
+                  type="button"
+                  onClick={() => onToggle(row)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface"
+                >
+                  <span
+                    className={cn(
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border',
+                      isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+                    )}
+                  >
+                    {isSelected ? <DashboardIcon name="check" className="h-3.5 w-3.5" /> : null}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">{row.addressLine}</span>
+                    <span className="block truncate text-xs text-muted">
+                      {row.customerName} · {row.postcode}
                     </span>
+                  </span>
+                  {row.price != null ? (
+                    <span className="text-sm font-semibold text-foreground">{formatCurrency(row.price)}</span>
                   ) : null}
-                </span>
-                <span className="block truncate text-xs text-muted">
-                  {property.customer} · {property.postcode}
-                </span>
-              </span>
-              <span className="text-sm font-semibold text-foreground">£{property.price}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </div>
   )
 }
@@ -527,121 +402,97 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
 
   const createRound = useCreateRound()
   const setTechnicians = useSetRoundTechnicians()
+  const createServiceArea = useCreateServiceArea()
+  const updateProperty = useUpdateProperty()
+
   const [step, setStep] = useState<Step>(1)
   const [roundName, setRoundName] = useState('')
-  const [areaName, setAreaName] = useState('')
-  const [postcode, setPostcode] = useState('')
   const [day, setDay] = useState('Mon')
   const [frequency, setFrequency] = useState<Frequency>('FOUR_WEEKLY')
   const [description, setDescription] = useState('')
   const [selectedAreaId, setSelectedAreaId] = useState('')
-  const [localAreas, setLocalAreas] = useState<{ id: string; name: string }[]>([])
   const [showAddArea, setShowAddArea] = useState(false)
   const [newAreaName, setNewAreaName] = useState('')
   const [newAreaPostcodes, setNewAreaPostcodes] = useState('')
-  const [properties, setProperties] = useState(INITIAL_PROPERTIES)
-  const [selectedProperties, setSelectedProperties] = useState<Set<string>>(new Set())
-  const [propertySearch, setPropertySearch] = useState('')
-  const [autoAssign, setAutoAssign] = useState(false)
+
+  const [propertyQuery, setPropertyQuery] = useState('')
+  const [selectedProperties, setSelectedProperties] = useState<Map<string, CustomerListRow>>(new Map())
+
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('')
-  const [generateVisits, setGenerateVisits] = useState(true)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const areas = useMemo(() => {
-    const apiAreas = settingsServiceAreasToRows(areasQuery.data).map((area) => ({
-      id: area.id,
-      name: area.name,
-    }))
-    return [...apiAreas, ...localAreas]
-  }, [areasQuery.data, localAreas])
-
+  const areas = useMemo(() => settingsServiceAreasToRows(areasQuery.data), [areasQuery.data])
   const technicians = useMemo(
-    () =>
-      settingsTechniciansToRows(techniciansQuery.data).filter(
-        (technician) => technician.appStatus !== 'inactive',
-      ),
+    () => settingsTechniciansToRows(techniciansQuery.data).filter((technician) => technician.appStatus !== 'inactive'),
     [techniciansQuery.data],
+  )
+
+  const debouncedPropertyQuery = useDebouncedValue(propertyQuery, 300)
+  const propertiesQuery = useCustomers(
+    { search: debouncedPropertyQuery },
+    open && step === 3 && debouncedPropertyQuery.trim().length >= 2,
+  )
+  const propertyResults = useMemo(
+    () => (propertiesQuery.data?.customers ?? []).filter((row) => !row.roundId && row.propertyId),
+    [propertiesQuery.data?.customers],
   )
 
   useEffect(() => {
     if (!open) return
     setStep(1)
     setRoundName('')
-    setAreaName('')
-    setPostcode('')
     setDay('Mon')
     setFrequency('FOUR_WEEKLY')
     setDescription('')
     setSelectedAreaId('')
-    setLocalAreas([])
     setShowAddArea(false)
-    setProperties(INITIAL_PROPERTIES)
-    setSelectedProperties(new Set())
-    setPropertySearch('')
-    setAutoAssign(false)
+    setNewAreaName('')
+    setNewAreaPostcodes('')
+    setPropertyQuery('')
+    setSelectedProperties(new Map())
     setSelectedTechnicianId('')
-    setGenerateVisits(true)
+    setSubmitError(null)
   }, [open])
 
   const selectedArea = areas.find((area) => area.id === selectedAreaId)
-  const selectedTechnician = technicians.find(
-    (technician) => technician.id === selectedTechnicianId,
-  )
-  const selectedPropertyRows = properties.filter((property) =>
-    selectedProperties.has(property.id),
-  )
-  const roundValue = selectedPropertyRows.reduce(
-    (total, property) => total + property.price,
-    0,
-  )
+  const selectedTechnician = technicians.find((technician) => technician.id === selectedTechnicianId)
+  const roundValue = [...selectedProperties.values()].reduce((total, row) => total + (row.price ?? 0), 0)
 
   const canContinue =
     canMutate &&
     !createRound.isPending &&
-    !setTechnicians.isPending &&
     (step === 1
       ? Boolean(roundName.trim() && day && frequency)
       : step === 2
-        ? Boolean(selectedAreaId) && !selectedAreaId.startsWith('local-area-')
-        : step === 3
-          ? true
-          : step === 4
-            ? Boolean(selectedTechnicianId)
-            : true)
+        ? Boolean(selectedAreaId)
+        : true)
 
-  const saving = createRound.isPending || setTechnicians.isPending
+  const saving = createRound.isPending || setTechnicians.isPending || updateProperty.isPending
 
-  function addLocalArea() {
+  async function addServiceArea() {
     if (!newAreaName.trim()) return
-    const id = `local-area-${Date.now()}`
-    setLocalAreas((current) => [
-      ...current,
-      { id, name: newAreaName.trim() },
-    ])
-    setSelectedAreaId(id)
-    setNewAreaName('')
-    setNewAreaPostcodes('')
-    setShowAddArea(false)
+    try {
+      const created = await createServiceArea.mutateAsync({
+        name: newAreaName.trim(),
+        postcodeSector: newAreaPostcodes.trim() || undefined,
+      })
+      if (created.id) setSelectedAreaId(created.id)
+      setNewAreaName('')
+      setNewAreaPostcodes('')
+      setShowAddArea(false)
+    } catch (error) {
+      showToast(errorMessage(error))
+    }
   }
 
-  function toggleProperty(id: string) {
+  function toggleProperty(row: CustomerListRow) {
+    if (!row.propertyId) return
     setSelectedProperties((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      const next = new Map(current)
+      if (next.has(row.propertyId!)) next.delete(row.propertyId!)
+      else next.set(row.propertyId!, row)
       return next
     })
-  }
-
-  function addProperty(property: DraftProperty) {
-    setProperties((current) => [...current, property])
-    setSelectedProperties((current) => new Set(current).add(property.id))
-  }
-
-  function handleAutoAssign(value: boolean) {
-    setAutoAssign(value)
-    if (value && technicians[0]) {
-      setSelectedTechnicianId(technicians[0].id)
-    }
   }
 
   async function continueFlow() {
@@ -661,6 +512,7 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
       Sun: 'SUN',
     }
 
+    setSubmitError(null)
     try {
       const created = await createRound.mutateAsync({
         name: roundName.trim(),
@@ -671,24 +523,31 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
       })
 
       if (selectedTechnicianId && created.id) {
-        await setTechnicians.mutateAsync({
-          id: created.id,
-          technicianIds: [selectedTechnicianId],
-        })
+        await setTechnicians.mutateAsync({ id: created.id, technicianIds: [selectedTechnicianId] })
       }
 
-      showToast(
-        generateVisits ? 'Round saved' : 'Round saved',
-        {
-          description: generateVisits
-            ? `${roundName} is ready. Assign properties and activate visits from setup/planner when needed.`
-            : `${roundName} is ready in Round Planner.`,
-        },
-      )
+      const propertyIds = [...selectedProperties.keys()]
+      if (propertyIds.length > 0 && created.id) {
+        await Promise.all(
+          propertyIds.map((propertyId) =>
+            updateProperty.mutateAsync({ id: propertyId, input: { roundId: created.id } }),
+          ),
+        )
+      }
+
+      showToast('Round created', {
+        description:
+          propertyIds.length > 0
+            ? `${roundName} is ready with ${propertyIds.length} ${propertyIds.length === 1 ? 'property' : 'properties'} attached. Visits are generated from Setup or as one-off jobs.`
+            : `${roundName} is ready. Add properties and generate visits from Setup or the planner.`,
+      })
       onClose()
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) return
-      showToast(error instanceof Error ? error.message : 'Could not create round')
+      if (error instanceof ApiError && error.status === 400) {
+        setSubmitError(error.message)
+        return
+      }
+      setSubmitError(errorMessage(error))
     }
   }
 
@@ -715,14 +574,10 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
         {step === 1 ? (
           <RoundDetailsStep
             roundName={roundName}
-            areaName={areaName}
-            postcode={postcode}
             day={day}
             frequency={frequency}
             description={description}
             onRoundName={setRoundName}
-            onAreaName={setAreaName}
-            onPostcode={setPostcode}
             onDay={setDay}
             onFrequency={setFrequency}
             onDescription={setDescription}
@@ -732,9 +587,7 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
         {step === 2 ? (
           <div className="space-y-5">
             <div>
-              <p className="text-xs font-semibold tracking-wide text-foreground uppercase">
-                Existing areas
-              </p>
+              <p className="text-xs font-semibold tracking-wide text-foreground uppercase">Existing areas</p>
               <p className="mt-1 text-sm text-muted">
                 Link this round to a geographic area configured during setup.
               </p>
@@ -742,6 +595,10 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
 
             {areasQuery.isPending ? (
               <AreasLoading />
+            ) : areas.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
+                No service areas yet — add one below.
+              </p>
             ) : (
               <div className="grid gap-3 sm:grid-cols-3">
                 {areas.map((area) => (
@@ -787,16 +644,16 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
                   inputSize="sm"
                   value={newAreaPostcodes}
                   onChange={(event) => setNewAreaPostcodes(event.target.value)}
-                  placeholder="Postcode Sectors (e.g. NE66, NE67)"
+                  placeholder="Postcode sector (e.g. NE66)"
                 />
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={addLocalArea}
-                    disabled={!newAreaName.trim()}
+                    onClick={() => void addServiceArea()}
+                    disabled={!newAreaName.trim() || createServiceArea.isPending}
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
                   >
-                    Add Area
+                    {createServiceArea.isPending ? 'Adding…' : 'Add Area'}
                   </button>
                   <button
                     type="button"
@@ -813,58 +670,41 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
 
         {step === 3 ? (
           <PropertiesStep
-            properties={properties}
+            query={propertyQuery}
+            onQuery={setPropertyQuery}
+            results={propertyResults}
+            searching={propertiesQuery.isFetching}
             selected={selectedProperties}
-            search={propertySearch}
-            onSearch={setPropertySearch}
             onToggle={toggleProperty}
-            onAdd={addProperty}
           />
         ) : null}
 
         {step === 4 ? (
           <div className="space-y-5">
-            <div className="flex items-center justify-between rounded-2xl border border-border bg-surface/50 px-4 py-4">
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  Auto-assign (recommended)
-                </p>
-                <p className="mt-0.5 text-xs text-muted">
-                  Pick the technician with the lightest workload in this area.
-                </p>
-              </div>
-              <Toggle
-                checked={autoAssign}
-                onChange={handleAutoAssign}
-                ariaLabel="Auto-assign technician"
-              />
-            </div>
-
             <p className="text-xs font-semibold tracking-wide text-muted uppercase">
-              Select technician *
+              Select technician (optional — you can assign one later)
             </p>
 
             {techniciansQuery.isPending ? (
               <div className="space-y-2">
                 {[0, 1, 2].map((item) => (
-                  <div
-                    key={item}
-                    className="flex items-center gap-3 rounded-xl border border-border px-4 py-3"
-                  >
+                  <div key={item} className="flex items-center gap-3 rounded-xl border border-border px-4 py-3">
                     <Skeleton className="h-10 w-10" />
                     <div className="flex-1 space-y-2">
                       <Skeleton className="h-3 w-28" />
                       <Skeleton className="h-2.5 w-40" />
                     </div>
-                    <Skeleton className="h-1.5 w-24" />
                   </div>
                 ))}
               </div>
+            ) : technicians.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
+                No active technicians yet — add one from Technicians, or assign one later.
+              </p>
             ) : (
               <div className="space-y-2">
-                {technicians.map((technician, index) => {
+                {technicians.map((technician) => {
                   const selected = technician.id === selectedTechnicianId
-                  const workload = [84, 55, 52, 38][index % 4]
                   const initials = technician.displayName
                     .split(/\s+/)
                     .map((part) => part[0])
@@ -876,42 +716,21 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
                     <button
                       key={technician.id}
                       type="button"
-                      onClick={() => {
-                        setSelectedTechnicianId(technician.id)
-                        setAutoAssign(false)
-                      }}
+                      onClick={() => setSelectedTechnicianId(selected ? '' : technician.id)}
                       className={cn(
                         'flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left',
-                        selected
-                          ? 'border-primary bg-accent-surface'
-                          : 'border-border bg-card hover:bg-surface',
+                        selected ? 'border-primary bg-accent-surface' : 'border-border bg-card hover:bg-surface',
                       )}
                     >
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
                         {initials}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span
-                          className={cn(
-                            'block text-sm font-medium',
-                            selected ? 'text-primary' : 'text-foreground',
-                          )}
-                        >
+                        <span className={cn('block text-sm font-medium', selected ? 'text-primary' : 'text-foreground')}>
                           {technician.displayName}
                         </span>
-                        <span className="block text-xs text-muted">
-                          {index} rounds currently assigned
-                        </span>
                       </span>
-                      {selected ? (
-                        <DashboardIcon name="check" className="h-4 w-4 text-foreground" />
-                      ) : null}
-                      <span className="h-1.5 w-24 overflow-hidden rounded-full bg-surface">
-                        <span
-                          className="block h-full rounded-full bg-blue-400"
-                          style={{ width: `${workload}%` }}
-                        />
-                      </span>
+                      {selected ? <DashboardIcon name="check" className="h-4 w-4 text-foreground" /> : null}
                     </button>
                   )
                 })}
@@ -930,19 +749,13 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
                 {[
                   ['Round Name', roundName],
                   ['Day', day],
-                  [
-                    'Frequency',
-                    FREQUENCIES.find((item) => item.value === frequency)?.label ?? '',
-                  ],
-                  ['Area', selectedArea?.name ?? areaName],
+                  ['Frequency', FREQUENCIES.find((item) => item.value === frequency)?.label ?? ''],
+                  ['Area', selectedArea?.name ?? '—'],
                   ['Technician', selectedTechnician?.displayName ?? 'Unassigned'],
                   ['Properties', `${selectedProperties.size} properties`],
-                  ['Round Value', `£${roundValue}/visit`],
+                  ...(selectedProperties.size > 0 ? [['Round Value', `${formatCurrency(roundValue)}/visit`]] : []),
                 ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between gap-4 px-4 py-3"
-                  >
+                  <div key={label} className="flex items-center justify-between gap-4 px-4 py-3">
                     <dt className="text-sm text-muted">{label}</dt>
                     <dd className="text-sm font-medium text-foreground">{value}</dd>
                   </div>
@@ -950,58 +763,36 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
               </dl>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-border">
-              <p className="border-b border-border bg-surface/60 px-4 py-3 text-xs font-semibold tracking-wide text-muted uppercase">
-                Properties ({selectedProperties.size})
-              </p>
-              <ul className="divide-y divide-border">
-                {selectedPropertyRows.map((property) => (
-                  <li
-                    key={property.id}
-                    className="flex items-center justify-between gap-4 px-4 py-3"
-                  >
-                    <span>
-                      <span className="block text-sm font-medium text-foreground">
-                        {property.address}
+            {selectedProperties.size > 0 ? (
+              <div className="overflow-hidden rounded-2xl border border-border">
+                <p className="border-b border-border bg-surface/60 px-4 py-3 text-xs font-semibold tracking-wide text-muted uppercase">
+                  Properties ({selectedProperties.size})
+                </p>
+                <ul className="divide-y divide-border">
+                  {[...selectedProperties.values()].map((row) => (
+                    <li key={row.propertyId} className="flex items-center justify-between gap-4 px-4 py-3">
+                      <span>
+                        <span className="block text-sm font-medium text-foreground">{row.addressLine}</span>
+                        <span className="block text-xs text-muted">{row.customerName}</span>
                       </span>
-                      <span className="block text-xs text-muted">{property.customer}</span>
-                    </span>
-                    <span className="text-sm font-semibold text-foreground">
-                      £{property.price}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                      {row.price != null ? (
+                        <span className="text-sm font-semibold text-foreground">{formatCurrency(row.price)}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <div className="flex gap-3 rounded-2xl border border-border bg-surface/50 px-4 py-4">
+              <DashboardIcon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+              <p className="text-xs text-muted">
+                Creating a round does not create visits. Generate the round&apos;s recurring schedule from Setup
+                (Activate System), or add a one-off job from the planner.
+              </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setGenerateVisits((value) => !value)}
-              className="flex w-full items-start gap-3 rounded-2xl border border-primary bg-accent-surface px-4 py-4 text-left"
-            >
-              <span
-                className={cn(
-                  'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border',
-                  generateVisits
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border bg-card',
-                )}
-              >
-                {generateVisits ? (
-                  <DashboardIcon name="check" className="h-3.5 w-3.5" />
-                ) : null}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-primary">
-                  Generate visits for this round now
-                </span>
-                <span className="mt-1 block text-xs text-foreground">
-                  Creates {selectedProperties.size} scheduled visits immediately — they&apos;ll
-                  appear in Today&apos;s Work for {selectedTechnician?.displayName ?? 'the technician'}.
-                </span>
-              </span>
-              <DashboardIcon name="send" className="h-5 w-5 text-primary" />
-            </button>
+            {submitError ? <p className="text-sm text-danger">{submitError}</p> : null}
           </div>
         ) : null}
       </div>
@@ -1012,7 +803,7 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
         saving={saving}
         onBack={() => setStep((step - 1) as Step)}
         onCancel={onClose}
-        onContinue={continueFlow}
+        onContinue={() => void continueFlow()}
       />
     </Modal>
   )

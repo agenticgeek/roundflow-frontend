@@ -38,6 +38,13 @@ export const queryKeys = {
     list: ['technicians', 'list'] as const,
     detail: (id: string) => ['technicians', 'detail', id] as const,
   },
+  complaints: {
+    all: ['complaints'] as const,
+    list: (filters: Record<string, string | undefined>) =>
+      ['complaints', 'list', filters] as const,
+    detail: (id: string) => ['complaints', 'detail', id] as const,
+    messages: (id: string) => ['complaints', 'messages', id] as const,
+  },
   reports: {
     all: ['reports'] as const,
     summary: (period: string) => ['reports', 'summary', period] as const,
@@ -112,4 +119,8 @@ export function invalidateDebt(queryClient: QueryClient) {
 
 export function invalidateInvoices(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: queryKeys.invoices.all })
+}
+
+export function invalidateComplaints(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: queryKeys.complaints.all })
 }

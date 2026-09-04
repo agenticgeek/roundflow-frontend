@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils'
 interface TodaysWorkRoundsTableProps {
   columns: typeof todaysWorkContent.table.columns
   emptyLabel: string
+  /** True when there are simply no visits today (not filtered out by search/problems). */
+  noVisitsToday?: boolean
   rows: readonly TodaysWorkRound[]
   selectedRoundId: string | null
   onSelectRound: (roundId: string) => void
@@ -23,6 +25,7 @@ const statusDotClass: Record<TodaysWorkRound['status'], string> = {
 export function TodaysWorkRoundsTable({
   columns,
   emptyLabel,
+  noVisitsToday = false,
   rows,
   selectedRoundId,
   onSelectRound,
@@ -52,7 +55,12 @@ export function TodaysWorkRoundsTable({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={11} className="px-5 py-10 text-center text-sm text-muted">
-                  {emptyLabel}
+                  <p>{noVisitsToday ? todaysWorkContent.table.noVisitsToday : emptyLabel}</p>
+                  {noVisitsToday ? (
+                    <p className="mx-auto mt-1.5 max-w-md text-xs text-muted/80">
+                      {todaysWorkContent.table.noVisitsTodayHint}
+                    </p>
+                  ) : null}
                 </td>
               </tr>
             ) : (

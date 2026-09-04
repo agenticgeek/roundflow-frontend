@@ -107,7 +107,7 @@ export function DebtResumeServiceModal({ open, record, onClose }: DebtResumeServ
 
       <div className="flex items-center justify-between rounded-xl border border-border px-4 py-3 text-sm">
         <span className="text-muted">{resumeModal.fields.nextDue}</span>
-        <span className="font-semibold text-foreground">{resumeModal.defaultNextDue}</span>
+        <span className="font-semibold text-foreground">{record.nextVisit}</span>
       </div>
 
       <label className="flex cursor-pointer items-start gap-3">

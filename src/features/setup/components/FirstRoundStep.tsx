@@ -101,6 +101,9 @@ export function FirstRoundStep({
             }
             options={[...FREQUENCY_OPTIONS]}
           />
+          <p className="mt-1.5 text-xs text-muted">
+            Prefilled from your Round Settings default — change it if this round differs.
+          </p>
         </Field>
       </div>
 

@@ -1,3 +1,5 @@
+import type { PaymentMethod } from '@/api/types'
+
 export type DashboardTone = 'default' | 'primary' | 'success' | 'warning' | 'danger'
 
 export interface BulkMessageRoundOption {
@@ -12,16 +14,6 @@ export interface BulkMessageTemplateOption {
   label: string
   body: string
   smsCreditsPerCustomer: number
-}
-
-export interface OneOffJobCustomerOption {
-  id: string
-  label: string
-}
-
-export interface OneOffJobSelectOption {
-  value: string
-  label: string
 }
 
 export interface DashboardMetric {
@@ -112,7 +104,6 @@ export const dashboardContent = {
   header: {
     title: 'Dashboard',
     subtitle: "Live view of today's rounds, jobs, payments, and issues",
-    date: 'Wednesday 13 May 2026',
     lastUpdated: 'Last updated 10:42 AM',
     autoRefresh: 'Auto-refresh on',
   },
@@ -451,13 +442,20 @@ export const dashboardContent = {
     title: 'Add One-Off Job',
     subtitle: 'Create a single visit outside regular rounds',
     fields: {
-      customer: { label: 'Customer / Property' },
-      serviceType: { label: 'Service Type' },
+      customer: {
+        label: 'Customer / Property',
+        placeholder: 'Search by customer, address or postcode...',
+        hint: 'Type at least 2 characters to search.',
+        searching: 'Searching…',
+        empty: 'No properties found.',
+        change: 'Change',
+      },
+      serviceType: { label: 'Service Type', placeholder: 'No service' },
       date: { label: 'Date' },
-      time: { label: 'Time' },
       price: { label: 'Price' },
-      technician: { label: 'Technician' },
-      paymentMethod: { label: 'Payment Method' },
+      technician: { label: 'Technician', placeholder: 'Assign later' },
+      paymentMethod: { label: 'Payment Method', placeholder: 'Not set' },
+      round: { label: 'Round', none: "None — Today's Work only" },
       notes: { label: 'Notes', placeholder: 'Add any special instructions or notes...' },
     },
     notice: {
@@ -467,39 +465,23 @@ export const dashboardContent = {
     actions: {
       cancel: 'Cancel',
       create: 'Create One-Off Visit',
+      creating: 'Creating…',
     },
-    defaults: {
-      customerId: '12-market-street',
-      serviceTypeId: 'window-cleaning',
-      date: '2025-08-03',
-      time: '09:00',
-      price: '45.00',
-      technicianId: 'assign-later',
-      paymentMethodId: 'cash',
-      notes: '',
+    errors: {
+      property: 'Search for and select a property.',
+      date: 'Choose a visit date.',
+      price: 'Enter a price greater than 0.',
     },
-    customers: [
-      { id: '12-market-street', label: '12 Market Street - John Smith' },
-      { id: '14-high-street', label: '14 High Street - John Smith' },
-      { id: '9-river-lane', label: '9 River Lane - Alice Cooper' },
-      { id: '22-park-view', label: '22 Park View - Sarah Jones' },
-    ] satisfies OneOffJobCustomerOption[],
-    serviceTypes: [
-      { value: 'window-cleaning', label: 'Window Cleaning' },
-      { value: 'gutter-cleaning', label: 'Gutter Cleaning' },
-      { value: 'conservatory', label: 'Conservatory Clean' },
-      { value: 'pressure-washing', label: 'Pressure Washing' },
-    ] satisfies OneOffJobSelectOption[],
-    technicians: [
-      { value: 'assign-later', label: 'Assign later' },
-      { value: 'james', label: 'James' },
-      { value: 'sarah', label: 'Sarah' },
-    ] satisfies OneOffJobSelectOption[],
-    paymentMethods: [
-      { value: 'cash', label: 'Cash' },
-      { value: 'card', label: 'Card' },
-      { value: 'bank-transfer', label: 'Bank Transfer' },
-      { value: 'direct-debit', label: 'Direct Debit' },
-    ] satisfies OneOffJobSelectOption[],
+    successToast: 'One-off visit created',
+    successInPlanner: 'It will show in the Round Planner for the selected round.',
+    successTodayOnly: "It will show in Today's Work on its date.",
   },
 } as const
+
+export const oneOffPaymentMethodLabels: Record<PaymentMethod, string> = {
+  GOCARDLESS: 'GoCardless',
+  STRIPE: 'Stripe (card)',
+  CASH: 'Cash',
+  BACS: 'Bank transfer (BACS)',
+  CHEQUE: 'Cheque',
+}

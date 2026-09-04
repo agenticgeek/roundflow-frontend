@@ -22,7 +22,6 @@ export interface BusinessProfileData {
   businessName: string
   businessPhone: string
   businessEmail: string
-  serviceArea: string
   companyNumber: string
   vatNumber: string
   vatRegistered: boolean | null
@@ -35,8 +34,6 @@ export interface BusinessProfileData {
 export interface BankDetailsForm {
   accountName: string
   bankName: string
-  /** Display format `12-34-56`. */
-  sortCode: string
   accountNumber: string
 }
 

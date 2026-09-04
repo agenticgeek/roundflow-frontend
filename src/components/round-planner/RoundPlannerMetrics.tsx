@@ -5,12 +5,13 @@ import { cn } from '@/lib/utils'
 
 interface RoundPlannerMetricsProps {
   metrics: readonly RoundPlannerMetric[]
+  loading?: boolean
 }
 
-/** Summary KPI strip above the calendar. */
-export function RoundPlannerMetrics({ metrics }: RoundPlannerMetricsProps) {
+/** Summary KPI strip above the calendar — sums across the visible window. */
+export function RoundPlannerMetrics({ metrics, loading = false }: RoundPlannerMetricsProps) {
   return (
-    <section className="flex flex-wrap gap-3">
+    <section className="flex flex-wrap gap-3" aria-busy={loading}>
       {metrics.map((metric) => (
         <PanelCard
           key={metric.label}
@@ -20,8 +21,18 @@ export function RoundPlannerMetrics({ metrics }: RoundPlannerMetricsProps) {
             metric.tone ? toneBorderClass(metric.tone) : undefined,
           )}
         >
-          <p className="text-[11px] font-medium tracking-wide text-muted uppercase">{metric.label}</p>
-          <p className="mt-0.5 text-base font-semibold tracking-tight text-foreground">{metric.value}</p>
+          <p className="text-[11px] font-medium tracking-wide text-muted uppercase">
+            {metric.label}
+            {metric.hint ? <span className="ml-1 normal-case tracking-normal">({metric.hint})</span> : null}
+          </p>
+          <p
+            className={cn(
+              'mt-0.5 text-base font-semibold tracking-tight text-foreground',
+              loading && 'animate-pulse text-muted',
+            )}
+          >
+            {metric.value}
+          </p>
         </PanelCard>
       ))}
     </section>

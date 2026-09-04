@@ -45,6 +45,7 @@ import {
 } from '@/features/settings/lib/mappers'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError } from '@/lib/errors'
+import { isValidPostcodeSector } from '@/lib/postcode'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Field, FieldError, Input, MultiSelect, Select, Toggle } from '@/components/ui'
@@ -1024,6 +1025,10 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
     }
     if (postcodeSectors.length === 0) {
       setFormError(addForm.validation.postcodeRequired)
+      return
+    }
+    if (postcodeSectors.some((sector) => !isValidPostcodeSector(sector))) {
+      setFormError(addForm.validation.postcodeInvalid)
       return
     }
     setFormError(null)
