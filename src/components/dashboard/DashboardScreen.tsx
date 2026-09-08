@@ -12,16 +12,24 @@ interface DashboardScreenProps {
   interactions: DashboardInteractions
 }
 
+const todayFormatter = new Intl.DateTimeFormat('en-GB', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
+
 /** Composes all dashboard sections — data from content, state from the interactions hook. */
 export function DashboardScreen({ interactions }: DashboardScreenProps) {
   const { header, metrics, alerts, gps, kpis, todayRounds } = dashboardContent
+  const todayLabel = todayFormatter.format(new Date())
 
   return (
     <div className="space-y-6">
       <DashboardHeader
         title={header.title}
         subtitle={header.subtitle}
-        date={header.date}
+        date={todayLabel}
         lastUpdated={interactions.lastUpdated}
         autoRefresh={header.autoRefresh}
         refreshing={interactions.refreshing}
@@ -49,6 +57,7 @@ export function DashboardScreen({ interactions }: DashboardScreenProps) {
         technicians={gps.technicians}
         selectedTechnician={interactions.selectedGpsTechnician}
         onSelectTechnician={interactions.setSelectedGpsTechnician}
+        comingSoon={gps.comingSoon}
       />
 
       <TechnicianKpis

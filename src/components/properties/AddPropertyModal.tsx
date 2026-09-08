@@ -19,10 +19,12 @@ import { useServiceAreas, useServices, useTechnicians } from '@/features/setting
 import { settingsServiceAreasToRows, settingsTechniciansToRows } from '@/features/settings/lib/mappers'
 import { useCreateProperty } from '@/features/properties/hooks/useProperties'
 import { useRound, useRounds } from '@/features/rounds/hooks/useRounds'
-import type { PaymentMethod, PropertyCreateInput } from '@/api/types'
+import type { PaymentMethod, PropertyCreateInput, PropertyType } from '@/api/types'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useToast } from '@/components/ui/toast'
 import { errorMessage } from '@/lib/errors'
+import { isValidEmail, isValidPhone } from '@/lib/contact'
+import { isValidUkPostcode } from '@/lib/postcode'
 import { cn } from '@/lib/utils'
 
 interface AddPropertyModalProps {
@@ -318,12 +320,32 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       setError(validation.customerNameRequired)
       return false
     }
+    if (subStep === 0 && !draft.phone.trim()) {
+      setError(validation.phoneRequired)
+      return false
+    }
+    if (subStep === 0 && !isValidPhone(draft.phone)) {
+      setError(validation.phoneInvalid)
+      return false
+    }
+    if (subStep === 0 && draft.landline.trim() && !isValidPhone(draft.landline)) {
+      setError(validation.landlineInvalid)
+      return false
+    }
+    if (subStep === 0 && draft.email.trim() && !isValidEmail(draft.email)) {
+      setError(validation.emailInvalid)
+      return false
+    }
     if (subStep === 0 && !draft.fullAddress.trim()) {
       setError(validation.fullAddressRequired)
       return false
     }
     if (subStep === 0 && !draft.postcode.trim()) {
       setError(validation.postcodeRequired)
+      return false
+    }
+    if (subStep === 0 && !isValidUkPostcode(draft.postcode)) {
+      setError(validation.postcodeInvalid)
       return false
     }
     if (subStep === 0 && !draft.serviceArea) {
@@ -336,6 +358,10 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
         setError(validation.priceRequired)
         return false
       }
+    }
+    if (subStep === 2 && draft.nextVisitDate && draft.startDate && draft.nextVisitDate < draft.startDate) {
+      setError(validation.nextVisitDateBeforeStart)
+      return false
     }
     if (subStep === 4 && draft.assignMode === 'now' && !draft.round) {
       setError(validation.roundRequired)
@@ -375,15 +401,17 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       postcode: draft.postcode.trim(),
       price,
       phone: draft.phone.trim() || undefined,
+      landline: draft.landline.trim() || undefined,
       email: draft.email.trim() || undefined,
       propertyName: draft.propertyName.trim() || undefined,
-      propertyType: draft.propertyType || undefined,
+      propertyType: (draft.propertyType || undefined) as PropertyType | undefined,
       serviceAreaId: draft.serviceArea,
       serviceId: realId(draft.serviceId),
       paymentMethod: (draft.paymentMethod || undefined) as PaymentMethod | undefined,
       accessNotes: draft.accessNotes.trim() || undefined,
       riskNotes: draft.riskNotes.trim() || undefined,
-      nextDueDate: draft.nextVisitDate || undefined,
+      // Next Visit Date is an optional override — Start Date alone is enough to set the first due date.
+      nextDueDate: draft.nextVisitDate || draft.startDate || undefined,
       // null = "Save & Assign Later"; the plan inherits the round's frequency server-side.
       roundId: draft.assignMode === 'now' ? (realId(draft.round) ?? null) : null,
     }
@@ -520,6 +548,7 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
             onBack={handleSubBack}
             onContinue={isLastStep ? () => void saveProperty() : handleSubContinue}
             continueLabel={continueLabel}
+            loading={isLastStep && createProperty.isPending}
           />
         </div>
       </div>

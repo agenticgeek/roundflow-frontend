@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { RoundPlannerRound, RoundPlannerWeatherHoldOption } from '@/content/round-planner'
+import type { RoundPlannerWeatherHoldOption } from '@/content/round-planner'
 import { roundPlannerContent } from '@/content/round-planner'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
+import type { PlannerRoundSummary } from '@/components/round-planner/WeatherHoldModal'
 import { Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
@@ -9,11 +10,11 @@ import { cn } from '@/lib/utils'
 
 interface MessageCustomersModalProps {
   open: boolean
-  round: RoundPlannerRound | null
+  round: PlannerRoundSummary | null
   onClose: () => void
 }
 
-/** Round messaging workflow opened from the round detail side panel. */
+/** Round messaging workflow opened from the round detail side panel. No bulk-message endpoint yet — UI only. */
 export function MessageCustomersModal({ open, round, onClose }: MessageCustomersModalProps) {
   const { messageCustomersModal } = roundPlannerContent
   const { showToast } = useToast()
@@ -30,9 +31,9 @@ export function MessageCustomersModal({ open, round, onClose }: MessageCustomers
     [messageCustomersModal.templates, templateId],
   )
 
-  const paymentHoldCount = round?.paymentHolds ?? 0
+  const paymentHoldCount = round?.holdCount ?? 0
   const recipientCount = round
-    ? Math.max(0, round.properties.length - (excludePaymentHold ? paymentHoldCount : 0))
+    ? Math.max(0, round.stopCount - (excludePaymentHold ? paymentHoldCount : 0))
     : 0
   const totalCost = recipientCount * messageCustomersModal.creditPricePerSms
 
@@ -96,7 +97,7 @@ export function MessageCustomersModal({ open, round, onClose }: MessageCustomers
           <DashboardIcon name="users" className="h-5 w-5 shrink-0 text-accent" />
           <div>
             <p className="text-sm font-medium text-accent">{recipientCount} recipients</p>
-            <p className="mt-0.5 text-xs text-accent/80">{round.title}</p>
+            <p className="mt-0.5 text-xs text-accent/80">{round.name}</p>
           </div>
         </div>
         <button type="button" className="text-xs font-semibold text-accent hover:opacity-80">

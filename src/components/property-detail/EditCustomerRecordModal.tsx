@@ -9,7 +9,9 @@ import type { CleaningFrequency, PaymentMethod, PropertyType } from '@/api/types
 import { useUpdateCustomer } from '@/features/customers/hooks/useCustomers'
 import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
-import { ApiError } from '@/lib/errors'
+import { ApiError, errorMessage } from '@/lib/errors'
+import { isValidEmail, isValidPhone } from '@/lib/contact'
+import { isValidUkPostcode } from '@/lib/postcode'
 import { cn } from '@/lib/utils'
 
 interface EditCustomerRecordModalProps {
@@ -22,6 +24,7 @@ interface EditCustomerRecordModalProps {
 interface EditCustomerForm {
   fullName: string
   phone: string
+  landline: string
   email: string
   streetAddress: string
   postcode: string
@@ -52,8 +55,10 @@ function priceValue(price: string) {
 }
 
 function frequencyOptionValue(frequency: string) {
-  if (frequency.toLowerCase().includes('8')) return 'every-8-weeks'
-  if (frequency.toLowerCase().includes('month')) return 'monthly'
+  const normalized = frequency.toLowerCase()
+  if (normalized.includes('12')) return 'every-12-weeks'
+  if (normalized.includes('8')) return 'every-8-weeks'
+  if (normalized.includes('6')) return 'every-6-weeks'
   return 'every-4-weeks'
 }
 
@@ -74,6 +79,7 @@ function buildForm(property: PropertyDetailRecord): EditCustomerForm {
   return {
     fullName: property.customerName,
     phone: property.phone,
+    landline: property.landline,
     email: property.email,
     streetAddress: street,
     postcode,
@@ -127,9 +133,9 @@ function IconInput({
 }
 
 function toApiFrequency(value: string): CleaningFrequency {
+  if (value === 'every-12-weeks') return 'TWELVE_WEEKLY'
   if (value === 'every-8-weeks') return 'EIGHT_WEEKLY'
-  if (value === 'monthly') return 'MONTHLY'
-  if (value === 'fortnightly') return 'FORTNIGHTLY'
+  if (value === 'every-6-weeks') return 'SIX_WEEKLY'
   return 'FOUR_WEEKLY'
 }
 
@@ -161,12 +167,14 @@ export function EditCustomerRecordModal({
   const updateProperty = useUpdateProperty()
   const [form, setForm] = useState<EditCustomerForm | null>(null)
   const [initialFrequency, setInitialFrequency] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open || !property) return
     const next = buildForm(property)
     setForm(next)
     setInitialFrequency(next.frequency)
+    setError(null)
   }, [open, property])
 
   const subtitle = useMemo(() => {
@@ -183,20 +191,36 @@ export function EditCustomerRecordModal({
 
   function updateField<K extends keyof EditCustomerForm>(key: K, value: EditCustomerForm[K]) {
     setForm((current) => (current ? { ...current, [key]: value } : current))
+    if (error) setError(null)
+  }
+
+  function validate(price: number): boolean {
+    const { validation } = editCustomerModal
+    if (!form) return false
+    if (!form.fullName.trim()) return setError(validation.fullNameRequired), false
+    if (!form.phone.trim()) return setError(validation.phoneRequired), false
+    if (!isValidPhone(form.phone)) return setError(validation.phoneInvalid), false
+    if (form.landline.trim() && !isValidPhone(form.landline)) {
+      return setError(validation.landlineInvalid), false
+    }
+    if (form.email.trim() && !isValidEmail(form.email)) return setError(validation.emailInvalid), false
+    if (!form.streetAddress.trim()) return setError(validation.streetAddressRequired), false
+    if (!form.postcode.trim()) return setError(validation.postcodeRequired), false
+    if (!isValidUkPostcode(form.postcode)) return setError(validation.postcodeInvalid), false
+    if (!Number.isFinite(price) || price <= 0) return setError(validation.priceInvalid), false
+    return true
   }
 
   async function handleSave() {
     if (!canMutate || !form || !property || saving) return
     const price = Number(form.price)
-    if (!Number.isFinite(price) || price <= 0) {
-      showToast('Enter a valid price')
-      return
-    }
+    if (!validate(price)) return
 
     try {
       await updateCustomer.mutateAsync({
         name: form.fullName.trim(),
         phone: form.phone.trim() || null,
+        landline: form.landline.trim() || null,
         email: form.email.trim() || null,
         addressLine: form.streetAddress.trim(),
         postcode: form.postcode.trim(),
@@ -217,9 +241,12 @@ export function EditCustomerRecordModal({
 
       onClose()
       showToast(editCustomerModal.successToast)
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 400) return
-      showToast(error instanceof Error ? error.message : 'Could not save customer')
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 400) {
+        setError(caught.message)
+        return
+      }
+      showToast(errorMessage(caught))
     }
   }
 
@@ -256,8 +283,12 @@ export function EditCustomerRecordModal({
         <DashboardIcon name="user" className="h-5 w-5" />
       </span>
 
+      {error ? (
+        <p className="rounded-lg border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-sm text-danger">{error}</p>
+      ) : null}
+
       <ModalSection icon="user" title={editCustomerModal.sections.contactDetails}>
-        <Field label={editCustomerModal.fields.fullName} size="sm" labelWeight="medium">
+        <Field label={editCustomerModal.fields.fullName} required size="sm" labelWeight="medium">
           <Input
             inputSize="sm"
             value={form.fullName}
@@ -267,7 +298,7 @@ export function EditCustomerRecordModal({
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={editCustomerModal.fields.phone} size="sm" labelWeight="medium">
+          <Field label={editCustomerModal.fields.phone} required size="sm" labelWeight="medium">
             <IconInput
               icon="phone"
               value={form.phone}
@@ -275,21 +306,30 @@ export function EditCustomerRecordModal({
               className={cn(modalInputClass, 'rounded-lg bg-card')}
             />
           </Field>
-          <Field label={editCustomerModal.fields.email} size="sm" labelWeight="medium">
+          <Field label={editCustomerModal.fields.landline} size="sm" labelWeight="medium">
             <IconInput
-              icon="mail"
-              type="email"
-              value={form.email}
-              onChange={(event) => updateField('email', event.target.value)}
+              icon="phone"
+              value={form.landline}
+              onChange={(event) => updateField('landline', event.target.value)}
               className={cn(modalInputClass, 'rounded-lg bg-card')}
             />
           </Field>
         </div>
+
+        <Field label={editCustomerModal.fields.email} size="sm" labelWeight="medium">
+          <IconInput
+            icon="mail"
+            type="email"
+            value={form.email}
+            onChange={(event) => updateField('email', event.target.value)}
+            className={cn(modalInputClass, 'rounded-lg bg-card')}
+          />
+        </Field>
       </ModalSection>
 
       <ModalSection icon="home" title={editCustomerModal.sections.propertyAddress}>
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
-          <Field label={editCustomerModal.fields.streetAddress} size="sm" labelWeight="medium">
+          <Field label={editCustomerModal.fields.streetAddress} required size="sm" labelWeight="medium">
             <Input
               inputSize="sm"
               value={form.streetAddress}
@@ -297,7 +337,7 @@ export function EditCustomerRecordModal({
               className={cn(modalInputClass, 'rounded-lg bg-card')}
             />
           </Field>
-          <Field label={editCustomerModal.fields.postcode} size="sm" labelWeight="medium">
+          <Field label={editCustomerModal.fields.postcode} required size="sm" labelWeight="medium">
             <Input
               inputSize="sm"
               value={form.postcode}

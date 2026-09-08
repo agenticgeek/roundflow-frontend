@@ -6,6 +6,7 @@ import Signup from '@/pages/Signup'
 import AuthCallback from '@/pages/AuthCallback'
 import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
+import AcceptInvite from '@/pages/AcceptInvite'
 import Dashboard from '@/pages/Dashboard'
 import RoundPlanner from '@/pages/RoundPlanner'
 import PropertyDetail from '@/pages/PropertyDetail'
@@ -135,6 +136,10 @@ export const router = createBrowserRouter([
     ),
   },
   { path: ROUTES.authCallback, element: <AuthCallback /> },
+  {
+    path: ROUTES.acceptInvite,
+    element: <AcceptInvite />,
+  },
   {
     path: ROUTES.forgotPassword,
     element: (

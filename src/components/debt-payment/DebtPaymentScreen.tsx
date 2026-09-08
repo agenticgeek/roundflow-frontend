@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DebtCustomerRecord, DebtStatusTab } from '@/content/debt-payment'
 import { debtPaymentContent } from '@/content/debt-payment'
 import { DebtCustomerDetailPanel } from '@/components/debt-payment/DebtCustomerDetailPanel'
@@ -10,17 +10,32 @@ import { SendPaymentReminderModal } from '@/components/debt-payment/SendPaymentR
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Input, Select } from '@/components/ui'
+import { useToast } from '@/components/ui/toast'
+import {
+  useDebtBoard,
+  useDebtBoardCounts,
+  useDebtKpis,
+  useDebtSetBadDebt,
+  useDebtSetHold,
+} from '@/features/debt/hooks/useDebt'
+import {
+  boardToRecords,
+  DEBT_BUCKETS,
+  kpisToMetrics,
+  UI_METHOD_TO_API,
+  UI_TAB_TO_BUCKET,
+} from '@/features/debt/lib/mappers'
+import { useRounds } from '@/features/rounds/hooks/useRounds'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+import {
+  DebtBoardCardsSkeleton,
+  DebtKpisSkeleton,
+  DebtPaymentScreenSkeleton,
+} from '@/components/debt-payment/DebtPaymentSkeletons'
 
 type DebtActionModal = 'reminder' | 'payment-link' | 'pause' | 'resume' | 'invoice'
-
-function roundValue(round: string) {
-  return round.toLowerCase().replace(/\s+/g, '-')
-}
-
-function methodValue(method: string) {
-  return method.toLowerCase().replace(/\s+/g, '-')
-}
 
 const metricToneClass = {
   accent: 'border-transparent bg-accent-surface',
@@ -28,8 +43,10 @@ const metricToneClass = {
   warning: 'border-warning-border bg-warning-surface',
 } as const
 
-/** Debt / Payment Risk Board — outstanding payments, risk tabs, and customer cards. */
+/** Debt / Payment Risk Board — live `/debt/*` KPIs, board, and chase actions. */
 export function DebtPaymentScreen() {
+  const { canMutate } = useAppBootstrap()
+  const { showToast } = useToast()
   const [search, setSearch] = useState('')
   const [roundId, setRoundId] = useState('all')
   const [methodId, setMethodId] = useState('all')
@@ -38,37 +55,67 @@ export function DebtPaymentScreen() {
   const [detailId, setDetailId] = useState<string | null>(null)
   const [actionModal, setActionModal] = useState<DebtActionModal | null>(null)
   const [actionRecord, setActionRecord] = useState<DebtCustomerRecord | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+
+  const bucket = UI_TAB_TO_BUCKET[activeTab]
+  const apiRoundId = roundId === 'all' ? undefined : roundId
+  const apiMethod = UI_METHOD_TO_API[methodId]
+
+  const kpisQuery = useDebtKpis()
+  const boardQuery = useDebtBoard({
+    bucket,
+    roundId: apiRoundId,
+    paymentMethod: apiMethod,
+  })
+  const countQueries = useDebtBoardCounts({
+    roundId: apiRoundId,
+    paymentMethod: apiMethod,
+  })
+  const roundsQuery = useRounds('ACTIVE')
+  const setBadDebt = useDebtSetBadDebt()
+  const setHold = useDebtSetHold()
+
+  const metrics = useMemo(() => kpisToMetrics(kpisQuery.data), [kpisQuery.data])
+  const records = useMemo(
+    () => boardToRecords(boardQuery.data, bucket),
+    [boardQuery.data, bucket],
+  )
 
   const tabCounts = useMemo(() => {
     const counts = Object.fromEntries(
       debtPaymentContent.statusTabs.map((tab) => [tab.id, 0]),
     ) as Record<DebtStatusTab, number>
 
-    for (const record of debtPaymentContent.records) {
-      counts[record.status] += 1
-    }
+    DEBT_BUCKETS.forEach((key, index) => {
+      const tab = debtPaymentContent.statusTabs.find(
+        (item) => UI_TAB_TO_BUCKET[item.id] === key,
+      )
+      if (!tab) return
+      const result = countQueries[index]
+      counts[tab.id] = typeof result?.data === 'number' ? result.data : 0
+    })
 
     return counts
-  }, [])
+  }, [countQueries])
+
+  const roundOptions = useMemo(() => {
+    const live = (roundsQuery.data ?? []).map((round) => ({
+      value: round.id,
+      label: round.name,
+    }))
+    return [{ value: 'all', label: 'All Rounds' }, ...live]
+  }, [roundsQuery.data])
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase()
-
-    return debtPaymentContent.records.filter((record) => {
-      if (record.status !== activeTab) return false
-
-      if (roundId !== 'all' && roundValue(record.round) !== roundId) return false
-      if (methodId !== 'all' && methodValue(record.paymentMethod) !== methodId) return false
-
-      if (!query) return true
-
-      const haystack = [record.customer, record.address, record.paymentMethod, record.round]
+    if (!query) return records
+    return records.filter((record) => {
+      const haystack = [record.customer, record.address, record.paymentMethod, record.invoiceNumber]
         .join(' ')
         .toLowerCase()
-
       return haystack.includes(query)
     })
-  }, [activeTab, methodId, roundId, search])
+  }, [records, search])
 
   const activeTabLabel =
     debtPaymentContent.statusTabs.find((tab) => tab.id === activeTab)?.label ?? ''
@@ -77,13 +124,14 @@ export function DebtPaymentScreen() {
     .replace('{label}', activeTabLabel)
     .replace('{count}', String(filteredRecords.length))
 
-  const detailRecord =
-    debtPaymentContent.records.find((record) => record.id === detailId) ?? null
+  const detailRecord = filteredRecords.find((record) => record.id === detailId) ?? null
 
   const allVisibleSelected =
-    filteredRecords.length > 0 && filteredRecords.every((record) => selectedIds.includes(record.id))
+    filteredRecords.length > 0 &&
+    filteredRecords.every((record) => selectedIds.includes(record.id))
 
   function openAction(modal: DebtActionModal, record: DebtCustomerRecord) {
+    setMenuOpenId(null)
     setActionRecord(record)
     setActionModal(modal)
   }
@@ -113,6 +161,56 @@ export function DebtPaymentScreen() {
     )
   }
 
+  async function toggleBadDebt(record: DebtCustomerRecord) {
+    if (!canMutate || setBadDebt.isPending) return
+    const invoiceId = record.invoiceId ?? record.id
+    const next = !record.badDebt
+    try {
+      await setBadDebt.mutateAsync({ invoiceId, flag: next })
+      setMenuOpenId(null)
+      showToast(next ? 'Flagged as bad debt' : 'Cleared bad debt flag')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not update bad debt')
+    }
+  }
+
+  async function toggleHold(record: DebtCustomerRecord) {
+    if (!canMutate || setHold.isPending) return
+    const invoiceId = record.invoiceId ?? record.id
+    const next = !record.holdNextClean
+    try {
+      await setHold.mutateAsync({ invoiceId, flag: next })
+      setMenuOpenId(null)
+      showToast(next ? 'Next clean placed on hold' : 'Hold cleared')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not update hold')
+    }
+  }
+
+  if (!canMutate) {
+    return (
+      <p className="rounded-xl border border-border bg-card px-5 py-12 text-center text-sm text-muted">
+        Debt board is available to admins and managers only.
+      </p>
+    )
+  }
+
+  if (
+    kpisQuery.isError &&
+    kpisQuery.error instanceof ApiError &&
+    kpisQuery.error.status === 403
+  ) {
+    return (
+      <p className="rounded-xl border border-border bg-card px-5 py-12 text-center text-sm text-muted">
+        You don&apos;t have permission to view the debt board.
+      </p>
+    )
+  }
+
+  if (kpisQuery.isPending && boardQuery.isPending) {
+    return <DebtPaymentScreenSkeleton />
+  }
+
   return (
     <div className="space-y-5">
       <header>
@@ -122,18 +220,22 @@ export function DebtPaymentScreen() {
         <p className="mt-1 max-w-3xl text-sm text-muted">{debtPaymentContent.subtitle}</p>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {debtPaymentContent.metrics.map((metric) => (
-          <article
-            key={metric.id}
-            className={cn('rounded-xl border px-4 py-4', metricToneClass[metric.tone])}
-          >
-            <p className="text-sm font-medium text-muted">{metric.label}</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{metric.value}</p>
-            <p className="mt-1 text-xs text-muted">{metric.helper}</p>
-          </article>
-        ))}
-      </div>
+      {kpisQuery.isPending ? (
+        <DebtKpisSkeleton />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {metrics.map((metric) => (
+            <article
+              key={metric.id}
+              className={cn('rounded-xl border px-4 py-4', metricToneClass[metric.tone])}
+            >
+              <p className="text-sm font-medium text-muted">{metric.label}</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{metric.value}</p>
+              <p className="mt-1 text-xs text-muted">{metric.helper}</p>
+            </article>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative min-w-0 flex-1">
@@ -154,7 +256,7 @@ export function DebtPaymentScreen() {
             inputSize="sm"
             value={roundId}
             onChange={(event) => setRoundId(event.target.value)}
-            options={[...debtPaymentContent.filters.rounds.options]}
+            options={roundOptions}
             className="min-w-[10rem] rounded-lg border-accent/25 bg-accent-surface"
           />
           <Select
@@ -222,7 +324,20 @@ export function DebtPaymentScreen() {
       </div>
 
       <div key={activeTab} className="animate-fade-in">
-        {filteredRecords.length === 0 ? (
+        {boardQuery.isPending ? (
+          <DebtBoardCardsSkeleton />
+        ) : boardQuery.isError ? (
+          <div className="rounded-xl border border-border bg-card px-5 py-10 text-center text-sm text-muted">
+            <p>Could not load this bucket.</p>
+            <button
+              type="button"
+              className={cn(dashboardCtaClass, 'mt-3')}
+              onClick={() => void boardQuery.refetch()}
+            >
+              Retry
+            </button>
+          </div>
+        ) : filteredRecords.length === 0 ? (
           <p className="rounded-xl border border-border bg-card px-5 py-10 text-center text-sm text-muted">
             No customers match this filter.
           </p>
@@ -234,10 +349,19 @@ export function DebtPaymentScreen() {
                 record={record}
                 checked={selectedIds.includes(record.id)}
                 active={detailId === record.id}
+                menuOpen={menuOpenId === record.id}
+                canMutate={canMutate}
+                flagPending={setBadDebt.isPending || setHold.isPending}
                 onOpen={() => setDetailId(record.id)}
                 onToggleChecked={() => toggleSelected(record.id)}
                 onSendReminder={() => openAction('reminder', record)}
                 onViewInvoice={() => openAction('invoice', record)}
+                onToggleMenu={() =>
+                  setMenuOpenId((current) => (current === record.id ? null : record.id))
+                }
+                onCloseMenu={() => setMenuOpenId(null)}
+                onFlagBadDebt={() => void toggleBadDebt(record)}
+                onToggleHold={() => void toggleHold(record)}
               />
             ))}
           </div>
@@ -287,20 +411,44 @@ function DebtCustomerCard({
   record,
   checked,
   active,
+  menuOpen,
+  canMutate,
+  flagPending,
   onOpen,
   onToggleChecked,
   onSendReminder,
   onViewInvoice,
+  onToggleMenu,
+  onCloseMenu,
+  onFlagBadDebt,
+  onToggleHold,
 }: {
   record: DebtCustomerRecord
   checked: boolean
   active: boolean
+  menuOpen: boolean
+  canMutate: boolean
+  flagPending: boolean
   onOpen: () => void
   onToggleChecked: () => void
   onSendReminder: () => void
   onViewInvoice: () => void
+  onToggleMenu: () => void
+  onCloseMenu: () => void
+  onFlagBadDebt: () => void
+  onToggleHold: () => void
 }) {
-  const { actions, contactLabels, lastContactLabel, owedSuffix } = debtPaymentContent
+  const { actions, contactLabels, lastContactLabel, owedSuffix, menu } = debtPaymentContent
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function onPointerDown(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) onCloseMenu()
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [menuOpen, onCloseMenu])
 
   return (
     <article
@@ -326,17 +474,19 @@ function DebtCustomerCard({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation()
-              onSendReminder()
-            }}
-            className={cn(dashboardCtaClass, 'px-3 py-1.5 text-xs')}
-          >
-            {actions.sendReminder}
-          </button>
+        <div className="relative flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {canMutate ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                onSendReminder()
+              }}
+              className={cn(dashboardCtaClass, 'px-3 py-1.5 text-xs')}
+            >
+              {actions.sendReminder}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={(event) => {
@@ -347,14 +497,47 @@ function DebtCustomerCard({
           >
             {actions.viewInvoice}
           </button>
-          <button
-            type="button"
-            aria-label={actions.moreOptions}
-            onClick={(event) => event.stopPropagation()}
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground"
-          >
-            <DashboardIcon name="more-vertical" className="h-4 w-4" />
-          </button>
+          {canMutate ? (
+            <div ref={menuRef} className="relative">
+              <button
+                type="button"
+                aria-label={actions.moreOptions}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onToggleMenu()
+                }}
+                className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground"
+              >
+                <DashboardIcon name="more-vertical" className="h-4 w-4" />
+              </button>
+              {menuOpen ? (
+                <div className="absolute top-full right-0 z-20 mt-1 min-w-[11rem] rounded-lg border border-border bg-card py-1 shadow-lg">
+                  <button
+                    type="button"
+                    disabled={flagPending}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onFlagBadDebt()
+                    }}
+                    className="block w-full px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-surface disabled:opacity-50"
+                  >
+                    {record.badDebt ? menu.clearBadDebt : menu.flagBadDebt}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={flagPending}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onToggleHold()
+                    }}
+                    className="block w-full px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-surface disabled:opacity-50"
+                  >
+                    {record.holdNextClean ? menu.clearHold : menu.holdNextClean}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 

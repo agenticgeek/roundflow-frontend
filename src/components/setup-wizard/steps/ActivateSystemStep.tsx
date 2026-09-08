@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { ActivateSystemData, GenerateVisitsMode } from '@/types/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
-import { Field, Input, Select, Toggle } from '@/components/ui'
+import { Field, FieldError, Input, Select, Toggle } from '@/components/ui'
 import { SetupStepHeader } from '@/components/setup-wizard/SetupStepHeader'
 import { cn } from '@/lib/utils'
 
@@ -66,15 +66,19 @@ export function ActivateSystemStep({
   onSubmit,
 }: ActivateSystemStepProps) {
   const { activateSystem } = setupWizardContent
-  const { sections, options, fields, readyDescription, actions, cycleOptions } = activateSystem
+  const { sections, options, fields, readyDescription, actions, cycleOptions, validation } =
+    activateSystem
 
   const [values, setValues] = useState<ActivateSystemData>(initialValues)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setValues(initialValues)
+    setError(null)
   }, [initialValues])
 
   function setGenerateVisitsMode(mode: GenerateVisitsMode) {
+    setError(null)
     setValues((prev) => ({
       ...prev,
       generateVisitsMode: mode,
@@ -83,6 +87,7 @@ export function ActivateSystemStep({
   }
 
   function toggleRound(roundId: string) {
+    setError(null)
     setValues((prev) => {
       const selected = prev.roundIds.includes(roundId)
       return {
@@ -96,6 +101,11 @@ export function ActivateSystemStep({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // The API rejects generateAll=false with an empty roundIds — catch it here first.
+    if (values.generateVisitsMode === 'selected' && values.roundIds.length === 0) {
+      setError(validation.roundsRequired)
+      return
+    }
     onSubmit(values)
   }
 
@@ -140,24 +150,36 @@ export function ActivateSystemStep({
         </div>
 
         {values.generateVisitsMode === 'selected' ? (
-          <ul className="space-y-2 rounded-xl border border-border p-4">
-            {roundOptions.map((round) => {
-              const checked = values.roundIds.includes(round.value)
-              return (
-                <li key={round.value}>
-                  <label className="flex cursor-pointer items-center gap-3 text-sm text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleRound(round.value)}
-                      className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20"
-                    />
-                    {round.label}
-                  </label>
-                </li>
-              )
-            })}
-          </ul>
+          <div
+            className={cn(
+              'rounded-xl border p-4',
+              error ? 'border-danger/40' : 'border-border',
+            )}
+          >
+            {roundOptions.length === 0 ? (
+              <p className="text-sm text-muted">{activateSystem.emptyRounds}</p>
+            ) : (
+              <ul className="space-y-2">
+                {roundOptions.map((round) => {
+                  const checked = values.roundIds.includes(round.value)
+                  return (
+                    <li key={round.value}>
+                      <label className="flex cursor-pointer items-center gap-3 text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleRound(round.value)}
+                          className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20"
+                        />
+                        {round.label}
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {error ? <FieldError message={error} size="sm" /> : null}
+          </div>
         ) : null}
       </section>
 

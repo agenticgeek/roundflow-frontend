@@ -1,6 +1,3 @@
-import type { CustomerPropertyRecord } from '@/content/customers'
-import { customersContent } from '@/content/customers'
-
 export type PropertyDetailTabId =
   | 'overview'
   | 'service-plan'
@@ -39,6 +36,7 @@ export interface PropertyDetailRecord {
   accessNotes: string
   riskNotes: string
   phone: string
+  landline: string
   email: string
   serviceType?: string
   planStatus?: PropertyPlanStatus
@@ -50,16 +48,20 @@ export type VisitStatus = 'completed' | 'scheduled'
 
 export type VisitPaymentStatus = 'paid' | 'pending'
 
-export type VisitInvoiceAction = 'generate' | 'sent'
+export type VisitInvoiceAction = 'generate' | 'sent' | 'draft'
 
 export type PaymentRecordStatus = 'paid' | 'unpaid'
 
-export type PaymentInvoiceStatus = 'sent' | 'none'
+export type PaymentInvoiceStatus = 'sent' | 'draft' | 'none'
 
 export type PaymentRowAction = 'download' | 'generate'
 
 export interface PropertyPaymentRecord {
   id: string
+  visitId?: string
+  invoiceId?: string | null
+  invoiceNumber?: string | null
+  transactionId?: string | null
   visitDate: string
   visitDateRaw: string
   round: string
@@ -89,6 +91,7 @@ export interface PropertyVisitRecord {
   payment: VisitPaymentStatus
   price: string
   invoice: VisitInvoiceAction
+  invoiceId?: string | null
 }
 
 export const propertyDetailContent = {
@@ -110,6 +113,7 @@ export const propertyDetailContent = {
     fields: {
       fullName: 'Full Name',
       phone: 'Phone Number',
+      landline: 'Landline Number',
       email: 'Email Address',
       streetAddress: 'Street Address',
       postcode: 'Postcode',
@@ -132,8 +136,9 @@ export const propertyDetailContent = {
     ],
     frequencyOptions: [
       { value: 'every-4-weeks', label: 'Every 4 weeks' },
+      { value: 'every-6-weeks', label: 'Every 6 weeks' },
       { value: 'every-8-weeks', label: 'Every 8 weeks' },
-      { value: 'monthly', label: 'Monthly' },
+      { value: 'every-12-weeks', label: 'Every 12 weeks' },
     ],
     cleanMethodOptions: [
       { value: 'water-fed-pole', label: 'Water Fed Pole' },
@@ -147,6 +152,17 @@ export const propertyDetailContent = {
     actions: {
       cancel: 'Cancel',
       save: 'Save Changes',
+    },
+    validation: {
+      fullNameRequired: "Enter the customer's full name.",
+      phoneRequired: 'Enter a phone number.',
+      phoneInvalid: 'Enter a valid phone number.',
+      landlineInvalid: 'Enter a valid landline number.',
+      emailInvalid: 'Enter a valid email address.',
+      streetAddressRequired: 'Enter the street address.',
+      postcodeRequired: 'Enter a postcode.',
+      postcodeInvalid: 'Enter a valid UK postcode.',
+      priceInvalid: 'Enter a price greater than 0.',
     },
     successToast: 'Customer record updated',
   },
@@ -201,8 +217,6 @@ export const propertyDetailContent = {
       cancel: 'Cancel',
       pause: 'Pause Service',
     },
-    defaultStartDate: '22/05/2026',
-    defaultResumeDate: '22/06/2026',
   },
   sendMessageModal: {
     title: 'Send Message',
@@ -295,13 +309,40 @@ export const propertyDetailContent = {
       propertyType: 'Property Type',
       accessNotes: 'Access Notes',
       riskNotes: 'Risk Notes',
+      changeFrequency: 'Change Frequency',
     },
     contact: {
       title: 'Contact Information',
       name: 'Name',
       phone: 'Phone',
+      landline: 'Landline',
       email: 'Email',
     },
+  },
+  changeFrequencyModal: {
+    title: 'Change Service Frequency',
+    labels: {
+      customer: 'Customer',
+      address: 'Address',
+      currentFrequency: 'Current Frequency',
+      currentRound: 'Current Round',
+      newFrequency: 'New Frequency',
+    },
+    placeholder: 'Select new frequency',
+    currentBadge: 'Current',
+    helper:
+      'The system will automatically find or create a matching round in the same service area.',
+    actions: {
+      cancel: 'Cancel',
+      submit: 'Change Frequency',
+    },
+    successToast: 'Service frequency updated',
+    options: [
+      { value: 'FOUR_WEEKLY', label: 'Every 4 weeks' },
+      { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
+      { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
+      { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
+    ],
   },
   servicePlan: {
     title: 'Service Plan Details',
@@ -334,6 +375,7 @@ export const propertyDetailContent = {
     invoiceActions: {
       generate: 'Generate',
       sent: 'Sent',
+      draft: 'Draft',
     },
     emptyLabel: 'No visits recorded yet.',
   },
@@ -356,10 +398,12 @@ export const propertyDetailContent = {
     },
     invoiceLabels: {
       sent: 'Sent',
+      draft: 'Draft',
     },
     actions: {
-      download: 'Download',
+      download: 'View',
       generate: 'Generate',
+      send: 'Send',
     },
     emptyLabel: 'No payment records yet.',
     downloadToast: 'Invoice PDF downloaded',
@@ -376,6 +420,7 @@ export const propertyDetailContent = {
     },
     fields: {
       invoiceNumber: 'Invoice Number',
+      dueDate: 'Due date',
       notes: 'Notes (optional)',
       notesPlaceholder: 'Add any additional notes to the invoice...',
     },
@@ -391,9 +436,14 @@ export const propertyDetailContent = {
       cancel: 'Cancel',
       preview: 'Preview Invoice',
       generate: 'Generate & Send',
+      draft: 'Save as draft',
+      sendNow: 'Send now',
     },
     defaultInvoiceNumber: 'INV-2026-217',
     successToast: 'Invoice generated and sent',
+    draftToast: 'Invoice saved as draft',
+    alreadyExists: 'This visit already has an invoice.',
+    noEmailWarning: 'Add a customer email before sending this invoice.',
     previewToast: 'Invoice preview opened',
   },
   invoicePreviewModal: {
@@ -466,345 +516,22 @@ export const propertyDetailContent = {
     description: 'This property could not be loaded. Return to the previous screen to try again.',
     action: 'Go back',
   },
-  records: {
-    '12-market-street': {
-      id: '12-market-street',
-      customerName: 'John Smith',
-      shortAddress: '12 Market Street, NE66 1SS',
-      fullAddress: '12 Market Street, NE66 1SS',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£35',
-      cleanMethod: 'Water Fed Pole',
-      nextDue: '15/06/2026',
-      lastCompleted: '20/05/2026',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'paid',
-      outstandingBalance: '£0',
-      paymentMethod: 'GoCardless',
-      lastPayment: '15/05/2026',
-      issuesCount: 0,
-      nextVisitStatus: 'Scheduled',
-      accessNotes: 'No access notes',
-      riskNotes: 'No risk notes',
-      phone: '+44 7700 900000',
-      email: 'customer@example.com',
-    },
-    '45-bondgate-within': {
-      id: '45-bondgate-within',
-      customerName: 'Mary Johnson',
-      shortAddress: '45 Bondgate Within, NE66 1LX',
-      fullAddress: '45 Bondgate Within, NE66 1LX',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£28',
-      cleanMethod: 'Water Fed Pole',
-      nextDue: '15/06/2026',
-      lastCompleted: '20/05/2026',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'paid',
-      outstandingBalance: '£0',
-      paymentMethod: 'GoCardless',
-      lastPayment: '15/05/2026',
-      issuesCount: 0,
-      nextVisitStatus: 'Scheduled',
-      accessNotes: 'Ring doorbell on arrival',
-      riskNotes: 'No risk notes',
-      phone: '+44 7700 900001',
-      email: 'mary.johnson@example.com',
-    },
-    '78-narrowgate': {
-      id: '78-narrowgate',
-      customerName: 'Robert Williams',
-      shortAddress: '78 Narrowgate, NE66 1JG',
-      fullAddress: '78 Narrowgate, NE66 1JG',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£42',
-      cleanMethod: 'Traditional',
-      nextDue: '15/06/2026',
-      lastCompleted: '20/05/2026',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'hold',
-      outstandingBalance: '£42',
-      paymentMethod: 'GoCardless',
-      lastPayment: '15/04/2026',
-      issuesCount: 1,
-      nextVisitStatus: 'Payment hold',
-      accessNotes: 'Rear lane access only',
-      riskNotes: 'Steep driveway',
-      phone: '+44 7700 900002',
-      email: 'robert.williams@example.com',
-    },
-    '23-bailiffgate': {
-      id: '23-bailiffgate',
-      customerName: 'Sarah Brown',
-      shortAddress: '23 Bailiffgate, NE66 1LX',
-      fullAddress: '23 Bailiffgate, NE66 1LX',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£32',
-      cleanMethod: 'Water Fed Pole',
-      nextDue: '15/06/2026',
-      lastCompleted: '—',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'paid',
-      outstandingBalance: '£0',
-      paymentMethod: 'GoCardless',
-      lastPayment: '15/05/2026',
-      issuesCount: 0,
-      nextVisitStatus: 'Scheduled',
-      accessNotes: 'Front door only',
-      riskNotes: 'No risk notes',
-      phone: '+44 7700 900003',
-      email: 'sarah.brown@example.com',
-    },
-    '56-fenkle-street': {
-      id: '56-fenkle-street',
-      customerName: 'David Miller',
-      shortAddress: '56 Fenkle Street, NE66 1JG',
-      fullAddress: '56 Fenkle Street, NE66 1JG',
-      serviceStatus: 'active',
-      roundLabel: 'Alnwick Monday',
-      propertyType: 'Residential',
-      frequency: 'Every 4 weeks',
-      price: '£25',
-      cleanMethod: 'Water Fed Pole',
-      nextDue: '15/06/2026',
-      lastCompleted: '—',
-      assignedRound: 'Alnwick Monday',
-      technician: 'James',
-      paymentStatus: 'paid',
-      outstandingBalance: '£0',
-      paymentMethod: 'Cash',
-      lastPayment: '15/05/2026',
-      issuesCount: 0,
-      nextVisitStatus: 'Scheduled',
-      accessNotes: 'No special instructions',
-      riskNotes: 'No risk notes',
-      phone: '+44 7700 900004',
-      email: 'david.miller@example.com',
-    },
-  } satisfies Record<string, PropertyDetailRecord>,
-  visitRecords: {
-    default: [
-      {
-        id: 'visit-1',
-        visitDate: '15/05/2026',
-        round: 'Alnwick Monday',
-        technician: 'James',
-        status: 'completed',
-        payment: 'paid',
-        price: '£35',
-        invoice: 'generate',
-      },
-      {
-        id: 'visit-2',
-        visitDate: '18/04/2026',
-        round: 'Alnwick Monday',
-        technician: 'James',
-        status: 'completed',
-        payment: 'paid',
-        price: '£35',
-        invoice: 'generate',
-      },
-      {
-        id: 'visit-3',
-        visitDate: '22/05/2026',
-        round: 'Alnwick Monday',
-        technician: 'James',
-        status: 'scheduled',
-        payment: 'pending',
-        price: '£35',
-        invoice: 'sent',
-      },
-    ] satisfies PropertyVisitRecord[],
-  },
-  paymentRecords: {
-    default: [
-      {
-        id: 'payment-1',
-        visitDate: '20 Jun 2026',
-        visitDateRaw: '20/06/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'unpaid',
-        invoice: 'none',
-        action: 'generate',
-      },
-      {
-        id: 'payment-2',
-        visitDate: '20 May 2026',
-        visitDateRaw: '20/05/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'paid',
-        invoice: 'sent',
-        action: 'download',
-      },
-      {
-        id: 'payment-3',
-        visitDate: '18 Apr 2026',
-        visitDateRaw: '18/04/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'paid',
-        invoice: 'sent',
-        action: 'download',
-      },
-      {
-        id: 'payment-4',
-        visitDate: '21 Mar 2026',
-        visitDateRaw: '21/03/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'paid',
-        invoice: 'none',
-        action: 'generate',
-      },
-      {
-        id: 'payment-5',
-        visitDate: '15 Feb 2026',
-        visitDateRaw: '15/02/2026',
-        round: 'Alnwick Monday',
-        technician: 'James Smith',
-        amount: '£35.00',
-        payment: 'paid',
-        invoice: 'sent',
-        action: 'download',
-      },
-    ] satisfies PropertyPaymentRecord[],
-  },
-  noteRecords: {
-    default: [
-      {
-        id: 'note-1',
-        category: 'internal',
-        body: 'Regular customer, always pays on time. Prefers morning visits.',
-        author: 'Admin',
-        addedOn: '10 Mar 2026',
-      },
-    ] satisfies PropertyNoteRecord[],
-  },
 } as const
-
-function fromCustomerRecord(record: CustomerPropertyRecord): PropertyDetailRecord {
-  const isUnassigned = Boolean(record.needsAssignment)
-
-  return {
-    id: record.propertyId,
-    customerRecordId: record.id,
-    customerName: record.customer,
-    shortAddress: record.address,
-    fullAddress: record.address,
-    serviceStatus: isUnassigned ? 'unassigned' : record.status === 'hold' ? 'hold' : 'active',
-    roundLabel: record.round,
-    propertyType: 'Residential',
-    frequency: record.frequency,
-    price: record.price,
-    cleanMethod: 'Water Fed Pole',
-    nextDue: isUnassigned ? 'Pending Assignment' : record.nextDue,
-    lastCompleted: isUnassigned ? '—' : '20/05/2026',
-    assignedRound: isUnassigned ? '—' : record.round,
-    technician: isUnassigned ? '—' : record.technician,
-    paymentStatus: isUnassigned ? 'pending' : record.paymentStatus,
-    outstandingBalance: isUnassigned ? '—' : record.amountDue ?? '£0',
-    paymentMethod: isUnassigned ? '—' : 'GoCardless',
-    lastPayment: isUnassigned ? '—' : '15/05/2026',
-    issuesCount: isUnassigned ? 0 : record.paymentStatus === 'hold' ? 1 : 0,
-    nextVisitStatus: isUnassigned ? 'Unscheduled' : record.status === 'hold' ? 'Payment hold' : 'Scheduled',
-    accessNotes: 'No access notes',
-    riskNotes: 'No risk notes',
-    phone: '+44 7700 900000',
-    email: 'customer@example.com',
-    needsAssignment: isUnassigned,
-    serviceType: 'Window Cleaning',
-    planStatus: isUnassigned ? 'pending' : record.status === 'hold' ? 'hold' : 'active',
-  }
-}
-
-function formatPaymentAmount(price: string) {
-  const numeric = price.replace(/[£,\s]/g, '')
-  if (!numeric) return '£0.00'
-  return `£${Number(numeric).toFixed(2)}`
-}
-
-function technicianDisplayName(name: string) {
-  return name.includes(' ') ? name : `${name} Smith`
-}
-
-export function getPropertyNotes(property: PropertyDetailRecord): PropertyNoteRecord[] {
-  return propertyDetailContent.noteRecords.default.map((note) => ({
-    ...note,
-    id: `${property.id}-${note.id}`,
-  }))
-}
-
-export function getPropertyPaymentHistory(property: PropertyDetailRecord): PropertyPaymentRecord[] {
-  const hasAssignedRound = property.assignedRound !== '—' && property.assignedRound !== 'Not Assigned'
-  const hasAssignedTechnician =
-    property.technician !== '—' && property.technician !== 'Not assigned'
-  const amount = formatPaymentAmount(property.price)
-
-  return propertyDetailContent.paymentRecords.default.map((record) => ({
-    ...record,
-    id: `${property.id}-${record.id}`,
-    round: hasAssignedRound ? property.assignedRound : record.round,
-    technician: hasAssignedTechnician ? technicianDisplayName(property.technician) : record.technician,
-    amount,
-  }))
-}
 
 export function paymentRecordToVisitRecord(record: PropertyPaymentRecord): PropertyVisitRecord {
   const [firstName] = record.technician.split(' ')
 
   return {
-    id: record.id,
+    id: record.visitId ?? record.id,
     visitDate: record.visitDateRaw,
     round: record.round,
     technician: firstName ?? record.technician,
     status: 'completed',
     payment: record.payment === 'paid' ? 'paid' : 'pending',
     price: record.amount,
-    invoice: 'generate',
+    invoice:
+      record.invoice === 'sent' ? 'sent' : record.invoice === 'draft' ? 'draft' : 'generate',
+    invoiceId: record.invoiceId,
   }
 }
 
-export function getPropertyVisitHistory(property: PropertyDetailRecord): PropertyVisitRecord[] {
-  const hasAssignedRound = property.assignedRound !== '—' && property.assignedRound !== 'Not Assigned'
-  const hasAssignedTechnician =
-    property.technician !== '—' && property.technician !== 'Not assigned'
-
-  return propertyDetailContent.visitRecords.default.map((visit) => ({
-    ...visit,
-    id: `${property.id}-${visit.id}`,
-    round: hasAssignedRound ? property.assignedRound : visit.round,
-    technician: hasAssignedTechnician ? property.technician : visit.technician,
-    price: property.price,
-  }))
-}
-
-export function getPropertyDetail(propertyId: string | undefined): PropertyDetailRecord | null {
-  if (!propertyId) return null
-
-  const customerRecord = customersContent.records.find((record) => record.propertyId === propertyId)
-  if (customerRecord) return fromCustomerRecord(customerRecord)
-
-  return propertyDetailContent.records[propertyId as keyof typeof propertyDetailContent.records] ?? null
-}

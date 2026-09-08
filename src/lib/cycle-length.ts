@@ -1,10 +1,10 @@
 import type { RecurringCycle } from '@/types/setup-wizard'
 
 const CYCLE_TO_DAYS: Record<RecurringCycle, number> = {
-  '1-week': 7,
-  '2-week': 14,
-  '3-week': 21,
   '4-week': 28,
+  '6-week': 42,
+  '8-week': 56,
+  '12-week': 84,
 }
 
 const DAYS_TO_CYCLE = new Map<number, RecurringCycle>(

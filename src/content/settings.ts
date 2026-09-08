@@ -84,7 +84,7 @@ export const settingsContent = {
 
 export type SettingsBusinessProfile = Pick<
   BusinessProfileData,
-  'businessName' | 'businessPhone' | 'businessEmail' | 'serviceArea' | 'workingDays' | 'timezone' | 'currency'
+  'businessName' | 'businessPhone' | 'businessEmail' | 'workingDays' | 'timezone' | 'currency'
 >
 
 export type SettingsPaymentSetup = PaymentSetupData

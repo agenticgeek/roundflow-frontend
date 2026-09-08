@@ -3,39 +3,56 @@ import { complaintsContent } from '@/content/complaints'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Input } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
+import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
 import { cn } from '@/lib/utils'
 
 interface AssignTechnicianModalProps {
   open: boolean
-  currentTechnician: string
+  currentTechnicianId: string | null
   onClose: () => void
-  onAssign: (technician: string) => void
+  onAssign: (technicianId: string) => void
+  assigning?: boolean
 }
 
-/** Searchable technician picker for a complaint. */
+function initialsFor(name: string) {
+  return (
+    name
+      .split(/\s+/)
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || '?'
+  )
+}
+
+/** Searchable technician picker for a complaint — real technicians only, excludes pending invites. */
 export function AssignTechnicianModal({
   open,
-  currentTechnician,
+  currentTechnicianId,
   onClose,
   onAssign,
+  assigning = false,
 }: AssignTechnicianModalProps) {
   const content = complaintsContent.assignTechnician
   const [search, setSearch] = useState('')
-  const [selectedName, setSelectedName] = useState(currentTechnician)
+  const [selectedId, setSelectedId] = useState(currentTechnicianId ?? '')
+
+  const techniciansQuery = useTechniciansList(open)
 
   useEffect(() => {
     if (!open) return
     setSearch('')
-    setSelectedName(currentTechnician)
-  }, [currentTechnician, open])
+    setSelectedId(currentTechnicianId ?? '')
+  }, [currentTechnicianId, open])
 
   const technicians = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return content.technicians
-    return content.technicians.filter((technician) =>
-      `${technician.name} ${technician.rounds}`.toLowerCase().includes(query),
+    const all = (techniciansQuery.data ?? []).filter(
+      (technician) => technician.appStatus !== 'PENDING_INVITE',
     )
-  }, [content.technicians, search])
+    const query = search.trim().toLowerCase()
+    if (!query) return all
+    return all.filter((technician) => (technician.name ?? '').toLowerCase().includes(query))
+  }, [techniciansQuery.data, search])
 
   return (
     <Modal
@@ -61,11 +78,11 @@ export function AssignTechnicianModal({
           </button>
           <button
             type="button"
-            disabled={!selectedName}
-            onClick={() => onAssign(selectedName)}
+            disabled={!selectedId || assigning}
+            onClick={() => onAssign(selectedId)}
             className="rounded-lg bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {content.assign}
+            {assigning ? 'Assigning…' : content.assign}
           </button>
         </div>
       }
@@ -89,37 +106,44 @@ export function AssignTechnicianModal({
       </div>
 
       <div className="space-y-2">
-        {technicians.map((technician) => {
-          const selected = technician.name === selectedName
-          return (
-            <button
-              key={technician.id}
-              type="button"
-              onClick={() => setSelectedName(technician.name)}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors',
-                selected ? 'bg-accent-surface' : 'hover:bg-surface',
-              )}
-            >
-              <span
+        {techniciansQuery.isPending ? (
+          <p className="px-3 py-6 text-center text-xs text-muted">Loading technicians…</p>
+        ) : technicians.length === 0 ? (
+          <p className="px-3 py-6 text-center text-xs text-muted">{content.empty}</p>
+        ) : (
+          technicians.map((technician) => {
+            const id = technician.id
+            const name = technician.name ?? 'Unnamed technician'
+            const selected = id === selectedId
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setSelectedId(id)}
                 className={cn(
-                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
-                  selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-card',
+                  'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors',
+                  selected ? 'bg-accent-surface' : 'hover:bg-surface',
                 )}
               >
-                {technician.initials}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-foreground">
-                  {technician.name}
+                <span
+                  className={cn(
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
+                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-card',
+                  )}
+                >
+                  {initialsFor(name)}
                 </span>
-                <span className="mt-0.5 block truncate text-xs text-muted">
-                  {technician.rounds}
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-foreground">{name}</span>
+                  <span className="mt-0.5 block truncate text-xs text-muted">
+                    {technician.role ?? '—'}
+                    {technician.appStatus === 'INACTIVE' ? ' · Inactive' : ''}
+                  </span>
                 </span>
-              </span>
-            </button>
-          )
-        })}
+              </button>
+            )
+          })
+        )}
       </div>
     </Modal>
   )

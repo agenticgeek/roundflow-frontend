@@ -57,6 +57,11 @@ export interface SetupWizardContent {
   validation: {
     required: string
     vatRequired: string
+    emailInvalid: string
+    phoneInvalid: string
+    companyNumberInvalid: string
+    vatNumberRequired: string
+    vatNumberInvalid: string
   }
   businessProfile: {
     heading: string
@@ -65,7 +70,6 @@ export interface SetupWizardContent {
       businessName: { label: string; placeholder: string; required: true }
       businessPhone: { label: string; placeholder: string; required: true }
       businessEmail: { label: string; placeholder: string; required: true }
-      serviceArea: { label: string; placeholder: string; required: false }
       companyNumber: { label: string; placeholder: string; required: false }
       vatNumber: { label: string; placeholder: string; required: false }
       vatRegistered: { label: string; yes: string; no: string }
@@ -96,6 +100,19 @@ export interface SetupWizardContent {
       defaultPaymentRule: { label: string }
       vatApplicable: { label: string; description: string }
       debtHoldEnabled: { label: string; description: string }
+    }
+    bankDetails: {
+      heading: string
+      description: string
+      fields: {
+        accountName: { label: string; placeholder: string }
+        bankName: { label: string; optional: string; placeholder: string }
+        accountNumber: { label: string; placeholder: string }
+      }
+      validation: {
+        accountNameRequired: string
+        accountNumberInvalid: string
+      }
     }
     paymentRules: SelectOption[]
     defaults: PaymentSetupData
@@ -130,7 +147,7 @@ export interface SetupWizardContent {
         default: { label: string; description: string }
       }
       actions: { cancel: string; confirm: string; save: string }
-      validation: { nameRequired: string }
+      validation: { nameRequired: string; priceInvalid: string }
     }
     defaults: ServiceCatalogueData
   }
@@ -147,7 +164,9 @@ export interface SetupWizardContent {
     recurringCycles: readonly { id: RecurringCycle; label: string }[]
     cleanMethods: readonly { id: CleanMethod; label: string }[]
     reminderTimings: SelectOption[]
+    reminderTimingPlaceholder: string
     reminderTimesOfDay: SelectOption[]
+    reminderTimeOfDayPlaceholder: string
     defaults: RoundSettingsData
   }
   smsTemplates: {
@@ -159,10 +178,12 @@ export interface SetupWizardContent {
       edit: string
       smsMessage: string
       whatsappMessage: string
+      emailMessage: string
     }
     channelLabels: {
       sms: string
       whatsapp: string
+      email: string
     }
     editModal: {
       title: string
@@ -189,7 +210,12 @@ export interface SetupWizardContent {
         defaultArea: { label: string; placeholder: string }
       }
       actions: { confirm: string; cancel: string }
-      validation: { nameRequired: string; mobileRequired: string }
+      validation: {
+        nameRequired: string
+        mobileRequired: string
+        mobileInvalid: string
+        emailInvalid: string
+      }
     }
     columns: {
       name: string
@@ -201,7 +227,7 @@ export interface SetupWizardContent {
     }
     appStatusLabels: Record<Technician['appStatus'], string>
     roleOptions: SelectOption[]
-    actions: { delete: string; moreOptions: string }
+    actions: { viewDetails: string; delete: string; moreOptions: string }
     defaults: TechnicianManagementData
   }
   serviceArea: {
@@ -216,7 +242,7 @@ export interface SetupWizardContent {
         notes: { label: string; placeholder: string }
       }
       actions: { confirm: string; cancel: string }
-      validation: { nameRequired: string; postcodeRequired: string }
+      validation: { nameRequired: string; postcodeRequired: string; postcodeInvalid: string }
     }
     actions: { delete: string }
     defaults: ServiceAreaData
@@ -294,6 +320,7 @@ export interface SetupWizardContent {
       customerName: { label: string; placeholder: string }
       propertyName: { label: string; optional: string; placeholder: string }
       phone: { label: string; placeholder: string }
+      landline: { label: string; optional: string; placeholder: string }
       email: { label: string; optional: string; placeholder: string }
       fullAddress: { label: string; placeholder: string }
       postcode: { label: string; placeholder: string }
@@ -322,8 +349,14 @@ export interface SetupWizardContent {
       customerNameRequired: string
       fullAddressRequired: string
       postcodeRequired: string
+      postcodeInvalid: string
+      phoneRequired: string
+      phoneInvalid: string
+      landlineInvalid: string
+      emailInvalid: string
       priceRequired: string
       roundRequired: string
+      nextVisitDateBeforeStart: string
     }
     defaults: AddPropertyData
     draftDefaults: PropertyDraft
@@ -347,6 +380,8 @@ export interface SetupWizardContent {
     readyDescription: string
     actions: { activate: string }
     cycleOptions: SelectOption[]
+    validation: { roundsRequired: string }
+    emptyRounds: string
     defaults: ActivateSystemData
   }
   reviewLaunch: {
@@ -591,6 +626,11 @@ export const setupWizardContent = {
   validation: {
     required: 'Please fill in all required fields.',
     vatRequired: 'Please select whether your business is VAT registered.',
+    emailInvalid: 'Enter a valid email address.',
+    phoneInvalid: 'Enter a valid phone number.',
+    companyNumberInvalid: 'Company number must be 15 characters or fewer (letters and numbers only).',
+    vatNumberRequired: 'Enter your VAT registration number.',
+    vatNumberInvalid: 'VAT registration number must be 5–12 characters (letters and numbers only).',
   },
   businessProfile: {
     heading: 'Business Profile',
@@ -611,19 +651,14 @@ export const setupWizardContent = {
         placeholder: 'info@example.com',
         required: true,
       },
-      serviceArea: {
-        label: 'Service Area',
-        placeholder: 'e.g., Northumberland',
-        required: false,
-      },
       companyNumber: {
         label: 'Company Number',
-        placeholder: 'e.g., S67BIXN56XXXX',
+        placeholder: 'e.g., 12345678',
         required: false,
       },
       vatNumber: {
         label: 'VAT Registration Number',
-        placeholder: 'e.g., XX - XXXXX - XXXX',
+        placeholder: 'e.g., GB123456789',
         required: false,
       },
       vatRegistered: {
@@ -664,7 +699,6 @@ export const setupWizardContent = {
       businessName: '',
       businessPhone: '',
       businessEmail: '',
-      serviceArea: '',
       companyNumber: '',
       vatNumber: '',
       vatRegistered: null,
@@ -706,6 +740,20 @@ export const setupWizardContent = {
         description: 'Block service if payment is overdue',
       },
     },
+    bankDetails: {
+      heading: 'Bank Account Details',
+      description:
+        'Printed in the invoice footer so customers paying by bank transfer know where to send payment.',
+      fields: {
+        accountName: { label: 'Account Name', placeholder: 'e.g. Alnwick Window Cleaning Ltd' },
+        bankName: { label: 'Bank Name', optional: '(optional)', placeholder: 'e.g. Barclays' },
+        accountNumber: { label: 'Account Number', placeholder: '12345678' },
+      },
+      validation: {
+        accountNameRequired: 'Account name is required when adding bank details.',
+        accountNumberInvalid: 'Account number must be 8 digits.',
+      },
+    },
     paymentRules: [
       { value: 'collect-after-visit', label: 'Collect after Visit' },
       { value: 'collect-before-visit', label: 'Collect before Visit' },
@@ -717,6 +765,7 @@ export const setupWizardContent = {
       defaultPaymentRule: 'collect-after-visit',
       vatApplicable: true,
       debtHoldEnabled: true,
+      bankDetails: { accountName: '', bankName: '', accountNumber: '' },
     },
   },
   serviceCatalogue: {
@@ -764,7 +813,10 @@ export const setupWizardContent = {
         default: { label: 'Default', description: 'Pre-selected on new jobs' },
       },
       actions: { cancel: 'Cancel', confirm: 'Add Service', save: 'Save Changes' },
-      validation: { nameRequired: 'Service name is required.' },
+      validation: {
+        nameRequired: 'Service name is required.',
+        priceInvalid: 'Enter a price between £0.01 and £100,000.00.',
+      },
     },
     defaults: {
       services: [
@@ -832,7 +884,7 @@ export const setupWizardContent = {
       },
       reminderTiming: {
         label: 'Pre-Clean Reminder Timing',
-        description: 'Reminders are sent at 7 PM the evening prior to the scheduled clean.',
+        description: 'Choose one or more times reminders are sent to customers before the scheduled clean.',
       },
       reminderTimeOfDay: {
         label: 'Pre-Clean Reminder Timing',
@@ -840,33 +892,33 @@ export const setupWizardContent = {
       },
     },
     recurringCycles: [
-      { id: '1-week', label: 'Week' },
-      { id: '2-week', label: '2-week' },
-      { id: '3-week', label: '3-week' },
       { id: '4-week', label: '4-week' },
+      { id: '6-week', label: '6-week' },
+      { id: '8-week', label: '8-week' },
+      { id: '12-week', label: '12-week' },
     ],
     cleanMethods: [
       { id: 'traditional', label: 'Traditional' },
       { id: 'water-fed-pole', label: 'Water-fed Pole' },
     ],
     reminderTimings: [
-      { value: '6pm-evening-prior', label: '6 PM the evening prior' },
-      { value: '7pm-evening-prior', label: '7 PM the evening prior' },
-      { value: 'morning-of', label: 'Morning of the clean' },
-      { value: '2-hours-before', label: '2 hours before' },
+      { value: 'EVENING_BEFORE', label: 'Evening before the clean' },
+      { value: 'TWO_HOURS_BEFORE', label: '2 hours before the clean' },
     ],
+    reminderTimingPlaceholder: 'Select reminder timings',
     reminderTimesOfDay: [
       { value: '18:00', label: '6:00 PM' },
       { value: '19:00', label: '7:00 PM' },
       { value: '20:00', label: '8:00 PM' },
       { value: '21:00', label: '9:00 PM' },
     ],
+    reminderTimeOfDayPlaceholder: 'Select times of day',
     defaults: {
       recurringCycle: '4-week',
       cleanMethods: ['traditional', 'water-fed-pole'],
       autoGenerateVisits: true,
-      reminderTiming: '7pm-evening-prior',
-      reminderTimeOfDay: '19:00',
+      reminderTiming: ['EVENING_BEFORE'],
+      reminderTimeOfDay: ['19:00'],
     },
   },
   smsTemplates: {
@@ -878,10 +930,12 @@ export const setupWizardContent = {
       edit: 'Edit',
       smsMessage: 'SMS Message',
       whatsappMessage: 'WhatsApp Message',
+      emailMessage: 'Email Message',
     },
     channelLabels: {
       sms: 'SMS',
       whatsapp: 'WhatsApp',
+      email: 'Email',
     },
     editModal: {
       title: 'Edit Template',
@@ -922,6 +976,8 @@ export const setupWizardContent = {
       validation: {
         nameRequired: 'Full name is required.',
         mobileRequired: 'Mobile number is required.',
+        mobileInvalid: 'Enter a valid mobile number.',
+        emailInvalid: 'Enter a valid email address.',
       },
     },
     columns: {
@@ -943,7 +999,11 @@ export const setupWizardContent = {
       { value: 'technician', label: 'Technician' },
       { value: 'apprentice', label: 'Apprentice' },
     ],
-    actions: { delete: 'Delete', moreOptions: 'More options' },
+    actions: {
+      viewDetails: 'View technician details',
+      delete: 'Delete',
+      moreOptions: 'More options',
+    },
     defaults: {
       technicians: defaultTechnicians.map((technician) => ({ ...technician })),
     },
@@ -966,6 +1026,7 @@ export const setupWizardContent = {
       validation: {
         nameRequired: 'Area name is required.',
         postcodeRequired: 'At least one postcode sector is required.',
+        postcodeInvalid: 'Enter valid UK postcode sectors, comma-separated (e.g. NE66, NE67).',
       },
     },
     actions: { delete: 'Delete area' },
@@ -1094,11 +1155,12 @@ export const setupWizardContent = {
         optional: '(optional / auto customer name)',
         placeholder: 'Property Name',
       },
-      phone: { label: 'Phone Number', placeholder: '+66 XXX-XXX' },
+      phone: { label: 'Phone Number', placeholder: '07123 456789' },
+      landline: { label: 'Landline Number', optional: '(optional)', placeholder: '01665 600000' },
       email: { label: 'Email', optional: '(optional)', placeholder: 'customer@example.com' },
       fullAddress: { label: 'Full Address', placeholder: 'Street#X, 25th Avenue Park' },
       postcode: { label: 'Postcode', placeholder: 'NE66 1AA' },
-      serviceArea: { label: 'Service Area', placeholder: 'Alnwick Street' },
+      serviceArea: { label: 'Service Area', placeholder: 'Select service area' },
       propertyType: { label: 'Property Type', placeholder: 'House' },
       cleaningFrequency: { label: 'Cleaning Frequency' },
       pricePerVisit: { label: 'Price per visit', placeholder: '£ XX' },
@@ -1122,7 +1184,7 @@ export const setupWizardContent = {
       assignServiceArea: {
         label: 'Select Service Area',
         hint: '(for precise allotment)',
-        placeholder: 'Alnwick',
+        placeholder: 'Select service area',
       },
     },
     propertyTypes: [
@@ -1133,11 +1195,10 @@ export const setupWizardContent = {
       { value: 'CONSERVATORY', label: 'Conservatory' },
     ],
     cleaningFrequencies: [
-      { value: 'FORTNIGHTLY', label: 'Fortnightly' },
       { value: 'FOUR_WEEKLY', label: 'Every 4 weeks' },
       { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
       { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
-      { value: 'MONTHLY', label: 'Monthly' },
+      { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
     ],
     vatOptions: [
       { value: '', label: 'Select' },
@@ -1150,7 +1211,7 @@ export const setupWizardContent = {
       { value: 'STRIPE', label: 'Stripe' },
       { value: 'CASH', label: 'Cash' },
       { value: 'CHEQUE', label: 'Cheque' },
-      { value: 'BACS', label: 'BACS' },
+      { value: 'BACS', label: 'Bank Transfer' },
     ],
     preferredDays: [
       { value: '', label: 'Select' },
@@ -1165,14 +1226,21 @@ export const setupWizardContent = {
       customerNameRequired: 'Customer name is required.',
       fullAddressRequired: 'Full address is required.',
       postcodeRequired: 'Postcode is required.',
+      postcodeInvalid: 'Enter a valid UK postcode (e.g. NE66 1AA).',
+      phoneRequired: 'Phone number is required.',
+      phoneInvalid: 'Enter a valid phone number.',
+      landlineInvalid: 'Enter a valid landline number.',
+      emailInvalid: 'Enter a valid email address.',
       priceRequired: 'Price per visit is required.',
       roundRequired: 'Please select a round.',
+      nextVisitDateBeforeStart: 'Next visit date cannot be before the start date.',
     },
     defaults: { properties: [] },
     draftDefaults: {
       customerName: '',
       propertyName: '',
       phone: '',
+      landline: '',
       email: '',
       fullAddress: '',
       postcode: '',
@@ -1224,13 +1292,15 @@ export const setupWizardContent = {
     readyDescription: 'This will generate the first set of visits and make them available for your team.',
     actions: { activate: 'Generate Visits' },
     cycleOptions: [
-      { value: '1', label: '1 week' },
-      { value: '2', label: '2 weeks' },
       { value: '4', label: '4 weeks' },
       { value: '6', label: '6 weeks' },
       { value: '8', label: '8 weeks' },
       { value: '12', label: '12 weeks' },
     ],
+    validation: {
+      roundsRequired: 'Select at least one round, or switch to All Rounds.',
+    },
+    emptyRounds: 'No rounds configured yet — choose All Rounds, or add a round in the First Round step.',
     defaults: {
       generateVisitsMode: 'all',
       startDate: '',

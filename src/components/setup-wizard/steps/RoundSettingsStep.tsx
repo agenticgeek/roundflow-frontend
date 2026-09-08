@@ -4,7 +4,7 @@ import type { RoundSettingsData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { MultiToggleButtons } from '@/components/setup-wizard/MultiToggleButtons'
 import { SegmentCardGroup } from '@/components/setup-wizard/SegmentCardGroup'
-import { Select, Toggle } from '@/components/ui'
+import { MultiSelect, Toggle } from '@/components/ui'
 
 interface RoundSettingsStepProps {
   initialValues: RoundSettingsData
@@ -22,27 +22,34 @@ function RoundSettingsIcon() {
   )
 }
 
-function SelectField({
+/** Labelled multi-select that lists every chosen option in the trigger. */
+function MultiSelectField({
   label,
   description,
+  placeholder,
   value,
   onChange,
   options,
 }: {
   label: string
   description: string
-  value: string
-  onChange: (value: string) => void
+  placeholder: string
+  value: string[]
+  onChange: (value: string[]) => void
   options: readonly { value: string; label: string }[]
 }) {
   return (
     <div>
       <p className="text-sm font-medium text-foreground">{label}</p>
       <p className="mt-0.5 text-sm text-muted">{description}</p>
-      <Select
+      <MultiSelect
         className="mt-3"
+        displayMode="values"
+        showAllOption={false}
+        label={label}
+        placeholder={placeholder}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={onChange}
         options={[...options]}
       />
     </div>
@@ -110,17 +117,19 @@ export function RoundSettingsStep({ initialValues, onSubmit }: RoundSettingsStep
         />
       </div>
 
-      <SelectField
+      <MultiSelectField
         label={fields.reminderTiming.label}
         description={fields.reminderTiming.description}
+        placeholder={roundSettings.reminderTimingPlaceholder}
         value={values.reminderTiming}
         onChange={(reminderTiming) => updateField('reminderTiming', reminderTiming)}
         options={roundSettings.reminderTimings}
       />
 
-      <SelectField
+      <MultiSelectField
         label={fields.reminderTimeOfDay.label}
         description={fields.reminderTimeOfDay.description}
+        placeholder={roundSettings.reminderTimeOfDayPlaceholder}
         value={values.reminderTimeOfDay}
         onChange={(reminderTimeOfDay) => updateField('reminderTimeOfDay', reminderTimeOfDay)}
         options={roundSettings.reminderTimesOfDay}

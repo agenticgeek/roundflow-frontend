@@ -3,6 +3,8 @@ import { useState } from 'react'
 import type { PaymentSetupData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, Select, Toggle } from '@/components/ui'
+import { BankDetailsFields } from '@/components/setup-wizard/BankDetailsFields'
+import { validateBankDetails } from '@/lib/bank-details'
 import { cn } from '@/lib/utils'
 
 interface PaymentSetupStepProps {
@@ -43,6 +45,7 @@ export function PaymentSetupStep({ initialValues, onSubmit }: PaymentSetupStepPr
   const { providers, settings, status } = paymentSetup
 
   const [values, setValues] = useState<PaymentSetupData>(initialValues)
+  const [bankError, setBankError] = useState<string | null>(null)
 
   function updateField<K extends keyof PaymentSetupData>(key: K, value: PaymentSetupData[K]) {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -50,6 +53,11 @@ export function PaymentSetupStep({ initialValues, onSubmit }: PaymentSetupStepPr
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const error = validateBankDetails(values.bankDetails)
+    if (error) {
+      setBankError(error)
+      return
+    }
     onSubmit(values)
   }
 
@@ -136,6 +144,17 @@ export function PaymentSetupStep({ initialValues, onSubmit }: PaymentSetupStepPr
             ariaLabel={settings.debtHoldEnabled.label}
           />
         </div>
+      </div>
+
+      <div className="border-t border-border pt-6">
+        <BankDetailsFields
+          values={values.bankDetails}
+          onChange={(bankDetails) => {
+            updateField('bankDetails', bankDetails)
+            if (bankError) setBankError(null)
+          }}
+          error={bankError}
+        />
       </div>
     </form>
   )

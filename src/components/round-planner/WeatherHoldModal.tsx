@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { RoundPlannerRound, RoundPlannerWeatherHoldOption } from '@/content/round-planner'
+import type { RoundPlannerWeatherHoldOption } from '@/content/round-planner'
 import { roundPlannerContent } from '@/content/round-planner'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Select } from '@/components/ui'
@@ -7,14 +7,23 @@ import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 
+export interface PlannerRoundSummary {
+  name: string
+  stopCount: number
+  holdCount: number
+}
+
 interface WeatherHoldModalProps {
   open: boolean
-  round: RoundPlannerRound | null
+  round: PlannerRoundSummary | null
   dateLabel?: string
   onClose: () => void
 }
 
-/** Weather hold workflow for postponing a round from the round detail drawer. */
+/**
+ * Weather hold workflow for postponing a round from the round detail drawer.
+ * No backend endpoint yet (push-missed is today-only) — UI only.
+ */
 export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHoldModalProps) {
   const { weatherHoldModal } = roundPlannerContent
   const { showToast } = useToast()
@@ -76,9 +85,10 @@ export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHol
         <div className="mt-2 rounded-xl border border-border bg-surface px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-foreground">{round.title}</p>
+              <p className="text-sm font-semibold text-foreground">{round.name}</p>
               <p className="mt-0.5 text-xs text-muted">
-                {formatRoundDate(dateLabel)} · {round.properties.length} properties
+                {dateLabel ? `${dateLabel} · ` : ''}
+                {round.stopCount} stops
               </p>
             </div>
             <span className="shrink-0 text-xs font-medium text-accent">
@@ -154,7 +164,7 @@ export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHol
         <DashboardIcon name="alert" className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
         <div className="text-sm">
           <p className="font-semibold text-warning">
-            {round.properties.length} {weatherHoldModal.affectedJobsLabel}
+            {round.stopCount} {weatherHoldModal.affectedJobsLabel}
           </p>
           <p className="mt-0.5 text-warning-foreground">
             {weatherHoldModal.affectedJobsDescription}
@@ -198,10 +208,4 @@ function ReschedulingOption({
       </span>
     </button>
   )
-}
-
-function formatRoundDate(dateLabel?: string) {
-  if (!dateLabel) return 'May 20, 2026'
-  if (/2026/.test(dateLabel)) return dateLabel
-  return `${dateLabel}, 2026`
 }

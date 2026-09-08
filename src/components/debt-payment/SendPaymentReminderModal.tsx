@@ -5,6 +5,10 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Field, Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton, modalInputClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { useDebtRemind } from '@/features/debt/hooks/useDebt'
+import { UI_CHANNEL_TO_API } from '@/features/debt/lib/mappers'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface SendPaymentReminderModalProps {
@@ -26,11 +30,13 @@ function applyTemplate(body: string, record: DebtCustomerRecord) {
     .replaceAll('{customer}', record.customer)
 }
 
-/** Send SMS / WhatsApp / email payment reminder from the debt board. */
+/** Send SMS / WhatsApp / email payment reminder — POST /debt/:invoiceId/remind. */
 export function SendPaymentReminderModal({ open, record, onClose }: SendPaymentReminderModalProps) {
   const { reminderModal } = debtPaymentContent
   const { showToast } = useToast()
-  const [channel, setChannel] = useState<ReminderChannel>('sms')
+  const { canMutate } = useAppBootstrap()
+  const remind = useDebtRemind()
+  const [channel, setChannel] = useState<ReminderChannel>('email')
   const [templateId, setTemplateId] = useState<string>(reminderModal.templates[0]?.value ?? '')
   const [message, setMessage] = useState('')
 
@@ -38,12 +44,12 @@ export function SendPaymentReminderModal({ open, record, onClose }: SendPaymentR
     () =>
       reminderModal.templates.find((template) => template.value === templateId) ??
       reminderModal.templates[0],
-    [templateId],
+    [reminderModal.templates, templateId],
   )
 
   useEffect(() => {
     if (!open || !record) return
-    setChannel('sms')
+    setChannel('email')
     setTemplateId(reminderModal.templates[0]?.value ?? '')
     setMessage(applyTemplate(reminderModal.templates[0]?.body ?? '', record))
   }, [open, record, reminderModal.templates])
@@ -55,17 +61,36 @@ export function SendPaymentReminderModal({ open, record, onClose }: SendPaymentR
 
   if (!record) return null
 
-  const customerName = record.customer
+  async function handleSend() {
+    if (!canMutate || !record || remind.isPending) return
+    if (!message.trim()) {
+      showToast('Enter a reminder message')
+      return
+    }
 
-  function handleSend() {
-    onClose()
-    showToast(reminderModal.successToast.replace('{customer}', customerName))
+    try {
+      await remind.mutateAsync({
+        invoiceId: record.invoiceId ?? record.id,
+        input: {
+          channel: UI_CHANNEL_TO_API[channel] ?? 'EMAIL',
+          message: message.trim(),
+        },
+      })
+      onClose()
+      showToast(reminderModal.successToast.replace('{customer}', record.customer))
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 400 || error.status === 404)) {
+        showToast(error.message)
+        return
+      }
+      showToast(error instanceof Error ? error.message : 'Could not send reminder')
+    }
   }
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={remind.isPending ? () => undefined : onClose}
       title={reminderModal.title}
       showCloseButton
       stacked
@@ -75,11 +100,23 @@ export function SendPaymentReminderModal({ open, record, onClose }: SendPaymentR
       bodyClassName="space-y-4"
       footer={
         <div className="grid grid-cols-2 gap-3">
-          <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
+          <ModalButton
+            compact
+            variant="secondary"
+            className="w-full"
+            disabled={remind.isPending}
+            onClick={onClose}
+          >
             {reminderModal.actions.cancel}
           </ModalButton>
-          <ModalButton compact variant="primary" className="w-full" onClick={handleSend}>
-            {reminderModal.actions.send}
+          <ModalButton
+            compact
+            variant="primary"
+            className="w-full"
+            disabled={!canMutate || !message.trim() || remind.isPending}
+            onClick={() => void handleSend()}
+          >
+            {remind.isPending ? 'Sending…' : reminderModal.actions.send}
           </ModalButton>
         </div>
       }
@@ -103,8 +140,9 @@ export function SendPaymentReminderModal({ open, record, onClose }: SendPaymentR
                 key={item.id}
                 type="button"
                 onClick={() => setChannel(item.id)}
+                disabled={remind.isPending}
                 className={cn(
-                  'rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors',
+                  'rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50',
                   selected
                     ? 'bg-primary text-primary-foreground'
                     : 'border border-border bg-card text-muted hover:text-foreground',
@@ -124,6 +162,7 @@ export function SendPaymentReminderModal({ open, record, onClose }: SendPaymentR
           onChange={(event) => setTemplateId(event.target.value)}
           options={reminderModal.templates.map(({ value, label }) => ({ value, label }))}
           className={cn(modalInputClass, 'rounded-lg border-accent/25 bg-accent-surface')}
+          disabled={remind.isPending}
         />
       </Field>
 
@@ -133,6 +172,7 @@ export function SendPaymentReminderModal({ open, record, onClose }: SendPaymentR
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           className="min-h-[8rem] rounded-lg"
+          disabled={remind.isPending}
         />
         <p className="mt-1.5 text-xs text-muted">
           {reminderModal.characterCount.replace('{count}', String(message.length))}
