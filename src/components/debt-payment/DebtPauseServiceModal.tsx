@@ -10,6 +10,9 @@ import {
   modalWarningPanelClass,
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { useDebtSetHold } from '@/features/debt/hooks/useDebt'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface DebtPauseServiceModalProps {
@@ -22,10 +25,12 @@ function firstName(fullName: string) {
   return fullName.trim().split(/\s+/)[0] ?? fullName
 }
 
-/** Pause service for a debt-risk customer. */
+/** Pause / hold next clean — PATCH /debt/:invoiceId/hold { flag: true }. */
 export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServiceModalProps) {
   const { pauseModal } = debtPaymentContent
   const { showToast } = useToast()
+  const { canMutate } = useAppBootstrap()
+  const setHold = useDebtSetHold()
   const [reason, setReason] = useState<string>(pauseModal.reasons[0]?.value ?? '')
   const [pauseFrom, setPauseFrom] = useState<string>(pauseModal.defaultPauseFrom)
   const [notifySms, setNotifySms] = useState(true)
@@ -43,17 +48,28 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
 
   if (!record) return null
 
-  const customerName = record.customer
-
-  function handlePause() {
-    onClose()
-    showToast(pauseModal.successToast.replace('{customer}', customerName))
+  async function handlePause() {
+    if (!canMutate || !record || setHold.isPending) return
+    try {
+      await setHold.mutateAsync({
+        invoiceId: record.invoiceId ?? record.id,
+        flag: true,
+      })
+      onClose()
+      showToast(pauseModal.successToast.replace('{customer}', record.customer))
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 400 || error.status === 404)) {
+        showToast(error.message)
+        return
+      }
+      showToast(error instanceof Error ? error.message : 'Could not pause service')
+    }
   }
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={setHold.isPending ? () => undefined : onClose}
       title={pauseModal.title}
       showCloseButton
       stacked
@@ -63,11 +79,23 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
       bodyClassName="space-y-4"
       footer={
         <div className="grid grid-cols-2 gap-3">
-          <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
+          <ModalButton
+            compact
+            variant="secondary"
+            className="w-full"
+            disabled={setHold.isPending}
+            onClick={onClose}
+          >
             {pauseModal.actions.cancel}
           </ModalButton>
-          <ModalButton compact variant="primary" className="w-full" onClick={handlePause}>
-            {pauseModal.actions.pause}
+          <ModalButton
+            compact
+            variant="primary"
+            className="w-full"
+            disabled={!canMutate || setHold.isPending}
+            onClick={() => void handlePause()}
+          >
+            {setHold.isPending ? 'Pausing…' : pauseModal.actions.pause}
           </ModalButton>
         </div>
       }
@@ -88,6 +116,7 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
           onChange={(event) => setReason(event.target.value)}
           options={[...pauseModal.reasons]}
           className={cn(modalInputClass, 'rounded-lg border-accent/25 bg-accent-surface')}
+          disabled={setHold.isPending}
         />
       </Field>
 
@@ -98,6 +127,7 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
           value={pauseFrom}
           onChange={(event) => setPauseFrom(event.target.value)}
           className={cn(modalInputClass, 'rounded-lg border-accent/25 bg-accent-surface')}
+          disabled={setHold.isPending}
         />
       </Field>
 
@@ -106,6 +136,7 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
           type="checkbox"
           checked={notifySms}
           onChange={(event) => setNotifySms(event.target.checked)}
+          disabled={setHold.isPending}
           className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/20"
         />
         <span>
@@ -120,6 +151,7 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           className="min-h-[6.5rem] rounded-lg"
+          disabled={setHold.isPending}
         />
       ) : null}
 

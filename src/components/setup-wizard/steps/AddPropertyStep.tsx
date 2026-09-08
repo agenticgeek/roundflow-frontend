@@ -9,6 +9,8 @@ import { SetupStepHeader } from '@/components/setup-wizard/SetupStepHeader'
 import { SubStepFooter } from '@/components/setup-wizard/SubStepFooter'
 import { VerticalSubStepper } from '@/components/setup-wizard/VerticalSubStepper'
 import { Field, FieldError, Input, Select } from '@/components/ui'
+import { isValidEmail, isValidPhone } from '@/lib/contact'
+import { isValidUkPostcode } from '@/lib/postcode'
 import { cn } from '@/lib/utils'
 
 interface AddPropertyStepProps {
@@ -86,6 +88,22 @@ export function AddPropertyStep({
       setError(validation.customerNameRequired)
       return false
     }
+    if (subStep === 0 && !draft.phone.trim()) {
+      setError(validation.phoneRequired)
+      return false
+    }
+    if (subStep === 0 && !isValidPhone(draft.phone)) {
+      setError(validation.phoneInvalid)
+      return false
+    }
+    if (subStep === 0 && draft.landline.trim() && !isValidPhone(draft.landline)) {
+      setError(validation.landlineInvalid)
+      return false
+    }
+    if (subStep === 0 && draft.email.trim() && !isValidEmail(draft.email)) {
+      setError(validation.emailInvalid)
+      return false
+    }
     if (subStep === 0 && !draft.fullAddress.trim()) {
       setError(validation.fullAddressRequired)
       return false
@@ -94,12 +112,20 @@ export function AddPropertyStep({
       setError(validation.postcodeRequired)
       return false
     }
+    if (subStep === 0 && !isValidUkPostcode(draft.postcode)) {
+      setError(validation.postcodeInvalid)
+      return false
+    }
     if (subStep === 1) {
       const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, ''))
       if (!Number.isFinite(price) || price <= 0) {
         setError(validation.priceRequired)
         return false
       }
+    }
+    if (subStep === 2 && draft.nextVisitDate && draft.startDate && draft.nextVisitDate < draft.startDate) {
+      setError(validation.nextVisitDateBeforeStart)
+      return false
     }
     if (subStep === 4 && !draft.round) {
       setError(validation.roundRequired)
@@ -223,6 +249,7 @@ export function AddPropertyStep({
                   : addPropertyContent.actions.addProperty
                 : undefined
             }
+            loading={subStep === subSteps.length - 1 && adding}
           />
         </div>
       </div>
@@ -272,7 +299,7 @@ export function PropertyDetailsPanel({
     <>
       <SectionHeading>{sections.customerProperty}</SectionHeading>
       <div className="space-y-4">
-        <Field label={fields.customerName.label} labelWeight="medium" size="sm">
+        <Field label={fields.customerName.label} required labelWeight="medium" size="sm">
           <Input
             inputSize="sm"
             value={draft.customerName}
@@ -298,7 +325,7 @@ export function PropertyDetailsPanel({
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={fields.phone.label} labelWeight="medium" size="sm">
+          <Field label={fields.phone.label} required labelWeight="medium" size="sm">
             <Input
               inputSize="sm"
               type="tel"
@@ -308,24 +335,37 @@ export function PropertyDetailsPanel({
             />
           </Field>
           <Field
-            label={<LabelWithHint label={fields.email.label} hint={fields.email.optional} />}
+            label={<LabelWithHint label={fields.landline.label} hint={fields.landline.optional} />}
             labelWeight="medium"
             size="sm"
           >
             <Input
               inputSize="sm"
-              type="email"
-              value={draft.email}
-              onChange={(e) => onChange('email', e.target.value)}
-              placeholder={fields.email.placeholder}
+              type="tel"
+              value={draft.landline}
+              onChange={(e) => onChange('landline', e.target.value)}
+              placeholder={fields.landline.placeholder}
             />
           </Field>
         </div>
+        <Field
+          label={<LabelWithHint label={fields.email.label} hint={fields.email.optional} />}
+          labelWeight="medium"
+          size="sm"
+        >
+          <Input
+            inputSize="sm"
+            type="email"
+            value={draft.email}
+            onChange={(e) => onChange('email', e.target.value)}
+            placeholder={fields.email.placeholder}
+          />
+        </Field>
       </div>
 
       <SectionHeading>{sections.address}</SectionHeading>
       <div className="space-y-4">
-        <Field label={fields.fullAddress.label} labelWeight="medium" size="sm">
+        <Field label={fields.fullAddress.label} required labelWeight="medium" size="sm">
           <Input
             inputSize="sm"
             value={draft.fullAddress}
@@ -334,7 +374,7 @@ export function PropertyDetailsPanel({
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={fields.postcode.label} labelWeight="medium" size="sm">
+          <Field label={fields.postcode.label} required labelWeight="medium" size="sm">
             <Input
               inputSize="sm"
               value={draft.postcode}
@@ -484,6 +524,7 @@ export function SchedulingPanel({
           value={draft.nextVisitDate}
           onChange={(e) => onChange('nextVisitDate', e.target.value)}
           placeholder={fields.nextVisitDate.placeholder}
+          min={draft.startDate || undefined}
         />
       </Field>
     </div>

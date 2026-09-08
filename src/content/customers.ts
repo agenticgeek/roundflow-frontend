@@ -26,7 +26,7 @@ export interface CustomerFilterOption {
 export const customersContent = {
   header: {
     title: 'Customers & Properties',
-    subtitle: 'Showing 5 sample customers with complete records',
+    subtitle: 'Every customer and the properties you service for them',
   },
   howToUse:
     'How to use: Click any customer row below to view their full property record. All text on this screen is selectable - just highlight and copy (Ctrl/Cmd+C).',
@@ -48,13 +48,6 @@ export const customersContent = {
   filters: {
     round: {
       label: 'Rounds',
-      options: [
-        { value: 'all', label: 'All' },
-        { value: 'alnwick-monday', label: 'Alnwick Monday' },
-        { value: 'alnwick-tuesday', label: 'Alnwick Tuesday' },
-        { value: 'morpeth-wednesday', label: 'Morpeth Wednesday' },
-        { value: 'not-assigned', label: 'Not Assigned' },
-      ] satisfies CustomerFilterOption[],
     },
     status: {
       label: 'Status',
@@ -98,18 +91,6 @@ export const customersContent = {
       technicianPlaceholder: 'Select technician',
       technicianHint: 'The technician assigned to the selected round will be pre-filled',
     },
-    rounds: [
-      { value: '', label: 'Select round' },
-      { value: 'alnwick-monday', label: 'Alnwick Monday', technicianId: 'james' },
-      { value: 'alnwick-tuesday', label: 'Alnwick Tuesday', technicianId: 'james' },
-      { value: 'morpeth-wednesday', label: 'Morpeth Wednesday', technicianId: 'james' },
-      { value: 'bamburgh-friday', label: 'Bamburgh Friday', technicianId: 'sarah' },
-    ],
-    technicianOptions: [
-      { value: '', label: 'Select technician' },
-      { value: 'james', label: 'James' },
-      { value: 'sarah', label: 'Sarah' },
-    ] satisfies CustomerFilterOption[],
     actions: {
       cancel: 'Cancel',
       confirm: 'Assign Property',
@@ -117,77 +98,4 @@ export const customersContent = {
     successToast: 'Property assigned to round',
   },
   emptyLabel: 'No customers match the selected filters.',
-  records: [
-    {
-      id: 'customer-1',
-      propertyId: '12-market-street',
-      customer: 'John Smith',
-      address: '12 Market Street, NE66 1SS',
-      status: 'active',
-      round: 'Alnwick Monday',
-      frequency: 'Every 4 weeks',
-      price: '£35',
-      technician: 'James',
-      nextDue: '15/06/2026',
-      paymentStatus: 'paid',
-    },
-    {
-      id: 'customer-2',
-      propertyId: '45-bondgate-within',
-      customer: 'Mary Johnson',
-      address: '45 Bondgate Within, NEE 1SX',
-      status: 'active',
-      round: 'Alnwick Tuesday',
-      frequency: 'Every 4 weeks',
-      price: '£35',
-      technician: 'James',
-      nextDue: '15/06/2026',
-      paymentStatus: 'paid',
-    },
-    {
-      id: 'customer-3',
-      propertyId: '12-market-street-hold',
-      customer: 'John Smith',
-      address: '12 Market Street, NE66 1SS',
-      status: 'hold',
-      round: 'Alnwick Monday',
-      frequency: 'Every 4 weeks',
-      price: '£35',
-      technician: 'James',
-      nextDue: '15/06/2026',
-      paymentStatus: 'hold',
-      amountDue: '£84 due',
-    },
-    {
-      id: 'customer-4',
-      propertyId: '12-avenue-park',
-      customer: 'David Beckham',
-      address: '12 Avenue Park, NE67 1DD',
-      status: 'active',
-      round: 'Not Assigned',
-      frequency: 'Every 4 weeks',
-      price: '£35',
-      technician: 'Not assigned',
-      nextDue: '—',
-      paymentStatus: 'pending',
-      needsAssignment: true,
-    },
-    {
-      id: 'customer-5',
-      propertyId: '12-market-street-morpeth',
-      customer: 'John Smith',
-      address: '12 Market Street, NE66 1SS',
-      status: 'active',
-      round: 'Morpeth Wednesday',
-      frequency: 'Every 4 weeks',
-      price: '£35',
-      technician: 'James',
-      nextDue: '15/06/2026',
-      paymentStatus: 'paid',
-    },
-  ] satisfies CustomerPropertyRecord[],
 } as const
-
-export function getCustomerRecordByPropertyId(propertyId: string): CustomerPropertyRecord | null {
-  return customersContent.records.find((record) => record.propertyId === propertyId) ?? null
-}

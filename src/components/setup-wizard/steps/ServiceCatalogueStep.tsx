@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CatalogueService, ServiceCatalogueData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
@@ -47,6 +47,12 @@ export function ServiceCatalogueStep({ initialValues, onSubmit }: ServiceCatalog
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingService, setEditingService] = useState<CatalogueService | null>(null)
+
+  // Resync when the parent refetches (e.g. after a failed save rolls back a
+  // locally-deleted service that's still referenced server-side).
+  useEffect(() => {
+    setServices(initialValues.services)
+  }, [initialValues])
 
   const categoryOptions = useMemo(
     () =>
@@ -111,15 +117,9 @@ export function ServiceCatalogueStep({ initialValues, onSubmit }: ServiceCatalog
   function saveService(service: CatalogueService) {
     setServices((prev) => {
       const exists = prev.some((item) => item.id === service.id)
-      const next = exists
+      return exists
         ? prev.map((item) => (item.id === service.id ? service : item))
         : [...prev, service]
-
-      if (!service.isDefault) return next
-
-      return next.map((item) =>
-        item.id === service.id ? item : { ...item, isDefault: false },
-      )
     })
   }
 

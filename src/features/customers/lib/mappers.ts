@@ -27,11 +27,10 @@ import type {
 } from '@/content/property-detail'
 
 const FREQUENCY_LABELS: Record<CleaningFrequency, string> = {
-  FORTNIGHTLY: 'Fortnightly',
   FOUR_WEEKLY: 'Every 4 weeks',
   SIX_WEEKLY: 'Every 6 weeks',
   EIGHT_WEEKLY: 'Every 8 weeks',
-  MONTHLY: 'Monthly',
+  TWELVE_WEEKLY: 'Every 12 weeks',
 }
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -180,6 +179,9 @@ export function customerDetailToPropertyRecord(
     accessNotes: property?.accessNotes?.trim() || 'No access notes',
     riskNotes: property?.riskNotes?.trim() || 'No risk notes',
     phone: customer.phone ?? '',
+    // CONTRACT-DIFF: the generated CustomerDetail.customer response type hasn't caught up
+    // with landline yet, even though the Create/Update Customer input schemas already have it.
+    landline: (customer as { landline?: string | null }).landline ?? '',
     email: customer.email ?? '',
     serviceType: plan?.serviceName ?? undefined,
     planStatus: mapPlanStatus(plan?.status, hasRound, onHold),
@@ -197,16 +199,33 @@ function mapVisitPayment(status: string | null | undefined): VisitPaymentStatus 
 }
 
 export function customerDetailToVisits(detail: CustomerDetail): PropertyVisitRecord[] {
-  return (detail.tabs?.visitHistory ?? []).map((row, index) => ({
-    id: row.visitId ?? `visit-${index}`,
-    visitDate: formatDate(row.date),
-    round: row.roundName ?? '—',
-    technician: '—',
-    status: mapVisitStatus(row.status),
-    payment: mapVisitPayment(row.paymentStatus),
-    price: '—',
-    invoice: (row.paymentStatus === 'PAID' ? 'sent' : 'generate') as VisitInvoiceAction,
-  }))
+  return (detail.tabs?.visitHistory ?? []).map((row, index) => {
+    const extra = row as typeof row & {
+      invoiceId?: string | null
+      invoiceStatus?: string | null
+    }
+    const invoiceStatus = extra.invoiceStatus
+    const invoice: VisitInvoiceAction =
+      invoiceStatus === 'SENT' || invoiceStatus === 'PAID'
+        ? 'sent'
+        : invoiceStatus === 'DRAFT'
+          ? 'draft'
+          : extra.invoiceId
+            ? 'draft'
+            : 'generate'
+
+    return {
+      id: row.visitId ?? `visit-${index}`,
+      visitDate: formatDate(row.date),
+      round: row.roundName ?? '—',
+      technician: '—',
+      status: mapVisitStatus(row.status),
+      payment: mapVisitPayment(row.paymentStatus),
+      price: '—',
+      invoice,
+      invoiceId: extra.invoiceId ?? null,
+    }
+  })
 }
 
 export function customerDetailToPayments(
@@ -217,14 +236,23 @@ export function customerDetailToPayments(
 
   return (payments.rows ?? []).map((row, index) => ({
     id: row.paymentId ?? row.visitId ?? `payment-${index}`,
+    visitId: row.visitId,
+    invoiceId: row.invoiceId ?? null,
+    invoiceNumber: row.invoiceNumber ?? null,
+    transactionId: row.transactionId ?? null,
     visitDate: formatDate(row.visitDate),
     visitDateRaw: row.visitDate ?? '',
     round: '—',
     technician: row.technicianName ?? '—',
     amount: formatMoney(row.amount) ?? '—',
     payment: row.paymentStatus === 'PAID' ? 'paid' : 'unpaid',
-    invoice: row.canDownload ? 'sent' : 'none',
-    action: row.canDownload ? 'download' : 'generate',
+    invoice:
+      row.invoiceStatus === 'DRAFT'
+        ? 'draft'
+        : row.invoiceStatus === 'SENT' || row.invoiceStatus === 'PAID' || row.canDownload
+          ? 'sent'
+          : 'none',
+    action: row.canGenerate ? 'generate' : row.invoiceId || row.canDownload ? 'download' : 'generate',
   }))
 }
 

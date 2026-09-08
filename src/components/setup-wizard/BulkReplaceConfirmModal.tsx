@@ -43,7 +43,7 @@ export function BulkReplaceConfirmModal({
           <ModalButton compact variant="secondary" disabled={loading} onClick={onClose}>
             {bulkReplaceConfirm.cancel}
           </ModalButton>
-          <ModalButton compact variant="primary" disabled={loading} onClick={onConfirm}>
+          <ModalButton compact variant="primary" loading={loading} onClick={onConfirm}>
             {loading ? 'Saving…' : bulkReplaceConfirm.confirm}
           </ModalButton>
         </ModalFooter>

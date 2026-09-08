@@ -1,4 +1,5 @@
 import type { RoundPlannerSelectOption } from '@/content/round-planner'
+import type { PlannerStatusFilter } from '@/features/rounds/lib/planner'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Select } from '@/components/ui'
 import { cn } from '@/lib/utils'
@@ -12,12 +13,16 @@ interface RoundPlannerToolbarProps {
   technicianId: string
   technicianOptions: readonly RoundPlannerSelectOption[]
   onTechnicianChange: (id: string) => void
+  /** The occurrence summary carries no technician data — filter is List/Map only. */
+  technicianDisabled?: boolean
+  technicianDisabledHint?: string
   statusLabel: string
-  statusId: string
-  statusOptions: readonly RoundPlannerSelectOption[]
-  onStatusChange: (id: string) => void
+  statusId: PlannerStatusFilter
+  statusOptions: readonly { value: PlannerStatusFilter; label: string }[]
+  onStatusChange: (id: PlannerStatusFilter) => void
   addRoundLabel: string
   onAddRound?: () => void
+  canAddRound?: boolean
 }
 
 const filterSelectClass =
@@ -33,12 +38,15 @@ export function RoundPlannerToolbar({
   technicianId,
   technicianOptions,
   onTechnicianChange,
+  technicianDisabled = false,
+  technicianDisabledHint,
   statusLabel,
   statusId,
   statusOptions,
   onStatusChange,
   addRoundLabel,
   onAddRound,
+  canAddRound = true,
 }: RoundPlannerToolbarProps) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -59,26 +67,31 @@ export function RoundPlannerToolbar({
       </label>
 
       <div className="flex items-center gap-2">
-        <Select
-          inputSize="sm"
-          aria-label={technicianLabel}
-          value={technicianId}
-          onChange={(event) => onTechnicianChange(event.target.value)}
-          options={[...technicianOptions]}
-          className={filterSelectClass}
-        />
+        <span title={technicianDisabled ? technicianDisabledHint : undefined}>
+          <Select
+            inputSize="sm"
+            aria-label={technicianLabel}
+            value={technicianId}
+            onChange={(event) => onTechnicianChange(event.target.value)}
+            options={[...technicianOptions]}
+            disabled={technicianDisabled}
+            className={filterSelectClass}
+          />
+        </span>
         <Select
           inputSize="sm"
           aria-label={statusLabel}
           value={statusId}
-          onChange={(event) => onStatusChange(event.target.value)}
+          onChange={(event) => onStatusChange(event.target.value as PlannerStatusFilter)}
           options={[...statusOptions]}
           className={filterSelectClass}
         />
-        <button type="button" onClick={onAddRound} className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2')}>
-          <span aria-hidden="true">+</span>
-          {addRoundLabel}
-        </button>
+        {canAddRound ? (
+          <button type="button" onClick={onAddRound} className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2')}>
+            <span aria-hidden="true">+</span>
+            {addRoundLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   )

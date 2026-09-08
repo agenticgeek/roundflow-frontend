@@ -17,6 +17,8 @@ interface AppShellProps {
   signingOut?: boolean
   /** Wider main column for data-dense modules (e.g. Round Planner). */
   mainMaxWidthClass?: string
+  /** Pre-select a round in the Add One-off Job modal (e.g. the round open in the planner). */
+  oneOffJobDefaultRoundId?: string | null
 }
 
 /** App shell — fixed sidebar, scrollable main, shared quick-action modals. */
@@ -26,6 +28,7 @@ export function AppShell({
   onSignOut,
   signingOut,
   mainMaxWidthClass = 'max-w-6xl',
+  oneOffJobDefaultRoundId = null,
 }: AppShellProps) {
   const { sidebar } = appShellContent
   const sidebarState = useAppSidebar()
@@ -90,6 +93,7 @@ export function AppShell({
       <AddOneOffJobModal
         open={quickActions.addOneOffJobModalOpen}
         onClose={quickActions.closeAddOneOffJobModal}
+        defaultRoundId={oneOffJobDefaultRoundId}
       />
     </div>
   )

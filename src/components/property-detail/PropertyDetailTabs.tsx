@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { GenerateInvoiceModal } from '@/components/property-detail/GenerateInvoiceModal'
+import { SavedInvoiceModal } from '@/components/property-detail/SavedInvoiceModal'
 import type {
   PropertyDetailRecord,
   PropertyNoteCategory,
@@ -10,13 +11,7 @@ import type {
   VisitPaymentStatus,
   VisitStatus,
 } from '@/content/property-detail'
-import {
-  getPropertyNotes,
-  getPropertyPaymentHistory,
-  getPropertyVisitHistory,
-  paymentRecordToVisitRecord,
-  propertyDetailContent,
-} from '@/content/property-detail'
+import { paymentRecordToVisitRecord, propertyDetailContent } from '@/content/property-detail'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Textarea } from '@/components/ui'
@@ -44,8 +39,10 @@ interface VisitHistoryTabProps {
 /** Visit history table — from property detail tabs. */
 export function VisitHistoryTab({ property, visits: visitsProp }: VisitHistoryTabProps) {
   const { visitHistory } = propertyDetailContent
-  const visits = visitsProp ?? getPropertyVisitHistory(property)
+  const { canMutate } = useAppBootstrap()
+  const visits = visitsProp ?? []
   const [invoiceVisit, setInvoiceVisit] = useState<PropertyVisitRecord | null>(null)
+  const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
 
   return (
     <>
@@ -70,7 +67,9 @@ export function VisitHistoryTab({ property, visits: visitsProp }: VisitHistoryTa
                 <VisitHistoryRow
                   key={visit.id}
                   visit={visit}
+                  canMutate={canMutate}
                   onGenerate={() => setInvoiceVisit(visit)}
+                  onView={() => visit.invoiceId && setViewInvoiceId(visit.invoiceId)}
                 />
               ))}
             </tbody>
@@ -84,16 +83,30 @@ export function VisitHistoryTab({ property, visits: visitsProp }: VisitHistoryTa
         visit={invoiceVisit}
         onClose={() => setInvoiceVisit(null)}
       />
+      <SavedInvoiceModal
+        open={viewInvoiceId !== null}
+        invoiceId={viewInvoiceId}
+        customerName={property.customerName}
+        address={property.fullAddress}
+        email={property.email}
+        phone={property.phone}
+        paymentMethod={property.paymentMethod}
+        onClose={() => setViewInvoiceId(null)}
+      />
     </>
   )
 }
 
 function VisitHistoryRow({
   visit,
+  canMutate,
   onGenerate,
+  onView,
 }: {
   visit: PropertyVisitRecord
+  canMutate: boolean
   onGenerate: () => void
+  onView: () => void
 }) {
   const { visitHistory } = propertyDetailContent
 
@@ -116,7 +129,7 @@ function VisitHistoryRow({
       </td>
       <td className="px-4 py-3.5 text-foreground">{visit.price}</td>
       <td className="px-4 py-3.5">
-        {visit.invoice === 'generate' ? (
+        {visit.invoice === 'generate' && canMutate ? (
           <button
             type="button"
             onClick={onGenerate}
@@ -125,11 +138,26 @@ function VisitHistoryRow({
             <DashboardIcon name="file" className="h-4 w-4" />
             {visitHistory.invoiceActions.generate}
           </button>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-success">
+        ) : visit.invoice === 'draft' ? (
+          <button
+            type="button"
+            onClick={onView}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-warning-foreground underline underline-offset-2"
+          >
+            <DashboardIcon name="file" className="h-4 w-4" />
+            {visitHistory.invoiceActions.draft}
+          </button>
+        ) : visit.invoice === 'sent' ? (
+          <button
+            type="button"
+            onClick={onView}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-success underline underline-offset-2"
+          >
             <DashboardIcon name="check-circle" className="h-4 w-4" />
             {visitHistory.invoiceActions.sent}
-          </span>
+          </button>
+        ) : (
+          <span className="text-muted">—</span>
         )}
       </td>
     </tr>
@@ -163,12 +191,10 @@ interface PaymentsTabProps {
 /** Payment history table — visits, invoices, and actions. */
 export function PaymentsTab({ property, payments: paymentsProp }: PaymentsTabProps) {
   const { paymentHistory } = propertyDetailContent
-  const { showToast } = useToast()
-  const payments =
-    paymentsProp === null
-      ? []
-      : (paymentsProp ?? getPropertyPaymentHistory(property))
+  const { canMutate } = useAppBootstrap()
+  const payments = paymentsProp ?? []
   const [invoiceVisit, setInvoiceVisit] = useState<PropertyVisitRecord | null>(null)
+  const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
   const visitsTotal = paymentHistory.visitsTotal.replace('{count}', String(payments.length))
   const hiddenForRole = paymentsProp === null
 
@@ -203,7 +229,8 @@ export function PaymentsTab({ property, payments: paymentsProp }: PaymentsTabPro
                   <PaymentHistoryRow
                     key={payment.id}
                     payment={payment}
-                    onDownload={() => showToast(paymentHistory.downloadToast)}
+                    canMutate={canMutate}
+                    onView={() => payment.invoiceId && setViewInvoiceId(payment.invoiceId)}
                     onGenerate={() => setInvoiceVisit(paymentRecordToVisitRecord(payment))}
                   />
                 ))}
@@ -219,17 +246,29 @@ export function PaymentsTab({ property, payments: paymentsProp }: PaymentsTabPro
         visit={invoiceVisit}
         onClose={() => setInvoiceVisit(null)}
       />
+      <SavedInvoiceModal
+        open={viewInvoiceId !== null}
+        invoiceId={viewInvoiceId}
+        customerName={property.customerName}
+        address={property.fullAddress}
+        email={property.email}
+        phone={property.phone}
+        paymentMethod={property.paymentMethod}
+        onClose={() => setViewInvoiceId(null)}
+      />
     </>
   )
 }
 
 function PaymentHistoryRow({
   payment,
-  onDownload,
+  canMutate,
+  onView,
   onGenerate,
 }: {
   payment: PropertyPaymentRecord
-  onDownload: () => void
+  canMutate: boolean
+  onView: () => void
   onGenerate: () => void
 }) {
   const { paymentHistory } = propertyDetailContent
@@ -252,24 +291,29 @@ function PaymentHistoryRow({
         {payment.invoice === 'sent' ? (
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-success">
             <DashboardIcon name="check-circle" className="h-4 w-4" />
-            {paymentHistory.invoiceLabels.sent}
+            {payment.invoiceNumber ?? paymentHistory.invoiceLabels.sent}
+          </span>
+        ) : payment.invoice === 'draft' ? (
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-warning-foreground">
+            <DashboardIcon name="file" className="h-4 w-4" />
+            {payment.invoiceNumber ?? paymentHistory.invoiceLabels.draft}
           </span>
         ) : (
           <span className="text-muted">—</span>
         )}
       </td>
-      <td className="px-4 py-4 text-muted">—</td>
+      <td className="px-4 py-4 text-muted">{payment.transactionId ?? '—'}</td>
       <td className="px-4 py-4">
-        {payment.action === 'download' ? (
+        {payment.action === 'download' && payment.invoiceId ? (
           <button
             type="button"
-            onClick={onDownload}
+            onClick={onView}
             className="inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground"
           >
-            <DashboardIcon name="download" className="h-4 w-4" />
+            <DashboardIcon name="file" className="h-4 w-4" />
             {paymentHistory.actions.download}
           </button>
-        ) : (
+        ) : payment.action === 'generate' && canMutate ? (
           <button
             type="button"
             onClick={onGenerate}
@@ -278,6 +322,8 @@ function PaymentHistoryRow({
             <DashboardIcon name="file" className="h-4 w-4" />
             {paymentHistory.actions.generate}
           </button>
+        ) : (
+          <span className="text-muted">—</span>
         )}
       </td>
     </tr>
@@ -329,9 +375,7 @@ export function NotesRiskTab({ property, notes: notesProp, customerId }: NotesRi
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const addNote = useAddPropertyNote(property.id)
-  const [notes, setNotes] = useState<PropertyNoteRecord[]>(
-    () => notesProp ?? getPropertyNotes(property),
-  )
+  const [notes, setNotes] = useState<PropertyNoteRecord[]>(() => notesProp ?? [])
   const [formOpen, setFormOpen] = useState(false)
   const [category, setCategory] = useState<PropertyNoteCategory>('internal')
   const [draft, setDraft] = useState('')

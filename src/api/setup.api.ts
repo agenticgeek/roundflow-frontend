@@ -1,8 +1,8 @@
 import { api } from '@/api/client'
 import type { components } from '@/api/types.gen'
+import type { BankDetailsPayload } from '@/lib/bank-details'
 import type {
   BusinessSettings,
-  DeferredStatus,
   Round,
   RoundInput,
   Service,
@@ -23,8 +23,13 @@ import type {
 } from '@/api/types'
 
 export type SetupStep1Input = components['schemas']['BusinessProfileInput']
-export type SetupStep2Input = components['schemas']['PaymentSetupInput']
+// CONTRACT-DIFF: `bankDetails` (invoice footer) lives on BusinessSettings but isn't in the step-2 input schema yet.
+export type SetupStep2Input = components['schemas']['PaymentSetupInput'] & {
+  bankDetails?: BankDetailsPayload | null
+}
 export type SetupStep4Input = components['schemas']['RoundSettingsInput']
+export type SetupStep5Input = components['schemas']['MessageTemplateInput']
+export type SetupStep5Template = components['schemas']['MessageTemplateView']
 export type {
   SetupStep9Input,
   SetupStep10Input,
@@ -63,9 +68,10 @@ export const setupApi = {
     api<BusinessSettings>('/setup/step/4', jsonPost(input)),
 
   getStep5: (signal?: AbortSignal) =>
-    api<DeferredStatus>('/setup/step/5', { signal }),
-  saveStep5: () =>
-    api<DeferredStatus>('/setup/step/5', jsonPost()),
+    api<SetupStep5Template[]>('/setup/step/5', { signal }),
+  /** Bulk replace — the sent list becomes the full template set. */
+  saveStep5: (templates: SetupStep5Input[]) =>
+    api<SetupStep5Template[]>('/setup/step/5', jsonPost({ templates })),
 
   getStep6: (signal?: AbortSignal) =>
     api<Technician[]>('/setup/step/6', { signal }),

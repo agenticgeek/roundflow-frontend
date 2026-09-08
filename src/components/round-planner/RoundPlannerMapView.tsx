@@ -1,17 +1,12 @@
-import type { RoundPlannerProperty, RoundPlannerRound } from '@/content/round-planner'
 import { roundPlannerContent } from '@/content/round-planner'
+import type { PlannerListStop } from '@/features/rounds/lib/planner'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 
 interface RoundPlannerMapViewProps {
-  round: RoundPlannerRound | null
-}
-
-const propertyStatusClass: Record<RoundPlannerProperty['status'], string> = {
-  scheduled: 'bg-primary/10 text-primary',
-  completed: 'bg-success/10 text-success',
-  'payment-hold': 'bg-warning-surface text-warning',
+  stops: readonly PlannerListStop[]
+  currency: string
 }
 
 const legendDotClass: Record<string, string> = {
@@ -21,34 +16,48 @@ const legendDotClass: Record<string, string> = {
   issue: 'bg-danger',
 }
 
-/** Map tab layout — visual map canvas plus properties sidebar. */
-export function RoundPlannerMapView({ round }: RoundPlannerMapViewProps) {
+/**
+ * Map tab — no coordinates exist in the schema (handoff §8), so the canvas is
+ * blurred behind a "Coming Soon" overlay until client-side geocoding ships.
+ */
+export function RoundPlannerMapView({ stops, currency }: RoundPlannerMapViewProps) {
   const { mapView } = roundPlannerContent
 
   return (
-    <PanelCard interactive={false} className="overflow-hidden bg-card p-0">
-      <div className="grid min-h-[24rem] lg:grid-cols-[minmax(0,1fr)_17.5rem]">
-        <div className="relative min-h-[20rem] overflow-hidden bg-card">
-          <WorldMapIllustration />
-          <MapControls controls={mapView.controls} />
-          <MapLegend title={mapView.legendTitle} items={mapView.legend} />
+    <PanelCard interactive={false} className="relative overflow-hidden bg-card p-0">
+      <div aria-hidden="true" className="pointer-events-none blur-sm select-none">
+        <div className="grid min-h-[24rem] lg:grid-cols-[minmax(0,1fr)_17.5rem]">
+          <div className="relative min-h-[20rem] overflow-hidden bg-card">
+            <WorldMapIllustration />
+            <MapControls controls={mapView.controls} />
+            <MapLegend title={mapView.legendTitle} items={mapView.legend} />
+          </div>
+
+          <aside className="border-t border-border bg-card shadow-[-12px_0_24px_rgba(10,10,10,0.035)] lg:border-t-0 lg:border-l">
+            <h2 className="px-5 py-5 text-lg font-medium tracking-tight text-foreground">
+              {mapView.propertiesTitle} ({stops.length})
+            </h2>
+
+            {stops.length > 0 ? (
+              <ul className="divide-y divide-border">
+                {stops.slice(0, 6).map((stop) => (
+                  <StopRow key={stop.visitId} stop={stop} currency={currency} />
+                ))}
+              </ul>
+            ) : (
+              <p className="px-5 text-sm text-muted">{mapView.noProperties}</p>
+            )}
+          </aside>
         </div>
+      </div>
 
-        <aside className="border-t border-border bg-card shadow-[-12px_0_24px_rgba(10,10,10,0.035)] lg:border-t-0 lg:border-l">
-          <h2 className="px-5 py-5 text-lg font-medium tracking-tight text-foreground">
-            {mapView.propertiesTitle} ({round?.properties.length ?? 0})
-          </h2>
-
-          {round ? (
-            <ul className="divide-y divide-border">
-              {round.properties.map((property) => (
-                <PropertyMapRow key={property.id} property={property} />
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 text-sm text-muted">{mapView.noProperties}</p>
-          )}
-        </aside>
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-card/50 px-6 text-center">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+          <DashboardIcon name="map-pin" className="h-3.5 w-3.5" />
+          {mapView.comingSoon.badge}
+        </span>
+        <h2 className="text-base font-semibold text-foreground">{mapView.comingSoon.title}</h2>
+        <p className="max-w-xs text-sm text-muted">{mapView.comingSoon.description}</p>
       </div>
     </PanelCard>
   )
@@ -92,26 +101,14 @@ function MapLegend({
   )
 }
 
-function PropertyMapRow({ property }: { property: RoundPlannerProperty }) {
-  const { statusLabels } = roundPlannerContent.mapView
-
+function StopRow({ stop, currency }: { stop: PlannerListStop; currency: string }) {
   return (
     <li className="flex gap-3.5 px-5 py-4">
       <DashboardIcon name="map-pin" className="mt-0.5 h-5 w-5 shrink-0 text-muted" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold leading-tight text-foreground">{property.address}</p>
-        <p className="mt-1 text-xs text-muted">{property.customer}</p>
-        <div className="mt-2 flex items-center gap-2.5">
-          <span
-            className={cn(
-              'rounded-full px-2.5 py-1 text-xs font-medium leading-none',
-              propertyStatusClass[property.status],
-            )}
-          >
-            {statusLabels[property.status]}
-          </span>
-          <span className="text-sm font-medium text-foreground">{property.price}</span>
-        </div>
+        <p className="text-sm font-semibold leading-tight text-foreground">{stop.addressLine}</p>
+        <p className="mt-1 text-xs text-muted">{stop.customerName}</p>
+        <p className="mt-2 text-sm font-medium text-foreground">{formatCurrency(stop.price, currency)}</p>
       </div>
     </li>
   )

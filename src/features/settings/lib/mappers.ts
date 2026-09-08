@@ -1,15 +1,19 @@
 import type { BusinessSettings, Service, ServiceArea, Technician } from '@/api/types'
-import type { PaymentSettingsPatch } from '@/api/settings.api'
+import type { PaymentSettingsPatch, RoundSettingsPatch } from '@/api/settings.api'
 import { daysToCycleLength, cycleLengthToDays } from '@/lib/cycle-length'
+import { bankDetailsFromForm, bankDetailsToForm } from '@/lib/bank-details'
 import { deriveTechnicianAppStatus } from '@/api/types'
 import type { components } from '@/api/types.gen'
 import type {
+  BankDetailsForm,
   CatalogueService,
   RecurringCycle,
 } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 
-const DAY_UI_TO_API: Record<string, string> = {
+type DayOfWeek = components['schemas']['DayOfWeek']
+
+const DAY_UI_TO_API: Record<string, DayOfWeek> = {
   mon: 'MON',
   tue: 'TUE',
   wed: 'WED',
@@ -64,11 +68,13 @@ export type SettingsPaymentForm = {
   debtHoldEnabled: boolean
   goCardlessConnected: boolean
   stripeConnected: boolean
+  bankDetails: BankDetailsForm
 }
 
 export type SettingsRoundForm = {
   recurringCycle: RecurringCycle
   workingDays: string[]
+  reminderTiming: string[]
 }
 
 export function settingsBusinessToForm(
@@ -111,6 +117,7 @@ export function settingsPaymentToForm(
     debtHoldEnabled: data?.debtHoldEnabled ?? defaults.debtHoldEnabled,
     goCardlessConnected: data?.gocardlessConnected ?? defaults.goCardlessConnected,
     stripeConnected: data?.stripeConnected ?? defaults.stripeConnected,
+    bankDetails: bankDetailsToForm(data?.bankDetails),
   }
 }
 
@@ -119,6 +126,7 @@ export function settingsPaymentFromForm(values: SettingsPaymentForm): PaymentSet
     paymentRule: PAYMENT_RULE_UI_TO_API[values.defaultPaymentRule],
     vatInInvoices: values.vatApplicable,
     debtHoldEnabled: values.debtHoldEnabled,
+    bankDetails: bankDetailsFromForm(values.bankDetails),
   }
 }
 
@@ -132,15 +140,21 @@ export function settingsRoundToForm(
     workingDays: (data?.defaultWorkingDays ?? profileDefaults.workingDays).map(
       (day) => DAY_API_TO_UI[day] ?? day.toLowerCase(),
     ),
+    // CONTRACT-DIFF: the generated BusinessSettings response type hasn't caught up with
+    // preCleanReminderTimings yet, even though the PATCH input schema already has it.
+    reminderTiming:
+      (data as (BusinessSettings & { preCleanReminderTimings?: string[] }) | null | undefined)
+        ?.preCleanReminderTimings ?? [],
   }
 }
 
-export function settingsRoundFromForm(values: SettingsRoundForm) {
+export function settingsRoundFromForm(values: SettingsRoundForm): RoundSettingsPatch {
   return {
     defaultCycleLength: cycleLengthToDays(values.recurringCycle),
     defaultWorkingDays: values.workingDays.map(
-      (day) => DAY_UI_TO_API[day] ?? day.toUpperCase(),
+      (day) => DAY_UI_TO_API[day] ?? (day.toUpperCase() as DayOfWeek),
     ),
+    preCleanReminderTimings: values.reminderTiming as RoundSettingsPatch['preCleanReminderTimings'],
   }
 }
 

@@ -1,11 +1,7 @@
-import { useMemo, useState } from 'react'
-import type {
-  ComplaintPriority,
-  ComplaintRecord,
-  ComplaintStatus,
-} from '@/content/complaints'
+import { useEffect, useMemo, useState } from 'react'
+import type { Complaint, ComplaintMessage, ComplaintStatus } from '@/api/complaints.api'
 import {
-  complaintPriorityLabels,
+  complaintSeverityLabels,
   complaintStatusLabels,
   complaintsContent,
 } from '@/content/complaints'
@@ -18,38 +14,70 @@ import {
 import { AssignTechnicianModal } from '@/components/complaints/AssignTechnicianModal'
 import { ResolveComplaintModal } from '@/components/complaints/ResolveComplaintModal'
 import { Input } from '@/components/ui'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
+import {
+  useAddComplaintMessage,
+  useAssignComplaintTechnician,
+  useComplaintMessages,
+  useComplaints,
+  useCreateComplaint,
+  useMarkComplaintInReview,
+  useReopenComplaint,
+  useResolveComplaint,
+  useScheduleComplaintRevisit,
+} from '@/features/complaints/hooks/useComplaints'
+import { useCustomer } from '@/features/customers/hooks/useCustomers'
+import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { ApiError, errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 const statusTone: Record<ComplaintStatus, string> = {
-  open: 'text-warning',
-  'in-review': 'text-primary',
-  'revisit-booked': 'text-danger',
-  resolved: 'text-success',
+  OPEN: 'text-warning',
+  IN_REVIEW: 'text-primary',
+  REVISIT_BOOKED: 'text-danger',
+  RESOLVED: 'text-success',
 }
 
 const statusBadge: Record<ComplaintStatus, string> = {
-  open: 'bg-warning-surface text-warning-foreground',
-  'in-review': 'bg-primary/10 text-primary',
-  'revisit-booked': 'bg-danger/10 text-danger',
-  resolved: 'bg-success/10 text-success',
+  OPEN: 'bg-warning-surface text-warning-foreground',
+  IN_REVIEW: 'bg-primary/10 text-primary',
+  REVISIT_BOOKED: 'bg-danger/10 text-danger',
+  RESOLVED: 'bg-success/10 text-success',
 }
 
-const priorityBadge: Record<ComplaintPriority, string> = {
-  low: 'bg-surface text-muted',
-  medium: 'bg-warning-surface text-warning-foreground',
-  high: 'bg-danger/10 text-danger',
+const severityBadge: Record<string, string> = {
+  LOW: 'bg-surface text-muted',
+  MEDIUM: 'bg-warning-surface text-warning-foreground',
+  HIGH: 'bg-danger/10 text-danger',
 }
 
 type ComplaintFilter = (typeof complaintsContent.filters)[number]['id']
 type DetailTab = 'messages' | 'details'
 
-/** Interactive frontend-only complaints workspace. */
+function formatDate(iso: string) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
+}
+
+function formatDateTime(iso: string) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+/** Complaints workspace — list, split-panel detail, and all status-transition actions. */
 export function ComplaintsScreen() {
   const { showToast } = useToast()
-  const [records, setRecords] = useState<ComplaintRecord[]>(() => [
-    ...complaintsContent.records,
-  ])
+  const { canMutate, me } = useAppBootstrap()
+
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<ComplaintFilter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -58,120 +86,134 @@ export function ComplaintsScreen() {
   const [resolveModalOpen, setResolveModalOpen] = useState(false)
   const [detailTab, setDetailTab] = useState<DetailTab>('messages')
   const [reply, setReply] = useState('')
+  /** Resolution notes are rendered client-side only — the API has no message for them. */
+  const [resolutionNotes, setResolutionNotes] = useState<Record<string, string>>({})
 
+  const debouncedSearch = useDebouncedValue(search, 300)
+
+  const complaintsQuery = useComplaints({
+    search: debouncedSearch.trim() || undefined,
+    assignedTo: filter === 'my-work' ? 'me' : undefined,
+  })
+  const records = complaintsQuery.data ?? []
   const selected = records.find((record) => record.id === selectedId) ?? null
 
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return records.filter((record) => {
-      if (filter === 'my-work' && record.technician !== 'James') return false
-      if (!query) return true
-      return [
-        record.customer,
-        record.address,
-        record.subject,
-        record.issueType,
-        record.technician,
-      ]
-        .join(' ')
-        .toLowerCase()
-        .includes(query)
-    })
-  }, [filter, records, search])
-
-  function updateSelected(changes: Partial<ComplaintRecord>) {
-    if (!selectedId) return
-    setRecords((current) =>
-      current.map((record) =>
-        record.id === selectedId ? { ...record, ...changes } : record,
-      ),
-    )
-  }
-
-  function setStatus(status: ComplaintStatus) {
-    updateSelected({ status })
-    showToast(`Complaint marked ${complaintStatusLabels[status].toLowerCase()}.`)
-  }
-
-  function handleAssign(technician: string) {
-    updateSelected({ technician })
-    setAssignModalOpen(false)
-    showToast(`Complaint assigned to ${technician}.`)
-  }
-
-  function handleScheduleRevisit(date: string) {
-    updateSelected({
-      status: 'revisit-booked',
-      revisitDate: formatInputDate(date),
-    })
-    showToast('Revisit scheduled successfully.')
-  }
-
-  function handleResolve() {
-    if (!selected) return
-    updateSelected({
-      status: 'resolved',
-      messages: [
-        ...selected.messages,
-        {
-          id: `message-${Date.now()}`,
-          author: `Resolved by ${selected.technician}`,
-          body: 'Issue resolved — revisit completed successfully.',
-          sentAt: 'Just now',
-          kind: 'system',
-        },
-      ],
-    })
-    setResolveModalOpen(false)
-    showToast('Complaint resolved successfully.')
-  }
-
-  function sendReply() {
-    const body = reply.trim()
-    if (!body || !selected) return
-    const message = {
-      id: `message-${Date.now()}`,
-      author: 'RoundFlow Admin',
-      body,
-      sentAt: 'Just now',
+  const techniciansQuery = useTechniciansList()
+  const technicianNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const technician of techniciansQuery.data ?? []) {
+      if (technician.id) map.set(technician.id, technician.name ?? 'Unnamed technician')
     }
-    updateSelected({ messages: [...selected.messages, message] })
-    setReply('')
-    showToast('Reply sent to customer.')
-  }
+    return map
+  }, [techniciansQuery.data])
 
-  function handleCreate(values: NewComplaintValues) {
-    const createdAt = formatInputDate(values.visitDate) || 'Today'
-    const newRecord: ComplaintRecord = {
-      id: `complaint-${Date.now()}`,
-      customer: values.customer.trim(),
-      address: values.address.trim() || 'Address not supplied',
-      phone: values.phone.trim(),
-      email: values.email.trim(),
-      issueType: values.issueType,
-      subject: values.issueType,
-      description: values.description.trim(),
-      status: 'open',
-      priority: values.priority,
-      technician: values.technician || 'Unassigned',
-      round: 'Not assigned',
-      visitDate: createdAt,
-      createdAt,
-      messages: [
-        {
-          id: `message-${Date.now()}`,
-          author: values.customer.trim(),
-          body: values.description.trim(),
-          sentAt: 'Just now',
-        },
-      ],
-    }
-    setRecords((current) => [newRecord, ...current])
-    setSelectedId(newRecord.id)
-    setFilter('all')
-    setModalOpen(false)
+  const customerQuery = useCustomer(selected?.customerId ?? '', Boolean(selected))
+  const messagesQuery = useComplaintMessages(selected?.id ?? '', Boolean(selected))
+
+  const createComplaint = useCreateComplaint()
+  const markInReview = useMarkComplaintInReview()
+  const scheduleRevisit = useScheduleComplaintRevisit()
+  const resolveComplaint = useResolveComplaint()
+  const reopenComplaint = useReopenComplaint()
+  const assignTechnician = useAssignComplaintTechnician()
+  const addMessage = useAddComplaintMessage(selected?.id ?? '')
+
+  useEffect(() => {
     setDetailTab('messages')
-    showToast('Complaint logged successfully.')
+  }, [selectedId])
+
+  async function handleCreate(values: NewComplaintValues) {
+    try {
+      const created = await createComplaint.mutateAsync({
+        customerId: values.customerId,
+        title: values.title.trim(),
+        description: values.description.trim() || undefined,
+        issueType: values.issueType || undefined,
+        severity: values.severity,
+        propertyId: values.propertyId,
+        technicianId: values.technicianId || null,
+      })
+      setSelectedId(created.id)
+      setFilter('all')
+      setModalOpen(false)
+      showToast(complaintsContent.toasts.logged)
+    } catch (error) {
+      showToast(errorMessage(error))
+    }
+  }
+
+  async function handleMarkInReview() {
+    if (!selected || !canMutate) return
+    try {
+      await markInReview.mutateAsync(selected.id)
+      showToast(complaintsContent.toasts.markedInReview)
+    } catch (error) {
+      showToast(errorMessage(error))
+    }
+  }
+
+  async function handleScheduleRevisit(date: string) {
+    if (!selected || !canMutate) return
+    try {
+      await scheduleRevisit.mutateAsync({ id: selected.id, revisitDate: date })
+      showToast(complaintsContent.toasts.revisitScheduled)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) {
+        showToast(error.message || complaintsContent.revisit.invalidDate)
+        return
+      }
+      showToast(errorMessage(error))
+    }
+  }
+
+  async function handleResolve() {
+    if (!selected || !canMutate) return
+    try {
+      await resolveComplaint.mutateAsync(selected.id)
+      setResolutionNotes((current) => ({
+        ...current,
+        [selected.id]: complaintsContent.resolutionMessage(
+          `${me?.name ?? 'You'} · ${formatDateTime(new Date().toISOString())}`,
+        ),
+      }))
+      setResolveModalOpen(false)
+      showToast(complaintsContent.toasts.resolved)
+    } catch (error) {
+      showToast(errorMessage(error))
+    }
+  }
+
+  async function handleReopen() {
+    if (!selected || !canMutate) return
+    try {
+      await reopenComplaint.mutateAsync(selected.id)
+      showToast(complaintsContent.toasts.reopened)
+    } catch (error) {
+      showToast(errorMessage(error))
+    }
+  }
+
+  async function handleAssign(technicianId: string) {
+    if (!selected || !canMutate) return
+    try {
+      await assignTechnician.mutateAsync({ id: selected.id, technicianId })
+      setAssignModalOpen(false)
+      showToast(complaintsContent.toasts.assigned(technicianNameById.get(technicianId) ?? 'technician'))
+    } catch (error) {
+      showToast(errorMessage(error))
+    }
+  }
+
+  async function sendReply() {
+    const body = reply.trim()
+    if (!body || !selected || !canMutate) return
+    try {
+      await addMessage.mutateAsync(body)
+      setReply('')
+      showToast(complaintsContent.toasts.replySent)
+    } catch (error) {
+      showToast(errorMessage(error))
+    }
   }
 
   return (
@@ -185,10 +227,6 @@ export function ComplaintsScreen() {
               </h1>
               <p className="mt-1 text-sm text-muted">{complaintsContent.header.subtitle}</p>
             </div>
-            <p className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-              <DashboardIcon name="calendar" className="h-4 w-4" />
-              {complaintsContent.cycle}
-            </p>
           </header>
         ) : null}
 
@@ -206,6 +244,7 @@ export function ComplaintsScreen() {
           >
             <ComplaintListHeader
               compact={Boolean(selected)}
+              canLog={canMutate}
               onLog={() => setModalOpen(true)}
             />
 
@@ -227,22 +266,35 @@ export function ComplaintsScreen() {
             </div>
 
             <div className="mt-4 space-y-3">
-              {filteredRecords.length ? (
-                filteredRecords.map((record) => (
+              {complaintsQuery.isPending ? (
+                Array.from({ length: 4 }).map((_, index) => (
+                  <Skeleton key={index} className="h-28 w-full rounded-xl" />
+                ))
+              ) : complaintsQuery.isError ? (
+                <div className="py-10 text-center">
+                  <p className="text-sm text-muted">{complaintsContent.loadError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void complaintsQuery.refetch()}
+                    className="mt-2 text-sm font-semibold text-primary hover:underline"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : records.length ? (
+                records.map((record) => (
                   <ComplaintCard
                     key={record.id}
                     record={record}
+                    technicianName={
+                      record.technicianId ? technicianNameById.get(record.technicianId) : undefined
+                    }
                     selected={record.id === selectedId}
-                    onClick={() => {
-                      setSelectedId(record.id)
-                      setDetailTab('messages')
-                    }}
+                    onClick={() => setSelectedId(record.id)}
                   />
                 ))
               ) : (
-                <p className="py-12 text-center text-sm text-muted">
-                  {complaintsContent.empty}
-                </p>
+                <p className="py-12 text-center text-sm text-muted">{complaintsContent.empty}</p>
               )}
             </div>
           </section>
@@ -251,16 +303,29 @@ export function ComplaintsScreen() {
             <ComplaintDetail
               key={selected.id}
               record={selected}
+              canMutate={canMutate}
+              technicianName={
+                selected.technicianId ? technicianNameById.get(selected.technicianId) : undefined
+              }
+              customerDetail={customerQuery.data}
+              customerLoading={customerQuery.isPending}
+              messages={messagesQuery.data ?? []}
+              messagesLoading={messagesQuery.isPending}
+              messagesError={messagesQuery.isError}
+              resolutionNote={resolutionNotes[selected.id]}
               tab={detailTab}
               reply={reply}
+              sendingReply={addMessage.isPending}
+              schedulingRevisit={scheduleRevisit.isPending}
               onTabChange={setDetailTab}
               onReplyChange={setReply}
-              onSendReply={sendReply}
+              onSendReply={() => void sendReply()}
               onBack={() => setSelectedId(null)}
               onAssign={() => setAssignModalOpen(true)}
               onScheduleRevisit={handleScheduleRevisit}
-              onMarkReview={() => setStatus('in-review')}
+              onMarkReview={() => void handleMarkInReview()}
               onResolve={() => setResolveModalOpen(true)}
+              onReopen={() => void handleReopen()}
             />
           ) : null}
         </div>
@@ -269,24 +334,44 @@ export function ComplaintsScreen() {
       <LogComplaintModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSubmit={handleCreate}
+        onSubmit={(values) => void handleCreate(values)}
+        submitting={createComplaint.isPending}
       />
       <AssignTechnicianModal
         open={assignModalOpen}
-        currentTechnician={selected?.technician ?? ''}
+        currentTechnicianId={selected?.technicianId ?? null}
         onClose={() => setAssignModalOpen(false)}
-        onAssign={handleAssign}
+        onAssign={(technicianId) => void handleAssign(technicianId)}
+        assigning={assignTechnician.isPending}
       />
       <ResolveComplaintModal
         open={resolveModalOpen}
         onClose={() => setResolveModalOpen(false)}
-        onConfirm={handleResolve}
+        onConfirm={() => void handleResolve()}
+        resolving={resolveComplaint.isPending}
       />
     </>
   )
 }
 
-function ComplaintListHeader({ compact, onLog }: { compact: boolean; onLog: () => void }) {
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
+
+function ComplaintListHeader({
+  compact,
+  canLog,
+  onLog,
+}: {
+  compact: boolean
+  canLog: boolean
+  onLog: () => void
+}) {
   return (
     <header className={cn('flex items-start gap-3', compact ? 'justify-between' : 'justify-end')}>
       {compact ? (
@@ -299,14 +384,16 @@ function ComplaintListHeader({ compact, onLog }: { compact: boolean; onLog: () =
           </p>
         </div>
       ) : null}
-      <button
-        type="button"
-        onClick={onLog}
-        className={cn(dashboardCtaClass, 'shrink-0 px-3 py-2 text-xs')}
-      >
-        <DashboardIcon name="plus" className="h-3.5 w-3.5" />
-        {complaintsContent.header.action}
-      </button>
+      {canLog ? (
+        <button
+          type="button"
+          onClick={onLog}
+          className={cn(dashboardCtaClass, 'shrink-0 px-3 py-2 text-xs')}
+        >
+          <DashboardIcon name="plus" className="h-3.5 w-3.5" />
+          {complaintsContent.header.action}
+        </button>
+      ) : null}
     </header>
   )
 }
@@ -341,10 +428,12 @@ function ComplaintFilters({
 
 function ComplaintCard({
   record,
+  technicianName,
   selected,
   onClick,
 }: {
-  record: ComplaintRecord
+  record: Complaint
+  technicianName?: string
   selected: boolean
   onClick: () => void
 }) {
@@ -362,36 +451,49 @@ function ComplaintCard({
           <span className="h-1.5 w-1.5 rounded-full bg-current" />
           {complaintStatusLabels[record.status]}
         </span>
-        <time className="text-muted">{record.createdAt}</time>
+        <time className="text-muted">{formatDate(record.createdAt)}</time>
       </div>
-      <h3 className="mt-2 text-sm font-semibold text-foreground">{record.subject}</h3>
-      <p className="mt-2 text-xs text-muted">
-        {record.customer} · {record.address}
-      </p>
+      <h3 className="mt-2 text-sm font-semibold text-foreground">{record.title}</h3>
+      <p className="mt-2 text-xs text-muted">{record.customerName}</p>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
         <span className="inline-flex items-center gap-1">
           <DashboardIcon name="user" className="h-3.5 w-3.5" />
-          {record.technician}
+          {technicianName ?? complaintsContent.detail.unassigned}
         </span>
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-1" title="Messages (count not yet available)">
           <DashboardIcon name="message" className="h-3.5 w-3.5" />
-          {record.messages.length}
         </span>
-        {record.revisitDate ? (
+        {record.status === 'REVISIT_BOOKED' && record.revisitDate ? (
           <span className="inline-flex items-center gap-1">
             <DashboardIcon name="calendar" className="h-3.5 w-3.5" />
-            {record.revisitDate}
+            {formatDate(record.revisitDate)}
           </span>
         ) : null}
+        <span className={cn('ml-auto rounded-full px-2 py-0.5 font-semibold', severityBadge[record.severity])}>
+          {complaintSeverityLabels[record.severity]}
+        </span>
       </div>
     </button>
   )
 }
 
 interface ComplaintDetailProps {
-  record: ComplaintRecord
+  record: Complaint
+  canMutate: boolean
+  technicianName?: string
+  customerDetail?: {
+    customer?: { phone?: string | null; email?: string | null }
+    property?: { addressLine?: string; postcode?: string } | null
+  }
+  customerLoading: boolean
+  messages: ComplaintMessage[]
+  messagesLoading: boolean
+  messagesError: boolean
+  resolutionNote?: string
   tab: DetailTab
   reply: string
+  sendingReply: boolean
+  schedulingRevisit: boolean
   onTabChange: (tab: DetailTab) => void
   onReplyChange: (value: string) => void
   onSendReply: () => void
@@ -400,12 +502,23 @@ interface ComplaintDetailProps {
   onScheduleRevisit: (date: string) => void
   onMarkReview: () => void
   onResolve: () => void
+  onReopen: () => void
 }
 
 function ComplaintDetail({
   record,
+  canMutate,
+  technicianName,
+  customerDetail,
+  customerLoading,
+  messages,
+  messagesLoading,
+  messagesError,
+  resolutionNote,
   tab,
   reply,
+  sendingReply,
+  schedulingRevisit,
   onTabChange,
   onReplyChange,
   onSendReply,
@@ -414,10 +527,14 @@ function ComplaintDetail({
   onScheduleRevisit,
   onMarkReview,
   onResolve,
+  onReopen,
 }: ComplaintDetailProps) {
   const { detail } = complaintsContent
-  const [schedulingRevisit, setSchedulingRevisit] = useState(false)
+  const [schedulingOpen, setSchedulingOpen] = useState(false)
   const [revisitDate, setRevisitDate] = useState('')
+
+  const isResolved = record.status === 'RESOLVED'
+  const address = customerDetail?.property?.addressLine
 
   return (
     <section className="animate-slide-in-right rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
@@ -432,40 +549,52 @@ function ComplaintDetail({
             {detail.back}
           </button>
 
-          <div className="flex flex-wrap gap-2">
-            <DetailAction label={detail.actions.assign} onClick={onAssign} />
-            <DetailAction
-              label={detail.actions.revisit}
-              primary
-              onClick={() => setSchedulingRevisit((current) => !current)}
-            />
-            <DetailAction label={detail.actions.review} warning onClick={onMarkReview} />
-            <DetailAction label={detail.actions.resolve} success onClick={onResolve} />
-          </div>
+          {canMutate ? (
+            <div className="flex flex-wrap gap-2">
+              {isResolved ? (
+                <DetailAction label={detail.actions.reopen} primary onClick={onReopen} />
+              ) : (
+                <>
+                  <DetailAction label={detail.actions.assign} onClick={onAssign} />
+                  <DetailAction
+                    label={detail.actions.revisit}
+                    primary
+                    onClick={() => setSchedulingOpen((current) => !current)}
+                  />
+                  {record.status === 'OPEN' || record.status === 'REVISIT_BOOKED' ? (
+                    <DetailAction label={detail.actions.review} warning onClick={onMarkReview} />
+                  ) : null}
+                  <DetailAction label={detail.actions.resolve} success onClick={onResolve} />
+                </>
+              )}
+            </div>
+          ) : null}
         </div>
 
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">{record.customer}</h2>
+          <h2 className="text-2xl font-semibold text-foreground">{record.customerName}</h2>
           <p className="mt-1 text-sm text-muted">
-            {record.address} · Technician: {record.technician}
+            {customerLoading ? '…' : address ?? '—'} · Technician: {technicianName ?? detail.unassigned}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold', statusBadge[record.status])}>
               {complaintStatusLabels[record.status]}
             </span>
-            <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold', priorityBadge[record.priority])}>
-              {complaintPriorityLabels[record.priority]} priority
+            <span
+              className={cn(
+                'rounded-full px-2.5 py-1 text-[11px] font-semibold',
+                severityBadge[record.severity],
+              )}
+            >
+              {complaintSeverityLabels[record.severity]} priority
             </span>
           </div>
         </div>
       </div>
 
-      {schedulingRevisit ? (
+      {schedulingOpen ? (
         <div className="mt-5 animate-fade-in-up rounded-xl border border-primary/20 bg-accent-surface p-3">
-          <label
-            htmlFor="complaint-revisit-date"
-            className="text-xs font-semibold text-primary"
-          >
+          <label htmlFor="complaint-revisit-date" className="text-xs font-semibold text-primary">
             {complaintsContent.revisit.title}
           </label>
           <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -480,18 +609,19 @@ function ComplaintDetail({
             />
             <button
               type="button"
-              disabled={!revisitDate}
+              disabled={!revisitDate || schedulingRevisit}
               onClick={() => {
                 onScheduleRevisit(revisitDate)
-                setSchedulingRevisit(false)
+                setSchedulingOpen(false)
+                setRevisitDate('')
               }}
               className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
             >
-              {complaintsContent.revisit.confirm}
+              {schedulingRevisit ? 'Saving…' : complaintsContent.revisit.confirm}
             </button>
             <button
               type="button"
-              onClick={() => setSchedulingRevisit(false)}
+              onClick={() => setSchedulingOpen(false)}
               className="px-3 py-2 text-xs font-medium text-muted hover:text-foreground"
             >
               {complaintsContent.revisit.cancel}
@@ -501,11 +631,8 @@ function ComplaintDetail({
       ) : null}
 
       <div className="mt-5 flex gap-5 border-b border-border">
-        <DetailTabButton
-          active={tab === 'messages'}
-          onClick={() => onTabChange('messages')}
-        >
-          {detail.messages} ({record.messages.length})
+        <DetailTabButton active={tab === 'messages'} onClick={() => onTabChange('messages')}>
+          {detail.messages}
         </DetailTabButton>
         <DetailTabButton active={tab === 'details'} onClick={() => onTabChange('details')}>
           {detail.details}
@@ -514,77 +641,82 @@ function ComplaintDetail({
 
       {tab === 'messages' ? (
         <div className="mt-5 animate-fade-in">
-          <div className="space-y-3">
-            {record.messages.map((message, index) => (
-              <article
-                key={message.id}
-                style={{ animationDelay: `${Math.min(index * 55, 220)}ms` }}
-                className={cn(
-                  'animate-reveal-item rounded-xl p-4',
-                  message.kind === 'system'
-                    ? 'border border-success/20 bg-success/10'
-                    : 'bg-surface',
-                )}
-              >
-                <p
+          {messagesLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-16 w-full rounded-xl" />
+              <Skeleton className="h-16 w-3/4 rounded-xl" />
+            </div>
+          ) : messagesError ? (
+            <p className="py-6 text-center text-sm text-muted">{detail.messagesLoadError}</p>
+          ) : (
+            <div className="space-y-3">
+              {messages.map((message, index) => (
+                <article
+                  key={message.id}
+                  style={{ animationDelay: `${Math.min(index * 55, 220)}ms` }}
+                  className="animate-reveal-item rounded-xl bg-surface p-4"
+                >
+                  <p className="text-sm leading-relaxed text-foreground">{message.body}</p>
+                  <p className="mt-2 text-[11px] text-muted">
+                    <span className="font-semibold text-foreground">
+                      {message.direction === 'INBOUND' ? record.customerName : 'RoundFlow Team'}
+                    </span>
+                    <span className="mx-2">·</span>
+                    {formatDateTime(message.createdAt)}
+                  </p>
+                </article>
+              ))}
+              {resolutionNote ? (
+                <article className="animate-reveal-item rounded-xl border border-success/20 bg-success/10 p-4">
+                  <p className="text-sm leading-relaxed font-semibold text-success">{resolutionNote}</p>
+                </article>
+              ) : null}
+              {messages.length === 0 && !resolutionNote ? (
+                <p className="py-6 text-center text-sm text-muted">No messages yet.</p>
+              ) : null}
+            </div>
+          )}
+
+          {canMutate && !isResolved ? (
+            <div className="mt-8">
+              <label htmlFor="complaint-reply" className="text-xs font-semibold text-foreground">
+                {detail.replyLabel}
+              </label>
+              <div className="mt-2 flex items-stretch gap-2">
+                <textarea
+                  id="complaint-reply"
+                  value={reply}
+                  onChange={(event) => onReplyChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.ctrlKey && event.key === 'Enter') onSendReply()
+                  }}
+                  placeholder={detail.replyPlaceholder}
+                  className="min-h-24 flex-1 resize-y rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted focus:border-primary"
+                />
+                <button
+                  type="button"
+                  aria-label="Send reply"
+                  disabled={!reply.trim() || sendingReply}
+                  onClick={onSendReply}
                   className={cn(
-                    'text-sm leading-relaxed',
-                    message.kind === 'system'
-                      ? 'font-semibold text-success'
-                      : 'text-foreground',
+                    dashboardPressableClass,
+                    'flex w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50',
                   )}
                 >
-                  {message.body}
-                </p>
-                <p className="mt-2 text-[11px] text-muted">
-                  <span
-                    className={cn(
-                      'font-semibold',
-                      message.kind === 'system' ? 'text-success' : 'text-foreground',
-                    )}
-                  >
-                    {message.author}
-                  </span>
-                  <span className="mx-2">·</span>
-                  {message.sentAt}
-                </p>
-              </article>
-            ))}
-          </div>
-
-          <div className="mt-8">
-            <label htmlFor="complaint-reply" className="text-xs font-semibold text-foreground">
-              {detail.replyLabel}
-            </label>
-            <div className="mt-2 flex items-stretch gap-2">
-              <textarea
-                id="complaint-reply"
-                value={reply}
-                onChange={(event) => onReplyChange(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.ctrlKey && event.key === 'Enter') onSendReply()
-                }}
-                placeholder={detail.replyPlaceholder}
-                className="min-h-24 flex-1 resize-y rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted focus:border-primary"
-              />
-              <button
-                type="button"
-                aria-label="Send reply"
-                disabled={!reply.trim()}
-                onClick={onSendReply}
-                className={cn(
-                  dashboardPressableClass,
-                  'flex w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50',
-                )}
-              >
-                <DashboardIcon name="send" className="h-5 w-5" />
-              </button>
+                  <DashboardIcon name="send" className="h-5 w-5" />
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-muted">{detail.replyHint}</p>
             </div>
-            <p className="mt-2 text-[11px] text-muted">{detail.replyHint}</p>
-          </div>
+          ) : null}
         </div>
       ) : (
-        <ComplaintDetails record={record} />
+        <ComplaintDetails
+          record={record}
+          technicianName={technicianName}
+          customerDetail={customerDetail}
+          customerLoading={customerLoading}
+        />
       )}
     </section>
   )
@@ -644,18 +776,30 @@ function DetailTabButton({
   )
 }
 
-function ComplaintDetails({ record }: { record: ComplaintRecord }) {
+function ComplaintDetails({
+  record,
+  technicianName,
+  customerDetail,
+  customerLoading,
+}: {
+  record: Complaint
+  technicianName?: string
+  customerDetail?: ComplaintDetailProps['customerDetail']
+  customerLoading: boolean
+}) {
+  const { detail } = complaintsContent
+  const loadingValue = customerLoading ? '…' : detail.notSupplied
+
   const rows = [
-    { label: 'Issue type', value: record.issueType },
-    { label: 'Priority', value: complaintPriorityLabels[record.priority] },
-    { label: 'Date reported', value: record.createdAt },
-    { label: 'Technician assigned', value: record.technician },
-    { label: 'Round', value: record.round },
-    { label: 'Customer phone', value: record.phone || 'Not supplied' },
-    { label: 'Customer email', value: record.email || 'Not supplied' },
+    { label: detail.fields.issueType, value: record.issueType ?? '—' },
+    { label: detail.fields.priority, value: complaintSeverityLabels[record.severity] },
+    { label: detail.fields.dateReported, value: formatDate(record.createdAt) },
+    { label: detail.fields.technicianAssigned, value: technicianName ?? detail.unassigned },
+    { label: detail.fields.customerPhone, value: customerDetail?.customer?.phone || loadingValue },
+    { label: detail.fields.customerEmail, value: customerDetail?.customer?.email || loadingValue },
     {
-      label: 'Property address',
-      value: `${record.address} · ${record.customer}`,
+      label: detail.fields.propertyAddress,
+      value: customerDetail?.property?.addressLine || loadingValue,
       className: 'sm:col-start-1',
     },
   ]
@@ -672,15 +816,4 @@ function ComplaintDetails({ record }: { record: ComplaintRecord }) {
       ))}
     </dl>
   )
-}
-
-function formatInputDate(value: string) {
-  if (!value) return ''
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(date)
 }

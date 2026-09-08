@@ -61,9 +61,9 @@ export interface paths {
                 query: {
                     grant_type: "password";
                 };
-                header: {
+                header?: {
                     /** @description Supabase anon (publishable) key. */
-                    apikey: string;
+                    apikey?: string;
                 };
                 path?: never;
                 cookie?: never;
@@ -94,6 +94,13 @@ export interface paths {
                         };
                     };
                 };
+                /** @description Method Not Allowed (our backend intercepts this path; use Swagger UI 'Try it out' to log in). */
+                405: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
             };
         };
         delete?: never;
@@ -111,7 +118,7 @@ export interface paths {
         };
         /**
          * Current user's profile
-         * @description Returns the Profile for the authenticated caller (looked up by supabaseUserId from the JWT `sub`). 404 if no Profile exists.
+         * @description Returns the Profile for the authenticated caller (looked up by supabaseUserId from the JWT `sub`). 404 if no Profile exists yet — the frontend uses this to detect new users and trigger POST /auth/signup.
          */
         get: {
             parameters: {
@@ -132,7 +139,7 @@ export interface paths {
                     };
                 };
                 401: components["responses"]["Unauthorized"];
-                /** @description No Profile for this user. */
+                /** @description No Profile for this user — call POST /auth/signup. */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -145,6 +152,242 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register a new admin (first-time signup)
+         * @description Called by the frontend after Supabase confirms a new session and `GET /auth/me` returns 404. Creates a Profile (role: ADMIN) and a Tenant row in one transaction. **Idempotent** — if a Profile already exists for this `supabaseUserId` it is returned with 200 instead of 201. `companyName` is accepted but not persisted here; it is collected by Setup Wizard step 1.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SignupInput"];
+                };
+            };
+            responses: {
+                /** @description Profile already existed (idempotent). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SignupResponse"];
+                    };
+                };
+                /** @description Profile + tenantId created. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SignupResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an invite email
+         * @description Creates a `TenantInvite` (7-day TTL) and sends an email to the invitee via Resend. Only one pending invite per email+tenant is allowed — 409 if a pending invite already exists. Requires ADMIN or MANAGER role. If `technicianId` is supplied, that Technician row's `profileId` is set when the invite is accepted.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InviteSendInput"];
+                };
+            };
+            responses: {
+                /** @description The created TenantInvite. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TenantInvite"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description technicianId does not exist. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description A pending invite for this email already exists, or the technician has already accepted an invite. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Validate an invite token (public)
+         * @description Public endpoint — no auth required. Used by the frontend before the invitee authenticates to check the token is valid and pre-fill the signup form. Returns 410 if the token is expired or has already been accepted.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Token is valid. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InviteTokenInfo"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                410: components["responses"]["Gone"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an invite (invitee calls after Supabase auth)
+         * @description Called by the frontend after the invitee authenticates with Supabase. The caller's JWT email must match the invite email (403 if not). Creates a `Profile` with the invite's `tenantId` and `role`, stamps `acceptedAt`, and — if the invite had a `technicianId` — links that Technician row (`profileId = profile.id`). **Idempotent** — returns the existing Profile with 200 if it was already created.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InviteAcceptInput"];
+                };
+            };
+            responses: {
+                /** @description Profile already existed (idempotent). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            profile: components["schemas"]["Profile"];
+                        };
+                    };
+                };
+                /** @description Profile created and invite accepted. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            profile: components["schemas"]["Profile"];
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description The authenticated user's email does not match the invite email. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                410: components["responses"]["Gone"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -477,7 +720,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Step 5 — SMS Templates (deferred) */
+        /** Step 5 — get saved message templates */
         get: {
             parameters: {
                 query?: never;
@@ -487,21 +730,24 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Deferred stub. */
+                /** @description Saved templates. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["DeferredStub"];
+                        "application/json": components["schemas"]["MessageTemplateView"][];
                     };
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                500: components["responses"]["ServerError"];
             };
         };
         put?: never;
         /**
-         * Step 5 — SMS Templates (deferred, no-op)
-         * @description Deferred stub — performs no DB write.
+         * Step 5 — replace all message templates
+         * @description Bulk-replaces all message templates with the posted array. Step complete when ≥1 template saved.
          */
         post: {
             parameters: {
@@ -510,18 +756,26 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MessageTemplateInput"][] | {
+                        templates: components["schemas"]["MessageTemplateInput"][];
+                    };
+                };
+            };
             responses: {
-                /** @description Deferred stub — no DB write. */
+                /** @description Updated templates. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["DeferredStub"];
+                        "application/json": components["schemas"]["MessageTemplateView"][];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
             };
         };
         delete?: never;
@@ -588,6 +842,7 @@ export interface paths {
                         "application/json": components["schemas"]["Technician"][];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
             };
@@ -1460,8 +1715,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * SMS templates (deferred)
-         * @description Deferred — GHL owns messaging in Phase 2. No DB access.
+         * List message templates (SMS / WhatsApp / Email)
+         * @description Returns all saved message templates ordered by creation date.
          */
         get: {
             parameters: {
@@ -1472,49 +1727,53 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Deferred stub. */
+                /** @description Message templates. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["MessageTemplateDeferred"];
+                        "application/json": components["schemas"]["MessageTemplateView"][];
                     };
                 };
                 401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                500: components["responses"]["ServerError"];
             };
         };
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * SMS templates (deferred, no-op)
-         * @description Deferred — returns the same payload, performs no DB write.
-         */
-        patch: {
+        /** Create a message template */
+        post: {
             parameters: {
                 query?: never;
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MessageTemplateInput"];
+                };
+            };
             responses: {
-                /** @description Deferred stub. */
-                200: {
+                /** @description Created template. */
+                201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["MessageTemplateDeferred"];
+                        "application/json": components["schemas"]["MessageTemplateView"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/customers": {
@@ -1556,7 +1815,42 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /**
+         * Create a standalone customer (no property)
+         * @description Creates a Customer record without an attached property. Use POST /properties to create a Customer+Property+ServicePlan in one shot.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        phone?: string | null;
+                        email?: string | null;
+                        paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created customer. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CustomerListRow"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -1600,7 +1894,30 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        /** Soft-delete customer (status → CANCELLED, cascades to properties) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         options?: never;
         head?: never;
         /** M19 — Edit Customer Record (Customer + Property + Plan, atomic) */
@@ -1704,7 +2021,30 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Soft-delete property (status → CANCELLED, cancels service plan) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         options?: never;
         head?: never;
         /** Update property (+ Move Round: assign/unassign) */
@@ -1916,6 +2256,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add One-off Job — create a single ad-hoc visit outside the recurring schedule
+         * @description Creates a visit with `isOneOff: true`. `roundId: null` means the visit appears in Today's Work only; supply a `roundId` to also show it in the Round Planner for that round. `servicePlanId` is always `null`. `status` is always `SCHEDULED`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["VisitCreateInput"];
+                };
+            };
+            responses: {
+                /** @description Created visit. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Visit"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1929,7 +2316,7 @@ export interface components {
         /** @enum {string} */
         DayOfWeek: "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN";
         /** @enum {string} */
-        CleaningFrequency: "FORTNIGHTLY" | "FOUR_WEEKLY" | "SIX_WEEKLY" | "EIGHT_WEEKLY" | "MONTHLY";
+        CleaningFrequency: "FOUR_WEEKLY" | "SIX_WEEKLY" | "EIGHT_WEEKLY" | "TWELVE_WEEKLY";
         /** @enum {string} */
         VisitStatus: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "SKIPPED";
         /** @enum {string} */
@@ -1997,7 +2384,7 @@ export interface components {
             companyNumber?: string | null;
             vatRegistration?: string | null;
             vatRegistered?: boolean;
-            defaultWorkingDays?: string[];
+            defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
             timezone?: string | null;
             currency?: string | null;
             /** @description Cycle length in days. */
@@ -2046,7 +2433,6 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
-        /** @description A geographic service area. Note: no updatedAt field. */
         ServiceArea: {
             id?: string;
             name?: string;
@@ -2054,6 +2440,24 @@ export interface components {
             isDefault?: boolean;
             /** Format: date-time */
             createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        /** @description A pending invitation for a technician or manager to join the tenant. */
+        TenantInvite: {
+            id: string;
+            tenantId: string;
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["UserRole"];
+            token: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            acceptedAt?: string | null;
+            technicianId?: string | null;
+            /** Format: date-time */
+            createdAt: string;
         };
         Round: {
             id?: string;
@@ -2093,6 +2497,26 @@ export interface components {
             status: "deferred";
             /** @example ghl */
             source: string;
+        };
+        MessageTemplateView: {
+            id: string;
+            name: string;
+            /** @enum {string|null} */
+            channel: "SMS" | "WHATSAPP" | "EMAIL" | null;
+            subject?: string | null;
+            body: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        MessageTemplateInput: {
+            name: string;
+            /** @enum {string} */
+            channel: "SMS" | "WHATSAPP" | "EMAIL";
+            body: string;
+            /** @description Required for EMAIL channel. */
+            subject?: string | null;
         };
         StepStatus: {
             step: number;
@@ -2192,6 +2616,41 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description A single ad-hoc (one-off) visit returned from POST /visits. */
+        Visit: {
+            id: string;
+            /**
+             * Format: date
+             * @example 2026-09-03
+             */
+            date: string;
+            /**
+             * @example SCHEDULED
+             * @enum {string}
+             */
+            status: "SCHEDULED" | "COMPLETED" | "SKIPPED";
+            /** @example true */
+            isOneOff: boolean;
+            /** @example 45 */
+            price: number;
+            notes?: string | null;
+            /** @enum {string|null} */
+            paymentMethod?: "GOCARDLESS" | "STRIPE" | "CASH" | "BACS" | "CHEQUE" | null;
+            propertyId: string;
+            /** @example 12 Market Street */
+            addressLine: string;
+            /** @example NE66 1SS */
+            postcode: string;
+            customerId: string;
+            /** @example John Smith */
+            customerName: string;
+            roundId?: string | null;
+            roundName?: string | null;
+            serviceId?: string | null;
+            serviceName?: string | null;
+            technicianId?: string | null;
+            technicianName?: string | null;
+        };
         /**
          * @example {
          *       "businessName": "Acme Window Co",
@@ -2215,7 +2674,7 @@ export interface components {
             companyNumber?: string;
             vatRegistered?: boolean;
             vatRegistration?: string;
-            defaultWorkingDays?: string[];
+            defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
             timezone?: string;
             currency?: string;
         };
@@ -2227,7 +2686,7 @@ export interface components {
         RoundSettingsInput: {
             /** @description Cycle length in days. */
             defaultCycleLength: number;
-            defaultWorkingDays?: string[];
+            defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
         };
         /**
          * @description Setup step 2 (Payment Setup). All fields optional. Connect toggles are Phase-1 stubs (booleans; no real OAuth).
@@ -2325,18 +2784,24 @@ export interface components {
             vatRegistration?: string | null;
             timezone?: string | null;
             currency?: string | null;
-            defaultWorkingDays?: string[];
+            defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
         };
         /**
          * @description Partial update — round-settings fields only.
          * @example {
-         *       "defaultCycleLength": 28
+         *       "defaultCycleLength": 28,
+         *       "preCleanReminderTimings": [
+         *         "EVENING_BEFORE",
+         *         "TWO_HOURS_BEFORE"
+         *       ]
          *     }
          */
         RoundSettingsUpdateInput: {
             /** @description Cycle length in days. */
             defaultCycleLength?: number | null;
-            defaultWorkingDays?: string[];
+            defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
+            /** @description Up to two reminder timings. Omit to leave unchanged. */
+            preCleanReminderTimings?: ("EVENING_BEFORE" | "TWO_HOURS_BEFORE")[];
         };
         /**
          * @example {
@@ -2347,7 +2812,7 @@ export interface components {
          */
         ServiceCreateInput: {
             name: string;
-            /** @description Sent as a number; returned as a string. */
+            /** @description Sent as a number; returned as a string. Zero is valid for free services. */
             defaultPrice: number;
             category?: components["schemas"]["ServiceCategory"];
             description?: string | null;
@@ -2474,9 +2939,13 @@ export interface components {
             technicianName?: string | null;
             /** Format: date-time */
             nextDueDate?: string | null;
-            /** @enum {string} */
-            paymentStatus?: "paid" | "hold" | "pending" | "overdue" | "failed";
+            /**
+             * @description Payment badge. none = no payment history yet (new customer).
+             * @enum {string}
+             */
+            paymentStatus?: "paid" | "hold" | "pending" | "overdue" | "failed" | "none";
             onHold?: boolean;
+            /** @description Total outstanding for this customer. Omitted for TECHNICIAN viewers. */
             amountDue?: number;
         };
         CustomerListResult: {
@@ -2484,6 +2953,7 @@ export interface components {
                 totalCustomers?: number;
                 active?: number;
                 paymentHolds?: number;
+                /** @description Total outstanding across all customers. Omitted for TECHNICIAN viewers. */
                 amountDue?: number;
             };
             customers?: components["schemas"]["CustomerListRow"][];
@@ -2540,7 +3010,12 @@ export interface components {
                 frequency?: components["schemas"]["CleaningFrequency"] | null;
                 assignedRound?: string | null;
                 technicianName?: string | null;
-                paymentStatus?: string;
+                /**
+                 * @description Payment badge. none = no payment history yet (new customer).
+                 * @enum {string}
+                 */
+                paymentStatus?: "paid" | "hold" | "pending" | "overdue" | "failed" | "none";
+                /** @description Total outstanding for this customer. Omitted for TECHNICIAN viewers. */
                 outstandingBalance?: number;
                 /** Format: date-time */
                 lastPaymentDate?: string | null;
@@ -2553,6 +3028,7 @@ export interface components {
                 } | null;
                 servicePlan?: components["schemas"]["ServicePlanView"] | null;
                 visitHistory?: components["schemas"]["VisitHistoryRow"][];
+                /** @description Full payment history including processor transaction IDs. Omitted for TECHNICIAN viewers. */
                 payments?: {
                     rows?: components["schemas"]["PaymentRow"][];
                 };
@@ -2576,13 +3052,15 @@ export interface components {
         PropertyCreateInput: {
             customerName: string;
             phone?: string | null;
+            landline?: string | null;
             email?: string | null;
             addressLine: string;
             postcode: string;
             propertyName?: string | null;
-            propertyType?: string | null;
-            /** @description Must exist (404 if not). */
-            serviceAreaId?: string | null;
+            /** @enum {string|null} */
+            propertyType?: "HOUSE" | "FLAT_APARTMENT" | "COMMERCIAL" | "OFFICE" | "CONSERVATORY" | null;
+            /** @description Required. Must exist (404 if not). */
+            serviceAreaId: string;
             serviceId?: string | null;
             /** @description Positive number. */
             price: number;
@@ -2600,7 +3078,8 @@ export interface components {
             addressLine?: string;
             postcode?: string;
             propertyName?: string | null;
-            propertyType?: string | null;
+            /** @enum {string|null} */
+            propertyType?: "HOUSE" | "FLAT_APARTMENT" | "COMMERCIAL" | "OFFICE" | "CONSERVATORY" | null;
             serviceAreaId?: string | null;
             accessNotes?: string | null;
             riskNotes?: string | null;
@@ -2610,10 +3089,12 @@ export interface components {
         CustomerUpdateInput: {
             name?: string;
             phone?: string | null;
+            landline?: string | null;
             email?: string | null;
             addressLine?: string;
             postcode?: string;
-            propertyType?: string | null;
+            /** @enum {string|null} */
+            propertyType?: "HOUSE" | "FLAT_APARTMENT" | "COMMERCIAL" | "OFFICE" | "CONSERVATORY" | null;
             accessNotes?: string | null;
             riskNotes?: string | null;
             roundId?: string | null;
@@ -2635,7 +3116,7 @@ export interface components {
             pauseStartDate: string;
             /**
              * Format: date
-             * @description null = indefinite pause.
+             * @description null = indefinite pause. Must be after pauseStartDate when provided.
              */
             pauseEndDate?: string | null;
         };
@@ -2648,6 +3129,89 @@ export interface components {
         NoteCreateInput: {
             type: components["schemas"]["NoteType"];
             body: string;
+        };
+        /**
+         * @description Called after Supabase confirms the session and GET /auth/me returns 404.
+         * @example {
+         *       "name": "Maaz Kashif",
+         *       "companyName": "Northumberland Window Cleaning"
+         *     }
+         */
+        SignupInput: {
+            /** @description Full name for the admin Profile. */
+            name: string;
+            /** @description Optional — accepted but not persisted here; collected by Setup Wizard step 1. */
+            companyName?: unknown;
+        };
+        SignupResponse: {
+            profile: components["schemas"]["Profile"];
+            tenantId: string;
+        };
+        /**
+         * @example {
+         *       "email": "james@example.com",
+         *       "role": "TECHNICIAN",
+         *       "technicianId": "clx..."
+         *     }
+         */
+        InviteSendInput: {
+            /** Format: email */
+            email: string;
+            /** @description Defaults to TECHNICIAN if omitted. */
+            role?: components["schemas"]["UserRole"];
+            /** @description If provided, links the invite to an existing invite-pending Technician row. On accept, that row's profileId is set to the new Profile's id. */
+            technicianId?: string | null;
+        };
+        /** @description Public — returned before auth so the frontend can pre-fill the signup form. */
+        InviteTokenInfo: {
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["UserRole"];
+            tenantId: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        /**
+         * @example {
+         *       "name": "James Fisher"
+         *     }
+         */
+        InviteAcceptInput: {
+            /** @description Display name for the new Profile. */
+            name: string;
+        };
+        /**
+         * @example {
+         *       "propertyId": "cle123abc",
+         *       "date": "2026-09-03",
+         *       "price": 45,
+         *       "serviceId": "csv456def",
+         *       "technicianId": "ctn789ghi",
+         *       "roundId": null,
+         *       "notes": "One-off gutter clean — customer rang in",
+         *       "paymentMethod": "CASH"
+         *     }
+         */
+        VisitCreateInput: {
+            /** @description ID of an existing property. */
+            propertyId: string;
+            /**
+             * Format: date
+             * @description Visit date in YYYY-MM-DD format. Stored as midnight UTC.
+             * @example 2026-09-03
+             */
+            date: string;
+            /** @example 45 */
+            price: number;
+            /** @description Must be an active service. null = no service attached. */
+            serviceId?: string | null;
+            technicianId?: string | null;
+            /** @description Attach to a round so the visit appears in the Round Planner. null = Today only. */
+            roundId?: string | null;
+            /** @example One-off gutter clean — customer rang in */
+            notes?: string | null;
+            /** @enum {string|null} */
+            paymentMethod?: "GOCARDLESS" | "STRIPE" | "CASH" | "BACS" | "CHEQUE" | null;
         };
     };
     responses: {
@@ -2689,6 +3253,15 @@ export interface components {
         };
         /** @description POST /setup/complete when setup is already complete. */
         Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Invite has expired or has already been accepted. */
+        Gone: {
             headers: {
                 [name: string]: unknown;
             };

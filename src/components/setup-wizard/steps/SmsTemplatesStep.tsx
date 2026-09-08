@@ -70,7 +70,11 @@ export function SmsTemplatesStep({ initialValues, onSubmit }: SmsTemplatesStepPr
   if (!selectedTemplate) return null
 
   const previewLabel =
-    selectedTemplate.channel === 'whatsapp' ? labels.whatsappMessage : labels.smsMessage
+    selectedTemplate.channel === 'whatsapp'
+      ? labels.whatsappMessage
+      : selectedTemplate.channel === 'email'
+        ? labels.emailMessage
+        : labels.smsMessage
 
   return (
     <>

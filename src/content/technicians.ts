@@ -1,4 +1,5 @@
 export type TechnicianStatus = 'in-progress' | 'available' | 'off-duty'
+export type TechnicianAppStatus = 'PENDING_INVITE' | 'ACTIVE' | 'INACTIVE'
 export type PhotoReviewStatus = 'approved' | 'pending' | 'flagged'
 
 export interface TechnicianRound {
@@ -18,8 +19,10 @@ export interface TechnicianRecord {
   phone: string
   email: string
   areas: string[]
+  serviceAreaId?: string | null
   notes: string
   status: TechnicianStatus
+  appStatus?: TechnicianAppStatus
   appActive: boolean
   memberSince: string
   revenue: string
@@ -49,7 +52,6 @@ export const techniciansContent = {
   overview: {
     title: 'Technicians',
     subtitle: "Monitor your team's activity, performance and assigned rounds.",
-    date: 'Monday 18 May 2026',
     add: 'Add Technician',
     metrics: [
       { label: 'Active now', value: '1', accent: true },
@@ -70,7 +72,6 @@ export const techniciansContent = {
     info: 'Technician Info',
     workload: 'Workload Summary',
     edit: 'Edit Details',
-    issueFlagged: '1 issue flagged on Alnwick Monday',
   },
   form: {
     addTitle: 'Add Technician',
@@ -87,14 +88,14 @@ export const techniciansContent = {
     optional: 'optional',
     appAccess: 'App Access',
     appAccessActive: 'App Access Active',
-    inviteBySms: 'Send App Invite via SMS',
-    inviteDescription: 'Technician will receive a link to download the RoundFlow mobile app',
-    inviteNotice: 'A text message will be sent to the mobile number above once you save.',
+    inviteBySms: 'Send App Invite',
+    inviteDescription: 'Technician will receive an email invite to join RoundFlow',
+    inviteNotice: 'An invite email will be sent to the address above once you save.',
     inviteSent: 'App invite already sent.',
     resend: 'Resend invite?',
     danger: 'Danger Zone',
-    dangerDescription: 'This will permanently remove James from all rounds.',
-    remove: 'Remove Technician',
+    dangerDescription: 'Deactivate this technician. They stay in history but cannot be assigned to new rounds.',
+    remove: 'Deactivate Technician',
     cancel: 'Cancel',
     save: 'Save Changes',
     add: 'Add Technician',
@@ -157,49 +158,12 @@ export const techniciansContent = {
     approveDescription:
       'This will mark all 24 photos in the current view as approved. This action cannot be undone.',
     approve: 'Approve All',
-    removeTitle: 'Are you sure you want to remove the technician James from the system?',
-    remove: 'Remove',
+    removeTitle: 'Deactivate this technician?',
+    removeDescription:
+      'They will be marked inactive and cannot be assigned to rounds. Existing scheduled visits are not changed — reassign those separately if needed.',
+    remove: 'Deactivate',
     cancel: 'Cancel',
   },
-  technicians: [
-    {
-      id: 'james',
-      name: 'James Smith',
-      initials: 'J',
-      role: 'Lead Technician',
-      phone: '07123 456789',
-      email: 'james@example.com',
-      areas: ['Alnwick', 'Morpeth'],
-      notes: 'Prefers morning shifts. Has own equipment.',
-      status: 'in-progress',
-      appActive: true,
-      memberSince: 'Jan 2024',
-      revenue: '£1,880',
-      revenuePerHour: '£22.80',
-      valueCompleted: '£4,100',
-      timeOnJob: '180h',
-      complaints: 1,
-      issues: 2,
-      rounds: [
-        {
-          id: 'alnwick-monday',
-          name: 'Alnwick Monday',
-          stops: 5,
-          completed: 2,
-          revenue: '£940',
-          status: 'in-progress',
-        },
-        {
-          id: 'morpeth-wednesday',
-          name: 'Morpeth Wednesday',
-          stops: 5,
-          completed: 0,
-          revenue: '£940',
-          status: 'in-progress',
-        },
-      ],
-    },
-  ] satisfies TechnicianRecord[],
   photoJobs: [
     {
       id: '12-market-street',

@@ -8,9 +8,10 @@ import { cn } from '@/lib/utils'
 interface SetupStepperProps {
   currentIndex: number
   completedSteps?: boolean[]
+  onStepClick?: (index: number) => void
 }
 
-export function SetupStepper({ currentIndex, completedSteps }: SetupStepperProps) {
+export function SetupStepper({ currentIndex, completedSteps, onStepClick }: SetupStepperProps) {
   const { stepper } = setupWizardContent
   const {
     trackRef,
@@ -48,31 +49,37 @@ export function SetupStepper({ currentIndex, completedSteps }: SetupStepperProps
             const isComplete = completedSteps?.[index] ?? index < currentIndex
 
             return (
-              <li
-                key={step.id}
-                data-step-index={index}
-                className="flex shrink-0 items-center gap-2.5"
-              >
-                <span
+              <li key={step.id} data-step-index={index} className="flex shrink-0 items-center">
+                <button
+                  type="button"
+                  onClick={() => onStepClick?.(index)}
+                  disabled={!onStepClick}
                   aria-current={isActive ? 'step' : undefined}
-                  aria-hidden="true"
                   className={cn(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors duration-300',
-                    isActive && 'bg-primary text-primary-foreground',
-                    !isActive && 'bg-surface text-muted',
-                    isComplete && !isActive && 'bg-primary/10 text-primary',
+                    'flex shrink-0 items-center gap-2.5 rounded-full py-1 pr-1 transition-opacity',
+                    onStepClick && 'cursor-pointer hover:opacity-75',
                   )}
                 >
-                  {index + 1}
-                </span>
-                <span
-                  className={cn(
-                    'whitespace-nowrap text-sm transition-colors duration-300 sm:text-[15px]',
-                    isActive ? 'font-semibold text-foreground' : 'font-normal text-foreground',
-                  )}
-                >
-                  {step.label}
-                </span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors duration-300',
+                      isActive && 'bg-primary text-primary-foreground',
+                      !isActive && 'bg-surface text-muted',
+                      isComplete && !isActive && 'bg-primary/10 text-primary',
+                    )}
+                  >
+                    {index + 1}
+                  </span>
+                  <span
+                    className={cn(
+                      'whitespace-nowrap text-sm transition-colors duration-300 sm:text-[15px]',
+                      isActive ? 'font-semibold text-foreground' : 'font-normal text-foreground',
+                    )}
+                  >
+                    {step.label}
+                  </span>
+                </button>
               </li>
             )
           })}

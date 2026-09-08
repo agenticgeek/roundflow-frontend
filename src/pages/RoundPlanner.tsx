@@ -61,6 +61,7 @@ export default function RoundPlanner() {
       onSignOut={handleSignOut}
       signingOut={signingOut}
       mainMaxWidthClass="max-w-7xl"
+      oneOffJobDefaultRoundId={interactions.roundId === 'all' ? null : interactions.roundId}
     >
       <RoundPlannerScreen
         interactions={interactions}

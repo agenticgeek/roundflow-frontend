@@ -11,9 +11,13 @@ import {
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { usePauseProperty } from '@/features/properties/hooks/useProperties'
+import { addDays, todayIsoDate } from '@/features/rounds/lib/planner'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+
+/** Default pause window when using a date range. */
+const DEFAULT_PAUSE_DAYS = 28
 
 interface PauseServiceModalProps {
   open: boolean
@@ -35,8 +39,8 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
   const pauseProperty = usePauseProperty()
   const [reason, setReason] = useState<string>(pauseServiceModal.reasons[0]?.value ?? '')
   const [duration, setDuration] = useState<PauseDuration>('range')
-  const [startDate, setStartDate] = useState<string>(pauseServiceModal.defaultStartDate)
-  const [resumeDate, setResumeDate] = useState<string>(pauseServiceModal.defaultResumeDate)
+  const [startDate, setStartDate] = useState<string>(() => todayIsoDate())
+  const [resumeDate, setResumeDate] = useState<string>(() => addDays(todayIsoDate(), DEFAULT_PAUSE_DAYS))
   const [notifySms, setNotifySms] = useState(true)
   const [smsMessage, setSmsMessage] = useState('')
 
@@ -44,8 +48,8 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
     if (!open || !property) return
     setReason(pauseServiceModal.reasons[0]?.value ?? '')
     setDuration('range')
-    setStartDate(pauseServiceModal.defaultStartDate)
-    setResumeDate(pauseServiceModal.defaultResumeDate)
+    setStartDate(todayIsoDate())
+    setResumeDate(addDays(todayIsoDate(), DEFAULT_PAUSE_DAYS))
     setNotifySms(true)
     setSmsMessage(applyMessageTemplate(pauseServiceModal.defaultSmsMessage, property))
   }, [open, pauseServiceModal, property])
@@ -174,6 +178,7 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
               />
               <Input
                 inputSize="sm"
+                type="date"
                 value={startDate}
                 onChange={(event) => setStartDate(event.target.value)}
                 className={cn(modalInputClass, 'rounded-lg bg-card pl-9')}
@@ -188,6 +193,7 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
               />
               <Input
                 inputSize="sm"
+                type="date"
                 value={resumeDate}
                 onChange={(event) => setResumeDate(event.target.value)}
                 className={cn(modalInputClass, 'rounded-lg bg-card pl-9')}

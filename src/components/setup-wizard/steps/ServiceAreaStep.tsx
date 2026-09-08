@@ -1,8 +1,9 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ServiceArea, ServiceAreaData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { FieldError, Input } from '@/components/ui'
+import { isValidPostcodeSector } from '@/lib/postcode'
 
 interface ServiceAreaStepProps {
   initialValues: ServiceAreaData
@@ -65,6 +66,13 @@ export function ServiceAreaStep({ initialValues, onSubmit }: ServiceAreaStepProp
   const [form, setForm] = useState<NewAreaForm>(emptyForm)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // Resync when the parent refetches (e.g. after a failed save rolls back a
+  // locally-deleted area that's still referenced server-side) — a deleted area
+  // otherwise vanishes from view with no way back until you leave and return.
+  useEffect(() => {
+    setAreas(initialValues.areas)
+  }, [initialValues])
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     onSubmit({ areas })
@@ -92,6 +100,10 @@ export function ServiceAreaStep({ initialValues, onSubmit }: ServiceAreaStepProp
     }
     if (postcodeSectors.length === 0) {
       setFormError(addForm.validation.postcodeRequired)
+      return
+    }
+    if (postcodeSectors.some((sector) => !isValidPostcodeSector(sector))) {
+      setFormError(addForm.validation.postcodeInvalid)
       return
     }
 

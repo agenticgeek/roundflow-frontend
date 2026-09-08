@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { ApiError } from '@/lib/errors'
+import { apiBaseUrl } from '@/lib/env'
 
 interface ApiErrorBody {
   error?: string
@@ -18,19 +19,24 @@ type ApiInit = RequestInit & {
 }
 
 export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
-  const baseUrl = import.meta.env.VITE_API_URL as string | undefined
-  if (!baseUrl) {
-    throw new Error('Missing VITE_API_URL. Configure the RoundFlow API before loading server data.')
-  }
+  const baseUrl = apiBaseUrl()
 
   const { accessToken, headers, ...requestInit } = init
   const { data } = await supabase.auth.getSession()
   const token = accessToken ?? data.session?.access_token ?? ''
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
+  if (!token) {
+    throw new ApiError(401, 'Not signed in')
+  }
+
+  const method = (requestInit.method ?? 'GET').toUpperCase()
+  const hasBody = requestInit.body != null && method !== 'GET' && method !== 'HEAD'
+
+  const response = await fetch(`${baseUrl}${path}`, {
     ...requestInit,
     headers: {
-      'Content-Type': 'application/json',
+      Accept: 'application/json',
       Authorization: `Bearer ${token}`,
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...(headers ?? {}),
     },
   })

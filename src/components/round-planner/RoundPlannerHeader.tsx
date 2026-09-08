@@ -1,5 +1,5 @@
-import type { RoundPlannerView } from '@/content/round-planner'
-import type { RoundPlannerSelectOption } from '@/content/round-planner'
+import type { RoundPlannerSelectOption, RoundPlannerView } from '@/content/round-planner'
+import type { PlannerPeriod } from '@/features/rounds/lib/planner'
 import { IconButton } from '@/components/dashboard/DashboardControls'
 import { Select } from '@/components/ui'
 import { cn } from '@/lib/utils'
@@ -10,48 +10,57 @@ const filterSelectClass =
 interface RoundPlannerHeaderProps {
   title: string
   subtitle: string
-  cycleLabel: string
+  windowLabel: string
   syncLabel: string
   syncing: boolean
   onSync: () => void
-  weekLabel: string
-  weekId: string
-  weekOptions: readonly RoundPlannerSelectOption[]
-  allWeeksOption: RoundPlannerSelectOption
-  onWeekChange: (weekId: string) => void
-  areaLabel: string
-  areaId: string
-  areaOptions: readonly RoundPlannerSelectOption[]
-  onAreaChange: (areaId: string) => void
+  previousLabel: string
+  nextLabel: string
+  todayLabel: string
+  onPrevious: () => void
+  onNext: () => void
+  onToday: () => void
+  roundLabel: string
+  roundId: string
+  roundOptions: readonly RoundPlannerSelectOption[]
+  onRoundChange: (roundId: string) => void
+  periodLabel: string
+  period: PlannerPeriod
+  periodOptions: readonly { value: PlannerPeriod; label: string }[]
+  onPeriodChange: (period: PlannerPeriod) => void
   views: readonly { id: RoundPlannerView; label: string }[]
   activeView: RoundPlannerView
   onViewChange: (view: RoundPlannerView) => void
 }
 
-/** Title, cycle, filters row, and view switcher — three distinct rows. */
+/** Title + window label, round/period selectors with paging, and the view switcher. */
 export function RoundPlannerHeader({
   title,
   subtitle,
-  cycleLabel,
+  windowLabel,
   syncLabel,
   syncing,
   onSync,
-  weekLabel,
-  weekId,
-  weekOptions,
-  allWeeksOption,
-  onWeekChange,
-  areaLabel,
-  areaId,
-  areaOptions,
-  onAreaChange,
+  previousLabel,
+  nextLabel,
+  todayLabel,
+  onPrevious,
+  onNext,
+  onToday,
+  roundLabel,
+  roundId,
+  roundOptions,
+  onRoundChange,
+  periodLabel,
+  period,
+  periodOptions,
+  onPeriodChange,
   views,
   activeView,
   onViewChange,
 }: RoundPlannerHeaderProps) {
   return (
     <header className="space-y-3">
-      {/* Row 1 — title + cycle */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">{title}</h1>
@@ -59,40 +68,51 @@ export function RoundPlannerHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5 text-xs font-medium text-muted">
-          <span>{cycleLabel}</span>
+          <span>{windowLabel}</span>
           <IconButton icon="refresh" label={syncLabel} onClick={onSync} spinning={syncing} />
         </div>
       </div>
 
-      {/* Row 2 — area + week (left) · view toggle (right) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div>
-            <label className="sr-only" htmlFor="round-planner-area">
-              {areaLabel}
+            <label className="sr-only" htmlFor="round-planner-round">
+              {roundLabel}
             </label>
             <Select
-              id="round-planner-area"
+              id="round-planner-round"
               inputSize="sm"
-              value={areaId}
-              onChange={(event) => onAreaChange(event.target.value)}
-              options={[...areaOptions]}
-              className={cn(filterSelectClass, 'min-w-[8rem]')}
+              value={roundId}
+              onChange={(event) => onRoundChange(event.target.value)}
+              options={[...roundOptions]}
+              className={cn(filterSelectClass, 'min-w-[9rem]')}
             />
           </div>
 
           <div>
-            <label className="sr-only" htmlFor="round-planner-week">
-              {weekLabel}
+            <label className="sr-only" htmlFor="round-planner-period">
+              {periodLabel}
             </label>
             <Select
-              id="round-planner-week"
+              id="round-planner-period"
               inputSize="sm"
-              value={weekId}
-              onChange={(event) => onWeekChange(event.target.value)}
-              options={[allWeeksOption, ...weekOptions]}
-              className={cn(filterSelectClass, 'min-w-[9.5rem]')}
+              value={period}
+              onChange={(event) => onPeriodChange(event.target.value as PlannerPeriod)}
+              options={[...periodOptions]}
+              className={cn(filterSelectClass, 'min-w-[6.5rem]')}
             />
+          </div>
+
+          <div className="inline-flex items-center rounded-lg bg-accent-surface p-0.5">
+            <IconButton icon="chevron-left" label={previousLabel} onClick={onPrevious} />
+            <button
+              type="button"
+              onClick={onToday}
+              className="rounded-md px-2 py-1 text-xs font-semibold text-foreground transition-colors hover:text-accent"
+            >
+              {todayLabel}
+            </button>
+            <IconButton icon="chevron-right" label={nextLabel} onClick={onNext} />
           </div>
         </div>
 

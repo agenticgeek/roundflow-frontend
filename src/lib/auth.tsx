@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { authApi } from '@/api/auth.api'
+import { invitesApi } from '@/api/invites.api'
 import { FullScreenLoader } from '@/components/FullScreenLoader'
 import { ApiError, errorMessage } from '@/lib/errors'
 // === DEV AUTH BACKDOOR START — comment out this import + marked blocks below to disable ===
@@ -11,6 +12,11 @@ import {
   readPersistedDevAuthBypass,
 } from '@/lib/dev-auth-bypass'
 // === DEV AUTH BACKDOOR END ===
+import {
+  clearPendingInvite,
+  readPendingInvite,
+  resolvePendingInviteToken,
+} from '@/lib/pending-invite'
 import { queryKeys } from '@/lib/query-keys'
 import { supabase } from '@/lib/supabase'
 import { queryClient } from '@/providers/QueryProvider'
@@ -59,6 +65,7 @@ function profileNameFromSession(session: Session): string {
  * Backend contract after Supabase confirms a session (SIGNED_IN / exchangeCodeForSession):
  *   GET /auth/me
  *     → 200: profile exists — continue
+ *     → 404 + pending invite: POST /invites/:token/accept
  *     → 404: POST /auth/signup — then navigate to /setup
  */
 async function ensureProfile(session: Session): Promise<{ created: boolean }> {
@@ -66,9 +73,30 @@ async function ensureProfile(session: Session): Promise<{ created: boolean }> {
 
   try {
     await authApi.getMe(undefined, token)
+    clearPendingInvite()
     return { created: false }
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error
+  }
+
+  const inviteToken = resolvePendingInviteToken(session.user.user_metadata ?? {})
+  if (inviteToken) {
+    const stashedName = readPendingInvite()?.name
+    const name = stashedName || profileNameFromSession(session)
+    if (!name) {
+      throw new Error('Enter your name to accept this invite.')
+    }
+
+    await invitesApi.accept(inviteToken, { name }, token)
+    clearPendingInvite()
+
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.me }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.setup.status }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.technicians.all }),
+    ])
+
+    return { created: false }
   }
 
   const name = profileNameFromSession(session)

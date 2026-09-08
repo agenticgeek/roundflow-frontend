@@ -1,29 +1,41 @@
-import type { RoundPlannerDay, RoundPlannerRound, RoundPlannerWeek } from '@/content/round-planner'
-import type { RoundPlannerDayOfWeek } from '@/content/round-planner'
+import { plannerDayStatusLabels } from '@/content/round-planner'
+import type { PlannerRoundCard, PlannerWeekRow } from '@/features/rounds/lib/planner'
+import { formatShortDate } from '@/features/rounds/lib/planner'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
-import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn, formatCurrency } from '@/lib/utils'
 
 interface RoundPlannerCalendarProps {
-  weeks: readonly RoundPlannerWeek[]
-  days: RoundPlannerDay[]
-  dayHeaders: readonly RoundPlannerDayOfWeek[]
+  weeks: readonly PlannerWeekRow[]
+  cardsByDate: ReadonlyMap<string, PlannerRoundCard[]>
+  dayHeaders: readonly string[]
   emptyLabel: string
-  onSelectRound: (roundId: string) => void
+  stopsLabel: string
+  unassignedLabel: string
+  today: string
+  currency: string
+  loading: boolean
+  onSelectCard: (card: PlannerRoundCard) => void
 }
 
-/** Mon–Fri grid — one row group per week in the cycle. */
+/** Mon–Sun grid — one row per week in the window, cells looked up by date. */
 export function RoundPlannerCalendar({
   weeks,
-  days,
+  cardsByDate,
   dayHeaders,
   emptyLabel,
-  onSelectRound,
+  stopsLabel,
+  unassignedLabel,
+  today,
+  currency,
+  loading,
+  onSelectCard,
 }: RoundPlannerCalendarProps) {
   return (
     <PanelCard interactive={false} className="overflow-hidden p-0">
       <div className="overflow-x-auto">
-        <div className="min-w-[40rem]">
-          <div className="grid grid-cols-5 border-b border-border bg-surface/80">
+        <div className="min-w-[56rem]">
+          <div className="grid grid-cols-7 border-b border-border bg-surface/80">
             {dayHeaders.map((day) => (
               <div
                 key={day}
@@ -34,24 +46,24 @@ export function RoundPlannerCalendar({
             ))}
           </div>
 
-          {weeks.map((week) => {
-            const weekDays = dayHeaders.map((dayOfWeek) =>
-              days.find((day) => day.weekId === week.id && day.dayOfWeek === dayOfWeek),
-            )
-
-            return (
-              <div key={week.id} className="grid grid-cols-5 border-b border-border last:border-b-0">
-                {weekDays.map((day) => (
-                  <CalendarCell
-                    key={day?.id ?? `${week.id}-empty`}
-                    day={day}
-                    emptyLabel={emptyLabel}
-                    onSelectRound={onSelectRound}
-                  />
-                ))}
-              </div>
-            )
-          })}
+          {weeks.map((week) => (
+            <div key={week.id} className="grid grid-cols-7 border-b border-border last:border-b-0">
+              {week.dates.map((date) => (
+                <CalendarCell
+                  key={date}
+                  date={date}
+                  cards={cardsByDate.get(date) ?? []}
+                  isToday={date === today}
+                  emptyLabel={emptyLabel}
+                  stopsLabel={stopsLabel}
+                  unassignedLabel={unassignedLabel}
+                  currency={currency}
+                  loading={loading}
+                  onSelectCard={onSelectCard}
+                />
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     </PanelCard>
@@ -59,28 +71,60 @@ export function RoundPlannerCalendar({
 }
 
 function CalendarCell({
-  day,
+  date,
+  cards,
+  isToday,
   emptyLabel,
-  onSelectRound,
+  stopsLabel,
+  unassignedLabel,
+  currency,
+  loading,
+  onSelectCard,
 }: {
-  day?: RoundPlannerDay
+  date: string
+  cards: PlannerRoundCard[]
+  isToday: boolean
   emptyLabel: string
-  onSelectRound: (roundId: string) => void
+  stopsLabel: string
+  unassignedLabel: string
+  currency: string
+  loading: boolean
+  onSelectCard: (card: PlannerRoundCard) => void
 }) {
-  if (!day) {
-    return <div className="min-h-[7rem] border-r border-border bg-background last:border-r-0" />
-  }
-
   return (
-    <div className="min-h-[7rem] border-r border-border bg-background p-2.5 last:border-r-0">
-      <p className="text-xs font-semibold text-foreground">{day.dateLabel}</p>
+    <div
+      className={cn(
+        'min-h-[7rem] border-r border-border bg-background p-2.5 last:border-r-0',
+        isToday && 'bg-accent-surface/40',
+      )}
+    >
+      <p
+        className={cn(
+          'text-xs font-semibold text-foreground',
+          isToday && 'inline-flex rounded-md bg-primary px-1.5 py-0.5 text-primary-foreground',
+        )}
+      >
+        {formatShortDate(date)}
+      </p>
 
-      {day.rounds.length === 0 ? (
+      {loading ? (
+        <div className="mt-3 space-y-2">
+          <Skeleton className="h-3 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      ) : cards.length === 0 ? (
         <p className="mt-3 text-xs text-muted">{emptyLabel}</p>
       ) : (
         <ul className="mt-2 space-y-2">
-          {day.rounds.map((round) => (
-            <RoundCard key={round.id} round={round} onSelect={() => onSelectRound(round.id)} />
+          {cards.map((card) => (
+            <RoundCard
+              key={card.key}
+              card={card}
+              stopsLabel={stopsLabel}
+              unassignedLabel={unassignedLabel}
+              currency={currency}
+              onSelect={() => onSelectCard(card)}
+            />
           ))}
         </ul>
       )}
@@ -88,14 +132,25 @@ function CalendarCell({
   )
 }
 
-function RoundCard({ round, onSelect }: { round: RoundPlannerRound; onSelect: () => void }) {
-  const statusDotClass =
-    round.status === 'completed'
-      ? 'bg-success'
-      : round.status === 'in-progress'
-        ? 'bg-primary'
-        : 'bg-muted'
+const statusDotClass: Record<PlannerRoundCard['status'], string> = {
+  completed: 'bg-success',
+  in_progress: 'bg-primary',
+  not_started: 'bg-muted',
+}
 
+function RoundCard({
+  card,
+  stopsLabel,
+  unassignedLabel,
+  currency,
+  onSelect,
+}: {
+  card: PlannerRoundCard
+  stopsLabel: string
+  unassignedLabel: string
+  currency: string
+  onSelect: () => void
+}) {
   return (
     <li>
       <button
@@ -107,15 +162,25 @@ function RoundCard({ round, onSelect }: { round: RoundPlannerRound; onSelect: ()
         )}
       >
         <div className="flex items-start justify-between gap-2">
-          <p className="text-xs font-semibold text-foreground">{round.title}</p>
-          <span className={cn('mt-1 h-1.5 w-1.5 shrink-0 rounded-full', statusDotClass)} />
+          <p className="text-xs font-semibold text-foreground">{card.roundName}</p>
+          <span className={cn('mt-1 h-1.5 w-1.5 shrink-0 rounded-full', statusDotClass[card.status])} />
         </div>
         <p className="mt-1 text-[11px] text-muted">
-          {round.stops} stops · {round.value}
+          {card.stopCount} {stopsLabel} · {formatCurrency(card.totalValue, currency)}
         </p>
         <p className="mt-1 text-[11px] font-medium text-accent">
-          {round.technician} · {round.statusLabel}
+          {card.technicianName ?? unassignedLabel} · {plannerDayStatusLabels[card.status]}
         </p>
+        {card.holdCount > 0 || card.issueCount > 0 ? (
+          <p className="mt-1 flex flex-wrap gap-1.5 text-[10px] font-medium">
+            {card.holdCount > 0 ? (
+              <span className="rounded bg-warning-surface px-1.5 py-0.5 text-warning">{card.holdCount} hold</span>
+            ) : null}
+            {card.issueCount > 0 ? (
+              <span className="rounded bg-danger/10 px-1.5 py-0.5 text-danger">{card.issueCount} issue</span>
+            ) : null}
+          </p>
+        ) : null}
       </button>
     </li>
   )
