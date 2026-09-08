@@ -83,6 +83,7 @@ export function PropertyDetailScreen({
   const { canMutate } = useAppBootstrap()
   const { showToast } = useToast()
 
+  
   const isUnassigned =
     Boolean(property.needsAssignment) ||
     property.serviceStatus === 'unassigned' ||
