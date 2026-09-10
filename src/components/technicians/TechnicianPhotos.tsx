@@ -4,6 +4,7 @@ import { techniciansContent } from '@/content/technicians'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass, dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { Input, Select } from '@/components/ui'
+import { ComingSoonOverlay } from '@/components/ui/coming-soon'
 import { cn } from '@/lib/utils'
 
 interface TechnicianConversationProps {
@@ -44,11 +45,15 @@ export function TechnicianConversation({
           <h1 className="mt-3 text-2xl font-semibold text-foreground">{content.title}</h1>
           <p className="mt-1 text-sm text-muted">{content.subtitle}</p>
         </div>
+      </header>
+
+      {/* No messaging backend yet — the mocked thread is blurred behind a Coming Soon overlay. */}
+      <ComingSoonOverlay copy={content.comingSoon} icon="message">
+      <div className="mb-4 flex justify-end">
         <button type="button" onClick={onApproveAll} className={dashboardCtaClass}>
           {content.approveAll}
         </button>
-      </header>
-
+      </div>
       <div className={cn('grid gap-6', archiveOpen && 'xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,0.8fr)]')}>
         <section className="min-h-[36rem]">
           <div className="flex items-center gap-3">
@@ -148,6 +153,7 @@ export function TechnicianConversation({
           </button>
         )}
       </div>
+      </ComingSoonOverlay>
     </div>
   )
 }
@@ -212,11 +218,15 @@ export function PropertyPhotos({
           </div>
           <p className="mt-1 text-sm text-muted">{job.customer} · {job.service} · {job.date}</p>
         </div>
+      </header>
+
+      {/* No photo backend yet — the mocked gallery is blurred behind a Coming Soon overlay. */}
+      <ComingSoonOverlay copy={content.comingSoon} icon="home">
+      <div className="mb-4 flex justify-end">
         <button type="button" onClick={onApproveAll} className={dashboardCtaClass}>
           {content.approveAll}
         </button>
-      </header>
-
+      </div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(17rem,0.65fr)]">
         <div className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
@@ -265,6 +275,7 @@ export function PropertyPhotos({
           </div>
         </aside>
       </div>
+      </ComingSoonOverlay>
     </div>
   )
 }

@@ -511,6 +511,11 @@ export const propertyDetailContent = {
     payments: 'Payment history will appear here.',
     photos: 'Property photos will appear here.',
   },
+  photosComingSoon: {
+    badge: 'Coming Soon',
+    title: 'Property photos are on the way',
+    description: 'Before/after photos from each visit will appear here soon.',
+  },
   notFound: {
     title: 'Property not found',
     description: 'This property could not be loaded. Return to the previous screen to try again.',
