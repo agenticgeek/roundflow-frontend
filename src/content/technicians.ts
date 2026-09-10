@@ -136,6 +136,11 @@ export const techniciansContent = {
         time: '15:49',
       },
     ],
+    comingSoon: {
+      badge: 'Coming Soon',
+      title: 'Technician chat is on the way',
+      description: 'Live messaging with your technicians is coming soon.',
+    },
   },
   photos: {
     back: 'Back to James',
@@ -152,6 +157,11 @@ export const techniciansContent = {
     previousIssue: 'Stubborn bird lime on conservatory',
     viewCustomer: 'View Customer Profile',
     contact: 'Contact Technician',
+    comingSoon: {
+      badge: 'Coming Soon',
+      title: 'Job photos are on the way',
+      description: 'Before/after photo review from technicians is coming soon.',
+    },
   },
   modals: {
     approveTitle: 'Approve All Photos?',
