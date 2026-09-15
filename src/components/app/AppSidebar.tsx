@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom'
 import type { AppNavItem, AppQuickAction, AppQuickActionId } from '@/content/app-shell'
 import { appShellContent } from '@/content/app-shell'
 import { Brand } from '@/components/layout/Brand'
+import { EmergencyBell } from '@/components/app/EmergencyBell'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import {
   dashboardNavItemClass,
@@ -54,19 +55,22 @@ export function AppSidebarNav({
           <Brand asLink={false} className={collapsed ? 'h-10 w-auto max-w-none' : 'h-10'} />
         </div>
 
-        {showCollapseToggle && onToggleCollapse ? (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            aria-label={collapsed ? expand : collapse}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface hover:text-foreground"
-          >
-            <DashboardIcon
-              name={collapsed ? 'chevron-right' : 'chevron-left'}
-              className="h-4 w-4"
-            />
-          </button>
-        ) : null}
+        <div className={cn('flex shrink-0 items-center gap-1', collapsed && 'flex-col')}>
+          <EmergencyBell />
+          {showCollapseToggle && onToggleCollapse ? (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? expand : collapse}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface hover:text-foreground"
+            >
+              <DashboardIcon
+                name={collapsed ? 'chevron-right' : 'chevron-left'}
+                className="h-4 w-4"
+              />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3 py-2" aria-label="Main">
@@ -209,14 +213,17 @@ export function AppMobileHeader({ onOpenMenu }: AppMobileHeaderProps) {
   return (
     <header className="flex shrink-0 items-center justify-between border-b border-border bg-background px-4 py-3 lg:hidden">
       <Brand asLink={false} className="h-10" />
-      <button
-        type="button"
-        onClick={onOpenMenu}
-        aria-label={openMenu}
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-surface"
-      >
-        <DashboardIcon name="list" className="h-5 w-5" />
-      </button>
+      <div className="flex items-center gap-1">
+        <EmergencyBell className="h-9 w-9" />
+        <button
+          type="button"
+          onClick={onOpenMenu}
+          aria-label={openMenu}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-surface"
+        >
+          <DashboardIcon name="list" className="h-5 w-5" />
+        </button>
+      </div>
     </header>
   )
 }

@@ -2,20 +2,22 @@ import type { BankDetailsForm } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 
 /**
- * CONTRACT-DIFF: `BusinessSettings.bankDetails` is a free-form JSON column on the
- * backend and isn't declared on the step-2 / settings write schemas yet. This is
- * the shape we read and write until the OpenAPI spec catches up.
+ * `BusinessSettings.bankDetails`, read/written via `GET`/`PATCH /settings/business-profile`
+ * per the Bank Details handoff. accountName, accountNumber and sortCode are required by
+ * the API whenever bankDetails is sent as an object; bankName is optional.
  */
 export interface BankDetailsPayload {
   accountName: string
   bankName: string | null
   accountNumber: string
+  sortCode: string
 }
 
 export const EMPTY_BANK_DETAILS: BankDetailsForm = {
   accountName: '',
   bankName: '',
   accountNumber: '',
+  sortCode: '',
 }
 
 function asString(value: unknown): string {
@@ -26,18 +28,30 @@ export function stripSpaces(value: string): string {
   return value.replace(/\s+/g, '')
 }
 
+/** "308012" or "30-80-12" typed as the user goes → "30-80-12". */
+export function formatSortCode(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 6)
+  return digits.match(/.{1,2}/g)?.join('-') ?? digits
+}
+
+const SORT_CODE_PATTERN = /^\d{2}-\d{2}-\d{2}$/
+
 export function isBankDetailsBlank(values: BankDetailsForm): boolean {
   return (
-    !values.accountName.trim() && !values.bankName.trim() && !values.accountNumber.trim()
+    !values.accountName.trim() &&
+    !values.bankName.trim() &&
+    !values.accountNumber.trim() &&
+    !values.sortCode.trim()
   )
 }
 
 /** Returns a user-facing error, or null when valid. Fully blank is valid (details are optional). */
 export function validateBankDetails(values: BankDetailsForm): string | null {
-  const { validation } = setupWizardContent.paymentSetup.bankDetails
+  const { validation } = setupWizardContent.businessProfile.bankDetails
   if (isBankDetailsBlank(values)) return null
   if (!values.accountName.trim()) return validation.accountNameRequired
   if (!/^\d{8}$/.test(values.accountNumber.trim())) return validation.accountNumberInvalid
+  if (!SORT_CODE_PATTERN.test(values.sortCode.trim())) return validation.sortCodeInvalid
   return null
 }
 
@@ -48,6 +62,7 @@ export function bankDetailsToForm(raw: unknown): BankDetailsForm {
     accountName: asString(record.accountName),
     bankName: asString(record.bankName),
     accountNumber: asString(record.accountNumber),
+    sortCode: asString(record.sortCode),
   }
 }
 
@@ -58,5 +73,6 @@ export function bankDetailsFromForm(values: BankDetailsForm): BankDetailsPayload
     accountName: values.accountName.trim(),
     bankName: values.bankName.trim() || null,
     accountNumber: values.accountNumber.trim(),
+    sortCode: values.sortCode.trim(),
   }
 }

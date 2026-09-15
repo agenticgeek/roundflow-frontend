@@ -12,6 +12,7 @@ export const ROUTES = {
   acceptInvite: '/accept-invite',
   setupWizard: '/setup',
   dashboard: '/dashboard',
+  emergencies: '/emergencies',
   roundPlanner: '/round-planner',
   propertyDetail: '/properties/:propertyId',
   todaysWork: '/todays-work',

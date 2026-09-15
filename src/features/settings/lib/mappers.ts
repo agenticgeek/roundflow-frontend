@@ -60,6 +60,7 @@ export type SettingsBusinessForm = {
   vatRegistered: boolean | null
   timezone: string
   currency: string
+  bankDetails: BankDetailsForm
 }
 
 export type SettingsPaymentForm = {
@@ -68,7 +69,6 @@ export type SettingsPaymentForm = {
   debtHoldEnabled: boolean
   goCardlessConnected: boolean
   stripeConnected: boolean
-  bankDetails: BankDetailsForm
 }
 
 export type SettingsRoundForm = {
@@ -90,6 +90,8 @@ export function settingsBusinessToForm(
     vatRegistered: data?.vatRegistered ?? defaults.vatRegistered,
     timezone: data?.timezone ?? defaults.timezone,
     currency: data?.currency ?? defaults.currency,
+    // GET /settings/business-profile per the Bank Details handoff.
+    bankDetails: bankDetailsToForm(data?.bankDetails),
   }
 }
 
@@ -103,6 +105,9 @@ export function settingsBusinessFromForm(values: SettingsBusinessForm) {
     vatRegistered: values.vatRegistered ?? undefined,
     timezone: values.timezone || null,
     currency: values.currency || null,
+    // PATCH /settings/business-profile per the Bank Details handoff — omitting the key
+    // (not calling this mapper) leaves it unchanged; null here clears it explicitly.
+    bankDetails: bankDetailsFromForm(values.bankDetails),
   }
 }
 
@@ -117,7 +122,6 @@ export function settingsPaymentToForm(
     debtHoldEnabled: data?.debtHoldEnabled ?? defaults.debtHoldEnabled,
     goCardlessConnected: data?.gocardlessConnected ?? defaults.goCardlessConnected,
     stripeConnected: data?.stripeConnected ?? defaults.stripeConnected,
-    bankDetails: bankDetailsToForm(data?.bankDetails),
   }
 }
 
@@ -126,7 +130,6 @@ export function settingsPaymentFromForm(values: SettingsPaymentForm): PaymentSet
     paymentRule: PAYMENT_RULE_UI_TO_API[values.defaultPaymentRule],
     vatInInvoices: values.vatApplicable,
     debtHoldEnabled: values.debtHoldEnabled,
-    bankDetails: bankDetailsFromForm(values.bankDetails),
   }
 }
 

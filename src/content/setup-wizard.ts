@@ -80,6 +80,21 @@ export interface SetupWizardContent {
     days: readonly { id: string; label: string }[]
     timezones: SelectOption[]
     currencies: SelectOption[]
+    bankDetails: {
+      heading: string
+      description: string
+      fields: {
+        accountName: { label: string; placeholder: string }
+        bankName: { label: string; optional: string; placeholder: string }
+        accountNumber: { label: string; placeholder: string }
+        sortCode: { label: string; placeholder: string }
+      }
+      validation: {
+        accountNameRequired: string
+        accountNumberInvalid: string
+        sortCodeInvalid: string
+      }
+    }
     defaults: BusinessProfileData
   }
   paymentSetup: {
@@ -100,19 +115,6 @@ export interface SetupWizardContent {
       defaultPaymentRule: { label: string }
       vatApplicable: { label: string; description: string }
       debtHoldEnabled: { label: string; description: string }
-    }
-    bankDetails: {
-      heading: string
-      description: string
-      fields: {
-        accountName: { label: string; placeholder: string }
-        bankName: { label: string; optional: string; placeholder: string }
-        accountNumber: { label: string; placeholder: string }
-      }
-      validation: {
-        accountNameRequired: string
-        accountNumberInvalid: string
-      }
     }
     paymentRules: SelectOption[]
     defaults: PaymentSetupData
@@ -695,6 +697,22 @@ export const setupWizardContent = {
       { value: 'USD', label: 'US ($)' },
       { value: 'EUR', label: 'EU (€)' },
     ],
+    bankDetails: {
+      heading: 'Bank Account Details',
+      description:
+        'Printed in the invoice footer so customers paying by bank transfer know where to send payment.',
+      fields: {
+        accountName: { label: 'Account Name', placeholder: 'e.g. Alnwick Window Cleaning Ltd' },
+        bankName: { label: 'Bank Name', optional: '(optional)', placeholder: 'e.g. Barclays' },
+        accountNumber: { label: 'Account Number', placeholder: '12345678' },
+        sortCode: { label: 'Sort Code', placeholder: '30-80-12' },
+      },
+      validation: {
+        accountNameRequired: 'Account name is required when adding bank details.',
+        accountNumberInvalid: 'Account number must be 8 digits.',
+        sortCodeInvalid: 'Sort code must be 6 digits, e.g. 30-80-12.',
+      },
+    },
     defaults: {
       businessName: '',
       businessPhone: '',
@@ -705,6 +723,7 @@ export const setupWizardContent = {
       workingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
       timezone: 'Europe/London',
       currency: 'USD',
+      bankDetails: { accountName: '', bankName: '', accountNumber: '', sortCode: '' },
     },
   },
   paymentSetup: {
@@ -740,20 +759,6 @@ export const setupWizardContent = {
         description: 'Block service if payment is overdue',
       },
     },
-    bankDetails: {
-      heading: 'Bank Account Details',
-      description:
-        'Printed in the invoice footer so customers paying by bank transfer know where to send payment.',
-      fields: {
-        accountName: { label: 'Account Name', placeholder: 'e.g. Alnwick Window Cleaning Ltd' },
-        bankName: { label: 'Bank Name', optional: '(optional)', placeholder: 'e.g. Barclays' },
-        accountNumber: { label: 'Account Number', placeholder: '12345678' },
-      },
-      validation: {
-        accountNameRequired: 'Account name is required when adding bank details.',
-        accountNumberInvalid: 'Account number must be 8 digits.',
-      },
-    },
     paymentRules: [
       { value: 'collect-after-visit', label: 'Collect after Visit' },
       { value: 'collect-before-visit', label: 'Collect before Visit' },
@@ -765,7 +770,6 @@ export const setupWizardContent = {
       defaultPaymentRule: 'collect-after-visit',
       vatApplicable: true,
       debtHoldEnabled: true,
-      bankDetails: { accountName: '', bankName: '', accountNumber: '' },
     },
   },
   serviceCatalogue: {

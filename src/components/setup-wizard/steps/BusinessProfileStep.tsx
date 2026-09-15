@@ -4,6 +4,8 @@ import type { BusinessProfileData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, Input, Select } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
+import { BankDetailsFields } from '@/components/setup-wizard/BankDetailsFields'
+import { validateBankDetails } from '@/lib/bank-details'
 import { cn } from '@/lib/utils'
 
 interface BusinessProfileStepProps {
@@ -76,6 +78,11 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
         setError(validation.vatNumberInvalid)
         return
       }
+    }
+    const bankError = validateBankDetails(values.bankDetails)
+    if (bankError) {
+      setError(bankError)
+      return
     }
 
     onSubmit(values)
@@ -189,6 +196,13 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
             options={businessProfile.currencies}
           />
         </Field>
+      </div>
+
+      <div className="border-t border-border pt-6">
+        <BankDetailsFields
+          values={values.bankDetails}
+          onChange={(bankDetails) => updateField('bankDetails', bankDetails)}
+        />
       </div>
 
       {error ? (

@@ -6,6 +6,7 @@ interface DashboardHeaderProps {
   date: string
   lastUpdated: string
   autoRefresh: string
+  refreshLabel: string
   refreshing?: boolean
   onRefresh?: () => void
 }
@@ -17,6 +18,7 @@ export function DashboardHeader({
   date,
   lastUpdated,
   autoRefresh,
+  refreshLabel,
   refreshing = false,
   onRefresh,
 }: DashboardHeaderProps) {
@@ -31,7 +33,7 @@ export function DashboardHeader({
         <p className="text-sm font-semibold text-foreground">{date}</p>
         <div className="mt-3 flex items-center gap-2 text-sm text-muted md:justify-end">
           <span>{lastUpdated}</span>
-          <IconButton icon="refresh" label="Refresh dashboard" onClick={onRefresh} spinning={refreshing} />
+          <IconButton icon="refresh" label={refreshLabel} onClick={onRefresh} spinning={refreshing} />
         </div>
         <p className="mt-2 text-xs font-semibold text-success">{autoRefresh}</p>
       </div>

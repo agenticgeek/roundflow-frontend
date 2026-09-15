@@ -1,4 +1,5 @@
 import { IconButton } from '@/components/dashboard/DashboardControls'
+import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +15,9 @@ interface TodaysWorkHeaderProps {
   onRefresh: () => void
   onCloseDay?: () => void
   closeDayDisabled?: boolean
+  /** Technician-only: self-report an emergency mid-round. */
+  reportEmergencyLabel?: string
+  onReportEmergency?: () => void
 }
 
 /** Page header with live status and close-day action. */
@@ -29,6 +33,8 @@ export function TodaysWorkHeader({
   onRefresh,
   onCloseDay,
   closeDayDisabled = false,
+  reportEmergencyLabel,
+  onReportEmergency,
 }: TodaysWorkHeaderProps) {
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -61,6 +67,17 @@ export function TodaysWorkHeader({
         </div>
 
         <IconButton icon="refresh" label={refreshLabel} onClick={onRefresh} spinning={refreshing} />
+
+        {onReportEmergency && reportEmergencyLabel ? (
+          <button
+            type="button"
+            onClick={onReportEmergency}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-danger px-4 py-2.5 text-sm font-semibold text-danger transition-colors hover:bg-danger/5"
+          >
+            <DashboardIcon name="alert" className="h-4 w-4" />
+            {reportEmergencyLabel}
+          </button>
+        ) : null}
 
         <button
           type="button"

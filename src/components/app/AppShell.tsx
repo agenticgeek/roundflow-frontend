@@ -8,6 +8,7 @@ import { CreateRoundModal } from '@/components/round-planner/CreateRoundModal'
 import { AddPropertyModal } from '@/components/properties/AddPropertyModal'
 import { AppMobileHeader, AppMobileNav, AppSidebar } from '@/components/app/AppSidebar'
 import { useAppSidebar } from '@/hooks/use-app-sidebar'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
 
 interface AppShellProps {
@@ -32,13 +33,19 @@ export function AppShell({
 }: AppShellProps) {
   const { sidebar } = appShellContent
   const sidebarState = useAppSidebar()
+  const { isTechnician } = useAppBootstrap()
 
   function handleQuickAction(actionId: AppQuickActionId) {
     quickActions.handleQuickAction(actionId)
   }
 
+  // Dashboard and Emergencies endpoints are ADMIN/MANAGER only — hide their nav items for technicians.
+  const navItems = isTechnician
+    ? sidebar.nav.filter((item) => item.id !== 'dashboard' && item.id !== 'emergencies')
+    : sidebar.nav
+
   const sidebarNavProps = {
-    navItems: sidebar.nav,
+    navItems,
     quickActionsTitle: sidebar.quickActionsTitle,
     quickActions: sidebar.quickActions,
     onQuickAction: handleQuickAction,

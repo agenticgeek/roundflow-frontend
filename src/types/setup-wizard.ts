@@ -18,6 +18,14 @@ export interface SetupStepDefinition {
   label: string
 }
 
+/** Business bank account printed in the invoice footer for bank-transfer payers. */
+export interface BankDetailsForm {
+  accountName: string
+  bankName: string
+  accountNumber: string
+  sortCode: string
+}
+
 export interface BusinessProfileData {
   businessName: string
   businessPhone: string
@@ -28,13 +36,7 @@ export interface BusinessProfileData {
   workingDays: string[]
   timezone: string
   currency: string
-}
-
-/** Business bank account printed in the invoice footer for bank-transfer payers. */
-export interface BankDetailsForm {
-  accountName: string
-  bankName: string
-  accountNumber: string
+  bankDetails: BankDetailsForm
 }
 
 export interface PaymentSetupData {
@@ -43,7 +45,6 @@ export interface PaymentSetupData {
   defaultPaymentRule: string
   vatApplicable: boolean
   debtHoldEnabled: boolean
-  bankDetails: BankDetailsForm
 }
 
 export interface CatalogueService {

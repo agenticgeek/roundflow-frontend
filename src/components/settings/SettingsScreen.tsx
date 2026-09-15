@@ -296,6 +296,11 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
   async function save() {
     if (!canMutate) return
     setFormError(null)
+    const bankError = validateBankDetails(values.bankDetails)
+    if (bankError) {
+      setFormError(bankError)
+      return
+    }
     try {
       await update.mutateAsync(settingsBusinessFromForm(values))
       setDraft(null)
@@ -399,6 +404,18 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
           </Field>
         </div>
 
+        <div className="border-t border-border pt-5">
+          <BankDetailsFields
+            values={values.bankDetails}
+            onChange={(bankDetails) => {
+              updateField('bankDetails', bankDetails)
+              if (formError) setFormError(null)
+            }}
+            disabled={!editing}
+            labelWeight="semibold"
+          />
+        </div>
+
         {formError ? <FieldError message={formError} /> : null}
       </div>
 
@@ -457,11 +474,6 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   async function save() {
     if (!canMutate) return
     setFormError(null)
-    const bankError = validateBankDetails(values.bankDetails)
-    if (bankError) {
-      setFormError(bankError)
-      return
-    }
     try {
       await update.mutateAsync(settingsPaymentFromForm(values))
       setDraft(null)
@@ -569,18 +581,6 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
             checked={values.debtHoldEnabled}
             onChange={(debtHoldEnabled) => updateField('debtHoldEnabled', debtHoldEnabled)}
             ariaLabel={settings.debtHoldEnabled.label}
-          />
-        </div>
-
-        <div className="border-t border-border pt-5">
-          <BankDetailsFields
-            values={values.bankDetails}
-            onChange={(bankDetails) => {
-              updateField('bankDetails', bankDetails)
-              if (formError) setFormError(null)
-            }}
-            disabled={!editing}
-            labelWeight="semibold"
           />
         </div>
 

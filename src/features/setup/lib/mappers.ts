@@ -99,6 +99,8 @@ export function businessProfileToForm(
     ),
     timezone: data.timezone ?? defaults.timezone,
     currency: data.currency ?? defaults.currency,
+    // GET /setup/step/1 per the Bank Details — Setup Wizard Step 1 handoff.
+    bankDetails: bankDetailsToForm(data.bankDetails),
   }
 }
 
@@ -115,6 +117,8 @@ export function businessProfileFromForm(values: BusinessProfileData) {
     ),
     timezone: values.timezone,
     currency: values.currency,
+    // POST /setup/step/1 per the Bank Details — Setup Wizard Step 1 handoff.
+    bankDetails: bankDetailsFromForm(values.bankDetails),
   }
 }
 
@@ -131,7 +135,6 @@ export function paymentSetupToForm(
       PAYMENT_RULE_API_TO_UI[data.paymentRule ?? ''] ?? defaults.defaultPaymentRule,
     vatApplicable: data.vatInInvoices ?? defaults.vatApplicable,
     debtHoldEnabled: data.debtHoldEnabled ?? defaults.debtHoldEnabled,
-    bankDetails: bankDetailsToForm(data.bankDetails),
   }
 }
 
@@ -142,7 +145,6 @@ export function paymentSetupFromForm(values: PaymentSetupData): SetupStep2Input 
     vatInInvoices: values.vatApplicable,
     gocardlessConnected: values.goCardlessConnected,
     stripeConnected: values.stripeConnected,
-    bankDetails: bankDetailsFromForm(values.bankDetails),
   }
 }
 
