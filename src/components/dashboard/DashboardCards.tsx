@@ -7,29 +7,30 @@ import {
   toneBorderClass,
   toneTextClass,
 } from '@/components/dashboard/dashboard-styles'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 interface DashboardMetricGridProps {
   metrics: readonly DashboardMetric[]
+  loading?: boolean
 }
 
-/** Top-row KPI tiles with shared hover lift. */
-export function DashboardMetricGrid({ metrics }: DashboardMetricGridProps) {
+/** Top-row KPI tiles — GET /dashboard/kpis. */
+export function DashboardMetricGrid({ metrics, loading = false }: DashboardMetricGridProps) {
   return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading}>
       {metrics.map((metric) => (
         <PanelCard key={metric.label} className={toneBorderClass(metric.tone)}>
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs font-medium tracking-wide text-muted uppercase">{metric.label}</p>
             <DashboardIcon name={metric.icon} className={cn('h-4 w-4', toneTextClass(metric.tone))} />
           </div>
-          <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{metric.value}</p>
+          {loading ? (
+            <Skeleton className="mt-2 h-8 w-24" />
+          ) : (
+            <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{metric.value}</p>
+          )}
           <p className="mt-2 text-xs font-semibold text-foreground">{metric.description}</p>
-          {metric.trend ? (
-            <p className={cn('mt-2 text-[11px] font-medium', toneTextClass(metric.tone))}>
-              {metric.trend}
-            </p>
-          ) : null}
         </PanelCard>
       ))}
     </section>
@@ -38,13 +39,14 @@ export function DashboardMetricGrid({ metrics }: DashboardMetricGridProps) {
 
 interface DashboardAlertRowProps {
   alerts: readonly DashboardAlert[]
+  loading?: boolean
   onOpenAlert: (id: DashboardAlertId) => void
 }
 
-/** Alert strip — click a card to open its detail modal. */
-export function DashboardAlertRow({ alerts, onOpenAlert }: DashboardAlertRowProps) {
+/** Alert strip — GET /dashboard/alerts. Each card jumps to the screen where the work happens. */
+export function DashboardAlertRow({ alerts, loading = false, onOpenAlert }: DashboardAlertRowProps) {
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
+    <section className="grid gap-4 lg:grid-cols-3" aria-busy={loading}>
       {alerts.map((alert) => (
         <button
           key={alert.id}
@@ -69,7 +71,11 @@ export function DashboardAlertRow({ alerts, onOpenAlert }: DashboardAlertRowProp
               </span>
               <div>
                 <p className="text-sm font-semibold text-foreground">
-                  <span className="mr-2 text-base font-bold">{alert.value}</span>
+                  {loading || alert.value === undefined ? (
+                    <Skeleton className="mr-2 inline-block h-4 w-6 align-middle" />
+                  ) : (
+                    <span className="mr-2 text-base font-bold">{alert.value}</span>
+                  )}
                   {alert.label}
                 </p>
                 <p className="text-[11px] font-medium tracking-wide text-muted uppercase">

@@ -14,9 +14,10 @@ import { SendPropertyMessageModal } from '@/components/property-detail/SendPrope
 import {
   NotesRiskTab,
   PaymentsTab,
-  TabPlaceholder,
   VisitHistoryTab,
 } from '@/components/property-detail/PropertyDetailTabs'
+import { ComingSoonOverlay } from '@/components/ui/coming-soon'
+import { Skeleton } from '@/components/ui/skeleton'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { useResumeProperty } from '@/features/properties/hooks/useProperties'
@@ -275,7 +276,13 @@ export function PropertyDetailScreen({
               customerId={customerId}
             />
           ) : activeTab === 'photos' ? (
-            <TabPlaceholder label={activeTab} />
+            <ComingSoonOverlay copy={propertyDetailContent.photosComingSoon} icon="home">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {Array.from({ length: 8 }, (_, index) => (
+                  <Skeleton key={index} className="aspect-square animate-none rounded-xl" />
+                ))}
+              </div>
+            </ComingSoonOverlay>
           ) : null}
         </div>
       </section>

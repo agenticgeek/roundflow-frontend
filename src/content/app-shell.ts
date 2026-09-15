@@ -21,6 +21,7 @@ export const appShellContent = {
   sidebar: {
     nav: [
       { id: 'dashboard', label: 'Dashboard', icon: 'home', route: ROUTES.dashboard },
+      { id: 'emergencies', label: 'Emergencies', icon: 'bell', route: ROUTES.emergencies },
       { id: 'round-planner', label: 'Round Planner', icon: 'calendar', route: ROUTES.roundPlanner },
       { id: 'todays-work', label: "Today's Work", icon: 'briefcase', route: ROUTES.todaysWork },
       { id: 'customers', label: 'Customers', icon: 'users', route: ROUTES.customers },

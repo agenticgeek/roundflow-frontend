@@ -1,3 +1,4 @@
+import type { DashboardChartRange, DashboardPeriod, DashboardRoundStatus } from '@/api/dashboard.api'
 import type { PaymentMethod } from '@/api/types'
 
 export type DashboardTone = 'default' | 'primary' | 'success' | 'warning' | 'danger'
@@ -22,43 +23,18 @@ export interface DashboardMetric {
   description: string
   icon: string
   tone?: DashboardTone
-  trend?: string
 }
 
 export type DashboardAlertId = 'skipped' | 'failed-payments' | 'complaint-revisits'
 
 export interface DashboardAlert {
   id: DashboardAlertId
-  value: string
+  /** Undefined until the alerts query resolves. */
+  value: number | undefined
   label: string
   description: string
   icon: string
   tone: DashboardTone
-}
-
-export interface SkippedJobItem {
-  address: string
-  customer: string
-  round: string
-  technician: string
-  reason: string
-  time: string
-}
-
-export interface FailedPaymentItem {
-  customer: string
-  address: string
-  amount: string
-  attempts: string
-}
-
-export interface ComplaintRevisitItem {
-  customer: string
-  priority: 'High' | 'Medium' | 'Low'
-  address: string
-  complaint: string
-  technician: string
-  dueDate: string
 }
 
 export interface TechnicianLocation {
@@ -82,201 +58,56 @@ export interface ChartBar {
   value: number
 }
 
-export interface IssueBar {
-  label: string
-  complaints: number
-  strikes: number
-  upsells: number
-}
-
 export interface TodayRound {
+  id: string
   round: string
   technician: string
-  stops: number
-  done: number
-  skip: number
+  status: DashboardRoundStatus
+  completed: number
+  total: number
+  skipped: number
   issues: number
+  paymentHolds: number
   value: string
-  status: 'in-progress' | 'completed'
+  eta: string
+}
+
+export const dashboardRoundStatusLabels: Record<DashboardRoundStatus, string> = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  complete: 'Completed',
 }
 
 export const dashboardContent = {
   header: {
     title: 'Dashboard',
     subtitle: "Live view of today's rounds, jobs, payments, and issues",
-    lastUpdated: 'Last updated 10:42 AM',
-    autoRefresh: 'Auto-refresh on',
+    lastUpdatedPrefix: 'Last updated',
+    notLoaded: 'Not loaded yet',
+    autoRefresh: 'Auto-refresh every minute',
+    refreshLabel: 'Refresh dashboard',
   },
-  metrics: [
-    {
-      label: 'Jobs Scheduled',
-      value: '48',
-      description: 'Across 5 rounds',
-      icon: 'calendar',
-      trend: '+4 vs last week',
-    },
-    {
-      label: 'Open Complaints',
-      value: '2',
-      description: 'Require attention today',
-      icon: 'flag',
-      tone: 'danger',
-      trend: '+1 high priority',
-    },
-    {
-      label: 'Clean Unpaid',
-      value: '£1,240',
-      description: '18 customers outstanding',
-      icon: 'alert',
-      tone: 'warning',
-      trend: '-£120 last month',
-    },
-    {
-      label: 'Monthly Revenue',
-      value: '£12,400',
-      description: 'Across all completed jobs',
-      icon: 'pound',
-      tone: 'success',
-      trend: '+12% last month',
-    },
-  ] satisfies DashboardMetric[],
-  alerts: [
-    {
-      id: 'skipped',
-      value: '4',
-      label: 'Needs review',
-      description: 'Skipped',
-      icon: 'skip',
-      tone: 'warning',
-    },
-    {
-      id: 'failed-payments',
-      value: '7',
+  states: {
+    error: 'Something went wrong, please refresh.',
+    retry: 'Refresh',
+  },
+  metrics: {
+    jobsToday: { label: 'Jobs Today', description: 'Scheduled for today' },
+    openComplaints: { label: 'Open Complaints', description: 'By priority' },
+    cleanUnpaid: { label: 'Clean Unpaid', description: 'Completed this month, not yet paid' },
+    monthlyRevenue: { label: 'Monthly Revenue', description: 'Completed jobs this calendar month' },
+  },
+  alerts: {
+    skipped: { label: 'Needs review', description: 'Skipped today', action: 'Manage skipped jobs' },
+    failedPayments: {
       label: 'Requires payment follow-up',
       description: 'Failed payments',
-      icon: 'card',
-      tone: 'danger',
+      action: 'Open Debt Board',
     },
-    {
-      id: 'complaint-revisits',
-      value: '2',
-      label: 'Due today + this week',
+    complaintRevisits: {
+      label: 'Due this week',
       description: 'Complaint revisits',
-      icon: 'message',
-      tone: 'danger',
-    },
-  ] satisfies DashboardAlert[],
-  alertModals: {
-    skipped: {
-      title: 'Skipped Today',
-      summary: '4 jobs need review',
-      footerAction: 'Manage skipped jobs',
-      items: [
-        {
-          address: '14 High Street',
-          customer: 'John Smith',
-          round: 'Alnwick Monday',
-          technician: 'James',
-          reason: 'Gate locked',
-          time: '08:42',
-        },
-        {
-          address: '22 Park View',
-          customer: 'Sarah Jones',
-          round: 'Morpeth Wednesday',
-          technician: 'Sarah',
-          reason: 'Customer unavailable',
-          time: '09:15',
-        },
-        {
-          address: '8 Station Road',
-          customer: 'Mark Evans',
-          round: 'Alnwick Monday',
-          technician: 'James',
-          reason: 'Access blocked',
-          time: '10:03',
-        },
-        {
-          address: '3 Church Lane',
-          customer: 'Emma Wilson',
-          round: 'Bamburgh Tuesday',
-          technician: 'Sarah',
-          reason: 'Dog in garden',
-          time: '11:20',
-        },
-      ] satisfies SkippedJobItem[],
-    },
-    'failed-payments': {
-      title: 'Failed Payments',
-      summary: '£248 outstanding',
-      footerAction: 'Open Debt Board',
-      items: [
-        {
-          customer: 'Alice Cooper',
-          address: '9 River Lane',
-          amount: '£42',
-          attempts: '2x tried · 18 Jun',
-        },
-        {
-          customer: 'Robert Green',
-          address: '15 Mill Close',
-          amount: '£36',
-          attempts: '1x tried · 17 Jun',
-        },
-        {
-          customer: 'Helen Price',
-          address: '4 Oak Avenue',
-          amount: '£28',
-          attempts: '3x tried · 16 Jun',
-        },
-        {
-          customer: 'Tom Baker',
-          address: '27 West End',
-          amount: '£54',
-          attempts: '2x tried · 15 Jun',
-        },
-        {
-          customer: 'Lisa Morgan',
-          address: '11 Field Drive',
-          amount: '£32',
-          attempts: '1x tried · 14 Jun',
-        },
-        {
-          customer: 'Chris Adams',
-          address: '6 Hilltop Road',
-          amount: '£28',
-          attempts: '2x tried · 13 Jun',
-        },
-        {
-          customer: 'Nina Patel',
-          address: '2 Bridge Street',
-          amount: '£28',
-          attempts: '1x tried · 12 Jun',
-        },
-      ] satisfies FailedPaymentItem[],
-    },
-    'complaint-revisits': {
-      title: 'Complaint Revisits',
-      summary: 'Due this week',
-      footerAction: 'Open Complaints Board',
-      items: [
-        {
-          customer: 'David Harris',
-          priority: 'Medium',
-          address: '18 Castle View, Alnwick',
-          complaint: 'Missed conservatory roof',
-          technician: 'James',
-          dueDate: '19 Jun',
-        },
-        {
-          customer: 'Karen White',
-          priority: 'Low',
-          address: '5 Meadow Lane, Morpeth',
-          complaint: 'Streaks on upstairs windows',
-          technician: 'Sarah',
-          dueDate: '21 Jun',
-        },
-      ] satisfies ComplaintRevisitItem[],
+      action: 'Open Complaints Board',
     },
   },
   gps: {
@@ -285,18 +116,19 @@ export const dashboardContent = {
     mapTitle: 'GPS Map View',
     mapSubtitle: 'Real-time vehicle locations',
     mapCaption: 'Integration with GPS tracking provider',
-    techniciansTitle: 'Technicians (4)',
+    techniciansTitle: 'Technicians',
+    // Placeholder pins for the blurred "Coming Soon" preview — no GPS provider yet.
     technicians: [
       {
-        name: 'James',
+        name: 'Technician A',
         status: 'At Job',
-        current: '14 High Street',
+        current: 'On site',
         lastSeen: '2 min ago',
         tone: 'success',
         position: { x: 18, y: 55 },
       },
       {
-        name: 'Sarah',
+        name: 'Technician B',
         status: 'Driving',
         lastSeen: '5 min ago',
         tone: 'primary',
@@ -312,90 +144,55 @@ export const dashboardContent = {
   kpis: {
     title: 'Technician KPIs',
     subtitle: 'Per-technician performance tracking',
-    filters: ['James', 'Sarah'],
-    period: ['Monthly', 'Yearly'],
-    metrics: [
-      { label: 'Value Completed', value: '£1,880', detail: '+ 4% prev mo' },
-      { label: 'Time on Job', value: '180h', detail: 'this month' },
-      { label: 'Revenue / Hour', value: '£22.80', detail: '+ 4% prev mo', tone: 'success' },
-      { label: 'Complaints', value: '1', detail: 'Requires review', tone: 'warning' },
-      { label: 'Strikes', value: '1', detail: 'Internal issues', tone: 'warning' },
-      { label: 'Damages', value: '0', detail: 'No incidents', tone: 'success' },
-      { label: 'Upsells', value: '9', detail: 'additional jobs', tone: 'success' },
-    ] satisfies KpiMetric[],
-    valueChartTitle: 'Value of Work Completed (Monthly)',
-    revenueChartTitle: 'Revenue Per Hour (Monthly)',
-    issuesChartTitle: 'Issues Over Time (Monthly)',
-    valueChart: [
-      { label: 'Jan', value: 62 },
-      { label: 'Feb', value: 55 },
-      { label: 'Mar', value: 70 },
-      { label: 'Apr', value: 66 },
-      { label: 'May', value: 76 },
-      { label: 'Jun', value: 82 },
-    ] satisfies ChartBar[],
-    revenueLine: [
-      { label: 'Jan', value: 12 },
-      { label: 'Feb', value: 32 },
-      { label: 'Mar', value: 62 },
-      { label: 'Apr', value: 56 },
-      { label: 'May', value: 70 },
-      { label: 'Jun', value: 86 },
-    ] satisfies ChartBar[],
-    issueChart: [
-      { label: 'Jan', complaints: 1, strikes: 0, upsells: 5 },
-      { label: 'Feb', complaints: 0, strikes: 1, upsells: 4 },
-      { label: 'Mar', complaints: 2, strikes: 0, upsells: 7 },
-      { label: 'Apr', complaints: 1, strikes: 0, upsells: 6 },
-      { label: 'May', complaints: 0, strikes: 1, upsells: 8 },
-      { label: 'Jun', complaints: 1, strikes: 1, upsells: 9 },
-    ] satisfies IssueBar[],
+    periodOptions: [
+      { value: 'monthly', label: 'Monthly' },
+      { value: 'yearly', label: 'Yearly' },
+    ] satisfies { value: DashboardPeriod; label: string }[],
+    noTechnicians: 'No active technicians yet.',
+    tiles: {
+      jobsCompleted: 'Jobs Completed',
+      valueCompleted: 'Value Completed',
+      openComplaints: 'Open Complaints',
+      issues: 'Issues Raised',
+      timeOnJob: 'Time on Job',
+      strikes: 'Strikes',
+      damages: 'Damages',
+      upsells: 'Upsells',
+      scopeAll: 'All technicians',
+      requiresReview: 'Requires review',
+      allClear: 'All clear',
+      notAvailable: 'Coming in a later phase',
+    },
+    charts: {
+      rangeOptions: [
+        { value: '6m', label: '6M' },
+        { value: '12m', label: '12M' },
+      ] satisfies { value: DashboardChartRange; label: string }[],
+      valueTitle: 'Value of Work Completed',
+      issuesTitle: 'Issues Raised',
+      revenueTitle: 'Revenue Per Hour',
+      revenueUnavailable: 'Revenue per hour needs time tracking — coming in a later phase.',
+      noData: {
+        badge: 'No data',
+        title: 'No data yet',
+        description: 'This chart will fill in as data comes in for this period.',
+      },
+    },
   },
   todayRounds: {
     title: "Today's Rounds",
     viewAll: 'View All',
+    empty: 'No rounds scheduled for today.',
     columns: {
       round: 'Round',
       technician: 'Technician',
-      stops: 'Stops',
-      done: 'Done',
-      skip: 'Skip',
+      status: 'Status',
+      progress: 'Progress',
+      skipped: 'Skipped',
       issues: 'Issues',
       value: 'Value',
-      status: 'Status',
+      eta: 'ETA',
     },
-    rows: [
-      {
-        round: 'Alnwick Monday',
-        technician: 'James',
-        stops: 12,
-        done: 8,
-        skip: 1,
-        issues: 1,
-        value: '£220',
-        status: 'in-progress',
-      },
-      {
-        round: 'Alnwick Tuesday',
-        technician: 'Sarah',
-        stops: 15,
-        done: 6,
-        skip: 2,
-        issues: 0,
-        value: '£180',
-        status: 'completed',
-      },
-      {
-        round: 'Morpeth Wednesday',
-        technician: 'James',
-        stops: 10,
-        done: 7,
-        skip: 3,
-        issues: 1,
-        value: '£245',
-        status: 'in-progress',
-      },
-    ] satisfies TodayRound[],
   },
   bulkMessageModal: {
     title: 'Bulk Message Round',

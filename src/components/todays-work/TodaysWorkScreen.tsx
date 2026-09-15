@@ -1,5 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { emergenciesContent } from '@/content/emergencies'
 import { todaysWorkContent } from '@/content/todays-work'
+import { ReportEmergencyModal } from '@/components/emergencies/ReportEmergencyModal'
 import type { TodaysWorkInteractions } from '@/hooks/use-todays-work-interactions'
 import { CloseOperationalDayModal } from '@/components/todays-work/CloseOperationalDayModal'
 import { PushMissedJobsModal } from '@/components/todays-work/PushMissedJobsModal'
@@ -25,8 +27,9 @@ interface TodaysWorkScreenProps {
 /** Composes Today's Work — aggregate from GET /today, detail from GET /rounds/:id/today. */
 export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
   const { header, filters, table, workload } = todaysWorkContent
-  const { canMutate } = useAppBootstrap()
+  const { canMutate, isTechnician } = useAppBootstrap()
   const { todayQuery } = interactions
+  const [reportEmergencyOpen, setReportEmergencyOpen] = useState(false)
 
   const detailQuery = useRoundToday(
     interactions.selectedRound?.id ?? '',
@@ -54,6 +57,8 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
           canMutate && !interactions.dayClosed ? interactions.openCloseDay : undefined
         }
         closeDayDisabled={!canMutate || interactions.dayClosed}
+        reportEmergencyLabel={isTechnician ? emergenciesContent.report.button : undefined}
+        onReportEmergency={isTechnician ? () => setReportEmergencyOpen(true) : undefined}
       />
 
       {todayQuery.isPending ? (
@@ -122,6 +127,14 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
         kpi={todayQuery.data?.kpi}
         onClose={interactions.closeCloseDay}
       />
+
+      {isTechnician ? (
+        <ReportEmergencyModal
+          open={reportEmergencyOpen}
+          rounds={todayQuery.data?.rounds ?? []}
+          onClose={() => setReportEmergencyOpen(false)}
+        />
+      ) : null}
     </div>
   )
 }

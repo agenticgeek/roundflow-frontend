@@ -8,6 +8,7 @@ import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
 import AcceptInvite from '@/pages/AcceptInvite'
 import Dashboard from '@/pages/Dashboard'
+import Emergencies from '@/pages/Emergencies'
 import RoundPlanner from '@/pages/RoundPlanner'
 import PropertyDetail from '@/pages/PropertyDetail'
 import TodaysWork from '@/pages/TodaysWork'
@@ -44,6 +45,14 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <Dashboard />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.emergencies,
+    element: (
+      <ProtectedRoute>
+        <Emergencies />
       </ProtectedRoute>
     ),
   },

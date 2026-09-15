@@ -13,12 +13,13 @@ import type {
   TechnicianInput,
 } from '@/api/types'
 
-export type BusinessProfilePatch = components['schemas']['BusinessProfileUpdateInput']
-export type RoundSettingsPatch = components['schemas']['RoundSettingsUpdateInput']
-// CONTRACT-DIFF: `bankDetails` (invoice footer) lives on BusinessSettings but isn't in the payment-rules input schema yet.
-export type PaymentSettingsPatch = components['schemas']['PaymentRulesUpdateInput'] & {
+// CONTRACT-DIFF: `bankDetails` isn't in the generated business-profile input schema yet.
+// Per the Bank Details handoff: omit to leave unchanged, `null` to clear, an object to save/overwrite.
+export type BusinessProfilePatch = components['schemas']['BusinessProfileUpdateInput'] & {
   bankDetails?: BankDetailsPayload | null
 }
+export type RoundSettingsPatch = components['schemas']['RoundSettingsUpdateInput']
+export type PaymentSettingsPatch = components['schemas']['PaymentRulesUpdateInput']
 
 function jsonRequest(method: 'POST' | 'PATCH', body?: unknown): RequestInit {
   return {

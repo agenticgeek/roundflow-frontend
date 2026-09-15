@@ -4,6 +4,20 @@ export const queryKeys = {
   auth: {
     me: ['auth', 'me'] as const,
   },
+  dashboard: {
+    all: ['dashboard'] as const,
+    kpis: ['dashboard', 'kpis'] as const,
+    alerts: ['dashboard', 'alerts'] as const,
+    rounds: ['dashboard', 'rounds'] as const,
+    technicianKpis: (period: string) => ['dashboard', 'technician-kpis', period] as const,
+    charts: (range: string) => ['dashboard', 'charts', range] as const,
+  },
+  emergencies: {
+    all: ['emergencies'] as const,
+    list: (status?: string) => ['emergencies', 'list', status ?? 'ALL'] as const,
+    detail: (id: string) => ['emergencies', 'detail', id] as const,
+    availableTechnicians: (id: string) => ['emergencies', 'available-technicians', id] as const,
+  },
   setup: {
     all: ['setup'] as const,
     status: ['setup', 'status'] as const,
@@ -123,4 +137,17 @@ export function invalidateInvoices(queryClient: QueryClient) {
 
 export function invalidateComplaints(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: queryKeys.complaints.all })
+}
+
+export function invalidateDashboard(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+}
+
+export function invalidateEmergencies(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.emergencies.all }),
+    // Reassignment moves today's unfinished visits to another technician.
+    queryClient.invalidateQueries({ queryKey: queryKeys.today.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all }),
+  ])
 }

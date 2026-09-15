@@ -22,11 +22,12 @@ import type {
   TechnicianInput,
 } from '@/api/types'
 
-export type SetupStep1Input = components['schemas']['BusinessProfileInput']
-// CONTRACT-DIFF: `bankDetails` (invoice footer) lives on BusinessSettings but isn't in the step-2 input schema yet.
-export type SetupStep2Input = components['schemas']['PaymentSetupInput'] & {
+// CONTRACT-DIFF: `bankDetails` isn't in the generated step-1 input schema yet. Same shape as
+// PATCH /settings/business-profile — omit to leave unchanged, `null` to clear.
+export type SetupStep1Input = components['schemas']['BusinessProfileInput'] & {
   bankDetails?: BankDetailsPayload | null
 }
+export type SetupStep2Input = components['schemas']['PaymentSetupInput']
 export type SetupStep4Input = components['schemas']['RoundSettingsInput']
 export type SetupStep5Input = components['schemas']['MessageTemplateInput']
 export type SetupStep5Template = components['schemas']['MessageTemplateView']

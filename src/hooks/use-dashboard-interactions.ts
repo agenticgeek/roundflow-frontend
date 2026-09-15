@@ -1,85 +1,35 @@
-import { useCallback, useMemo, useState } from 'react'
-import type { DashboardAlertId } from '@/content/dashboard'
-import { dashboardContent } from '@/content/dashboard'
+import { useCallback, useState } from 'react'
+import type { DashboardChartRange, DashboardPeriod } from '@/api/dashboard.api'
 
-/** Dashboard UI state — filters, period, alerts, GPS selection, refresh. */
+/** Dashboard UI state — technician filter, KPI period, chart range, GPS selection. Data lives in the screen. */
 export function useDashboardInteractions() {
-  const { header, kpis } = dashboardContent
-
-  const [selectedTechnicians, setSelectedTechnicians] = useState<Set<string>>(
-    () => new Set(kpis.filters),
-  )
-  const [period, setPeriod] = useState<string>(kpis.period[0])
-  const [openAlertModalId, setOpenAlertModalId] = useState<DashboardAlertId | null>(null)
+  /** Empty set = all technicians. */
+  const [selectedTechnicianIds, setSelectedTechnicianIds] = useState<Set<string>>(() => new Set())
+  const [period, setPeriod] = useState<DashboardPeriod>('monthly')
+  const [range, setRange] = useState<DashboardChartRange>('6m')
   const [selectedGpsTechnician, setSelectedGpsTechnician] = useState<string | null>(null)
-  const [lastUpdated, setLastUpdated] = useState<string>(header.lastUpdated)
-  const [refreshing, setRefreshing] = useState(false)
 
-  const toggleTechnician = useCallback((name: string) => {
-    setSelectedTechnicians((current) => {
+  const toggleTechnician = useCallback((technicianId: string) => {
+    setSelectedTechnicianIds((current) => {
       const next = new Set(current)
-      if (next.has(name)) {
-        if (next.size > 1) next.delete(name)
-      } else {
-        next.add(name)
-      }
+      if (next.has(technicianId)) next.delete(technicianId)
+      else next.add(technicianId)
       return next
     })
   }, [])
 
-  const openAlertModal = useCallback((id: DashboardAlertId) => {
-    setOpenAlertModalId(id)
-  }, [])
-
-  const closeAlertModal = useCallback(() => {
-    setOpenAlertModalId(null)
-  }, [])
-
-  const refreshDashboard = useCallback(() => {
-    setRefreshing(true)
-    window.setTimeout(() => {
-      const now = new Date()
-      const formatted = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-      setLastUpdated(`Last updated ${formatted}`)
-      setRefreshing(false)
-    }, 600)
-  }, [])
-
-  const periodMultiplier = period === 'Yearly' ? 1.25 : 1
-
-  const scaledValueChart = useMemo(
-    () =>
-      kpis.valueChart.map((item) => ({
-        ...item,
-        value: Math.min(100, Math.round(item.value * periodMultiplier)),
-      })),
-    [periodMultiplier, kpis.valueChart],
-  )
-
-  const scaledRevenueLine = useMemo(
-    () =>
-      kpis.revenueLine.map((item) => ({
-        ...item,
-        value: Math.min(100, Math.round(item.value * periodMultiplier)),
-      })),
-    [periodMultiplier, kpis.revenueLine],
-  )
+  const clearTechnicians = useCallback(() => setSelectedTechnicianIds(new Set()), [])
 
   return {
-    selectedTechnicians,
+    selectedTechnicianIds,
     toggleTechnician,
+    clearTechnicians,
     period,
     setPeriod,
-    openAlertModalId,
-    openAlertModal,
-    closeAlertModal,
+    range,
+    setRange,
     selectedGpsTechnician,
     setSelectedGpsTechnician,
-    lastUpdated,
-    refreshing,
-    refreshDashboard,
-    scaledValueChart,
-    scaledRevenueLine,
   }
 }
 
