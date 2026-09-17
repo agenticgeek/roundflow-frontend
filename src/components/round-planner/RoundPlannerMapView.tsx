@@ -54,8 +54,10 @@ function markerIcon(color: string): google.maps.Symbol {
  */
 export function RoundPlannerMapView({ stops, currency }: RoundPlannerMapViewProps) {
   const { mapView } = roundPlannerContent
-  const { points, failed, loading, error, configured } = useGeocodedStops(stops)
+  const { points, failed, loading, error: geocodeError, configured } = useGeocodedStops(stops)
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null)
+  const [mapError, setMapError] = useState(false)
+  const error = geocodeError ?? (mapError ? mapView.error : null)
 
   if (!configured) {
     return (
@@ -87,6 +89,7 @@ export function RoundPlannerMapView({ stops, currency }: RoundPlannerMapViewProp
                 points={points}
                 selectedVisitId={selectedVisitId}
                 onSelect={setSelectedVisitId}
+                onError={() => setMapError(true)}
                 currency={currency}
               />
               <MapLegend title={mapView.legendTitle} items={mapView.legend} />
@@ -129,11 +132,13 @@ function GoogleMapCanvas({
   points,
   selectedVisitId,
   onSelect,
+  onError,
   currency,
 }: {
   points: readonly GeocodedStop[]
   selectedVisitId: string | null
   onSelect: (visitId: string) => void
+  onError: () => void
   currency: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -141,61 +146,71 @@ function GoogleMapCanvas({
   const markersRef = useRef<Map<string, google.maps.Marker>>(new Map())
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
 
-  // Create the map once.
+  // Create the map once. Google's JS API can leave `google.maps` in a broken
+  // state (stub constructors that throw) when auth/referrer checks fail, so
+  // this is wrapped rather than letting it crash the whole app.
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    mapRef.current = new google.maps.Map(containerRef.current, {
-      center: { lat: 54.978, lng: -1.617 }, // UK-ish fallback until bounds fit
-      zoom: 11,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-      clickableIcons: false,
-    })
-    infoWindowRef.current = new google.maps.InfoWindow()
-  }, [])
+    if (!containerRef.current || mapRef.current || typeof google === 'undefined') return
+    try {
+      mapRef.current = new google.maps.Map(containerRef.current, {
+        center: { lat: 54.978, lng: -1.617 }, // UK-ish fallback until bounds fit
+        zoom: 11,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true,
+        clickableIcons: false,
+      })
+      infoWindowRef.current = new google.maps.InfoWindow()
+    } catch {
+      onError()
+    }
+  }, [onError])
 
   // Sync markers to the current point set.
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
-    const nextIds = new Set(points.map((p) => p.stop.visitId))
-    for (const [visitId, marker] of markersRef.current) {
-      if (!nextIds.has(visitId)) {
-        marker.setMap(null)
-        markersRef.current.delete(visitId)
+    try {
+      const nextIds = new Set(points.map((p) => p.stop.visitId))
+      for (const [visitId, marker] of markersRef.current) {
+        if (!nextIds.has(visitId)) {
+          marker.setMap(null)
+          markersRef.current.delete(visitId)
+        }
       }
-    }
 
-    const bounds = new google.maps.LatLngBounds()
-    for (const { stop, point } of points) {
-      bounds.extend(point)
-      let marker = markersRef.current.get(stop.visitId)
-      const status = stopStatus(stop)
-      if (!marker) {
-        marker = new google.maps.Marker({
-          map,
-          position: point,
-          icon: markerIcon(MARKER_COLOR[status]),
-        })
-        marker.addListener('click', () => onSelect(stop.visitId))
-        markersRef.current.set(stop.visitId, marker)
-      } else {
-        marker.setPosition(point)
-        marker.setIcon(markerIcon(MARKER_COLOR[status]))
+      const bounds = new google.maps.LatLngBounds()
+      for (const { stop, point } of points) {
+        bounds.extend(point)
+        let marker = markersRef.current.get(stop.visitId)
+        const status = stopStatus(stop)
+        if (!marker) {
+          marker = new google.maps.Marker({
+            map,
+            position: point,
+            icon: markerIcon(MARKER_COLOR[status]),
+          })
+          marker.addListener('click', () => onSelect(stop.visitId))
+          markersRef.current.set(stop.visitId, marker)
+        } else {
+          marker.setPosition(point)
+          marker.setIcon(markerIcon(MARKER_COLOR[status]))
+        }
       }
-    }
 
-    if (points.length > 0) {
-      if (points.length === 1) {
-        map.setCenter(points[0]!.point)
-        map.setZoom(15)
-      } else {
-        map.fitBounds(bounds, 48)
+      if (points.length > 0) {
+        if (points.length === 1) {
+          map.setCenter(points[0]!.point)
+          map.setZoom(15)
+        } else {
+          map.fitBounds(bounds, 48)
+        }
       }
+    } catch {
+      onError()
     }
-  }, [points, onSelect])
+  }, [points, onSelect, onError])
 
   // Open/close the info window for the selected stop.
   useEffect(() => {
