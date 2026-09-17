@@ -37,15 +37,6 @@ export interface DashboardAlert {
   tone: DashboardTone
 }
 
-export interface TechnicianLocation {
-  name: string
-  status: string
-  current?: string
-  lastSeen: string
-  tone: DashboardTone
-  position: { x: number; y: number }
-}
-
 export interface KpiMetric {
   label: string
   value: string
@@ -111,35 +102,26 @@ export const dashboardContent = {
     },
   },
   gps: {
-    title: 'Live GPS Tracking',
-    statusLabel: 'Live',
-    mapTitle: 'GPS Map View',
-    mapSubtitle: 'Real-time vehicle locations',
-    mapCaption: 'Integration with GPS tracking provider',
+    title: "Today's Stops",
+    subtitle: 'Scheduled stops across active rounds, plotted from today’s planner data',
     techniciansTitle: 'Technicians',
-    // Placeholder pins for the blurred "Coming Soon" preview — no GPS provider yet.
-    technicians: [
-      {
-        name: 'Technician A',
-        status: 'At Job',
-        current: 'On site',
-        lastSeen: '2 min ago',
-        tone: 'success',
-        position: { x: 18, y: 55 },
-      },
-      {
-        name: 'Technician B',
-        status: 'Driving',
-        lastSeen: '5 min ago',
-        tone: 'primary',
-        position: { x: 40, y: 38 },
-      },
-    ] satisfies TechnicianLocation[],
-    comingSoon: {
-      badge: 'Coming Soon',
-      title: 'Live GPS tracking is on the way',
-      description: 'Real-time technician locations are coming soon.',
+    noStops: 'No stops scheduled for today.',
+    unassigned: 'Unassigned',
+    legend: [
+      { label: 'Scheduled', status: 'scheduled' },
+      { label: 'Completed', status: 'completed' },
+      { label: 'Payment Hold', status: 'payment-hold' },
+      { label: 'Issue', status: 'issue' },
+    ],
+    notConfigured: {
+      badge: 'Setup needed',
+      title: 'Google Maps isn’t configured',
+      description: 'Add VITE_GOOGLE_MAPS_API_KEY to your environment to plot today’s stops on a live map.',
     },
+    loading: 'Locating stops…',
+    error: 'Could not load Google Maps.',
+    unresolvedTitle: 'Could not locate',
+    unresolvedHint: 'Check the address and postcode for these stops.',
   },
   kpis: {
     title: 'Technician KPIs',

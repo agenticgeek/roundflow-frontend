@@ -238,11 +238,6 @@ export const roundPlannerContent = {
   mapView: {
     propertiesTitle: 'Stops',
     noProperties: 'No stops on this date.',
-    controls: {
-      zoomIn: 'Zoom in',
-      zoomOut: 'Zoom out',
-      expand: 'Expand map',
-    },
     legendTitle: 'Status Legend',
     legend: [
       { label: 'Scheduled', status: 'scheduled' },
@@ -250,11 +245,16 @@ export const roundPlannerContent = {
       { label: 'Payment Hold', status: 'payment-hold' },
       { label: 'Issue', status: 'issue' },
     ],
-    comingSoon: {
-      badge: 'Coming Soon',
-      title: 'Map view is on the way',
-      description: 'Live pin locations for every stop are coming soon. Use List view to see all stops for the day in the meantime.',
+    notConfigured: {
+      badge: 'Setup needed',
+      title: 'Google Maps isn’t configured',
+      description:
+        'Add VITE_GOOGLE_MAPS_API_KEY to your environment to enable the map. Use List view to see all stops for the day in the meantime.',
     },
+    loading: 'Locating stops…',
+    error: 'Could not load Google Maps.',
+    unresolvedTitle: 'Could not locate',
+    unresolvedHint: 'Check the address and postcode for these stops.',
   },
   listView: {
     actions: {
