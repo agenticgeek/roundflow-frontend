@@ -36,3 +36,8 @@ export function apiBaseUrl(): string {
 export function isSetupGateBypassed(): boolean {
   return IS_DEV || import.meta.env.VITE_BYPASS_SETUP_GATE === 'true'
 }
+
+/** Google Cloud API key for Round Planner's Map view, or undefined until configured. */
+export function googleMapsApiKey(): string | undefined {
+  return import.meta.env.VITE_GOOGLE_MAPS_API_KEY || undefined
+}

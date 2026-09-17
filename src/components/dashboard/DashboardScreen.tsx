@@ -25,6 +25,9 @@ import {
   roundsToRows,
   technicianKpisToTiles,
 } from '@/features/dashboard/lib/mappers'
+import { useRoundsOccurrenceDay } from '@/features/rounds/hooks/useRounds'
+import type { PlannerListStop } from '@/features/rounds/lib/planner'
+import { todayIsoDate } from '@/features/rounds/lib/planner'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
@@ -45,7 +48,7 @@ const timeFormatter = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute
 
 /** Composes the dashboard — five independent GET /dashboard/* queries, UI state from the interactions hook. */
 export function DashboardScreen({ interactions, onOpenAlert, onViewAllRounds }: DashboardScreenProps) {
-  const { header, states, gps, todayRounds } = dashboardContent
+  const { header, states, todayRounds } = dashboardContent
 
   const kpisQuery = useDashboardKpis()
   const alertsQuery = useDashboardAlerts()
@@ -57,6 +60,28 @@ export function DashboardScreen({ interactions, onOpenAlert, onViewAllRounds }: 
   const metrics = useMemo(() => kpisToMetrics(kpisQuery.data), [kpisQuery.data])
   const alerts = useMemo(() => alertsToCards(alertsQuery.data), [alertsQuery.data])
   const rounds = useMemo(() => roundsToRows(roundsQuery.data), [roundsQuery.data])
+
+  // Today's stops for the map — /dashboard/rounds has no per-stop addresses, so
+  // fan out the same per-round occurrence-day call Round Planner uses (handoff §8).
+  const roundIds = useMemo(
+    () => [...new Set((roundsQuery.data ?? []).map((round) => round.roundId))],
+    [roundsQuery.data],
+  )
+  const today = todayIsoDate()
+  const dayStopsQuery = useRoundsOccurrenceDay(roundIds, today, roundIds.length > 0)
+  const dayStops = useMemo<PlannerListStop[]>(
+    () =>
+      (roundsQuery.data ?? []).flatMap((round) => {
+        const result = dayStopsQuery.byRoundId.get(round.roundId)
+        if (!result) return []
+        return result.stops.map((stop) => ({
+          ...stop,
+          roundId: round.roundId,
+          roundName: result.roundName || round.roundName,
+        }))
+      }),
+    [dayStopsQuery.byRoundId, roundsQuery.data],
+  )
   const tiles = useMemo(
     () => technicianKpisToTiles(technicianKpisQuery.data, interactions.selectedTechnicianIds),
     [interactions.selectedTechnicianIds, technicianKpisQuery.data],
@@ -103,16 +128,10 @@ export function DashboardScreen({ interactions, onOpenAlert, onViewAllRounds }: 
       <DashboardAlertRow alerts={alerts} loading={alertsQuery.isLoading} onOpenAlert={onOpenAlert} />
 
       <GpsTrackingPanel
-        title={gps.title}
-        statusLabel={gps.statusLabel}
-        mapTitle={gps.mapTitle}
-        mapSubtitle={gps.mapSubtitle}
-        mapCaption={gps.mapCaption}
-        techniciansTitle={gps.techniciansTitle}
-        technicians={gps.technicians}
+        stops={dayStops}
+        loading={roundsQuery.isLoading || dayStopsQuery.isLoading}
         selectedTechnician={interactions.selectedGpsTechnician}
         onSelectTechnician={interactions.setSelectedGpsTechnician}
-        comingSoon={gps.comingSoon}
       />
 
       <TechnicianKpis
