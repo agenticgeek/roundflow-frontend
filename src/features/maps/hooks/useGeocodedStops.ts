@@ -53,7 +53,7 @@ export function useGeocodedStops(stops: readonly PlannerListStop[]): UseGeocoded
   const addressKey = stops.map((stop) => geocodeCacheKey(stop.addressLine, stop.postcode)).join('|')
 
   useEffect(() => {
-    if (!configured || stops.length === 0) {
+    if (!configured) {
       setPoints([])
       setFailed([])
       return
@@ -65,8 +65,18 @@ export function useGeocodedStops(stops: readonly PlannerListStop[]): UseGeocoded
 
     async function run() {
       try {
+        // Load the script before anything else, even if there are no stops to
+        // geocode — callers mount a live google.maps.Map once loading flips to
+        // false, so `window.google` must already exist by then.
         const { maps } = await loadGoogleMaps()
         if (thisRequest !== requestId.current) return
+
+        if (stops.length === 0) {
+          setPoints([])
+          setFailed([])
+          return
+        }
+
         const geocoder = new maps.Geocoder()
 
         const resolved: GeocodedStop[] = []
