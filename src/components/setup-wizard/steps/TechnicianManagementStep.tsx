@@ -4,12 +4,13 @@ import { useNavigate } from 'react-router-dom'
 import type { Technician, TechnicianManagementData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { technicianDetailPath } from '@/config/routes'
-import { Field, FieldError, Input, Select } from '@/components/ui'
+import { Field, Input, PhoneInput, Select } from '@/components/ui'
 import { DropdownMenuPortal, useDropdownDismiss } from '@/components/ui/dropdown'
+import { isValidEmail, isValidPhone } from '@/lib/contact'
 import { cn } from '@/lib/utils'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 
-const MOBILE_PATTERN = /^[+\d][\d\s()-]{6,19}$/
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+type TechnicianFormErrors = Partial<Record<'fullName' | 'mobile' | 'email', string>>
 
 interface TechnicianManagementStepProps {
   initialValues: TechnicianManagementData
@@ -81,9 +82,10 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
   const { addForm, columns, appStatusLabels, roleOptions, actions } = technicianManagement
 
   const [technicians, setTechnicians] = useState<Technician[]>(initialValues.technicians)
+  useReportWizardDirty({ technicians }, initialValues)
   const [showAddForm, setShowAddForm] = useState(false)
   const [form, setForm] = useState<NewTechnicianForm>(emptyForm)
-  const [formError, setFormError] = useState<string | null>(null)
+  const [formErrors, setFormErrors] = useState<TechnicianFormErrors>({})
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   const menuContainerRef = useRef<HTMLDivElement>(null)
@@ -111,13 +113,18 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
   function openForm() {
     setShowAddForm(true)
     setForm(emptyForm())
-    setFormError(null)
+    setFormErrors({})
   }
 
   function closeForm() {
     setShowAddForm(false)
     setForm(emptyForm())
-    setFormError(null)
+    setFormErrors({})
+  }
+
+  function updateForm<K extends keyof NewTechnicianForm>(key: K, value: NewTechnicianForm[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }))
+    setFormErrors((prev) => (prev[key as keyof TechnicianFormErrors] ? { ...prev, [key]: undefined } : prev))
   }
 
   function addTechnician() {
@@ -125,20 +132,14 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
     const mobile = form.mobile.trim()
     const email = form.email.trim()
 
-    if (!fullName) {
-      setFormError(addForm.validation.nameRequired)
-      return
-    }
-    if (!mobile) {
-      setFormError(addForm.validation.mobileRequired)
-      return
-    }
-    if (!MOBILE_PATTERN.test(mobile)) {
-      setFormError(addForm.validation.mobileInvalid)
-      return
-    }
-    if (email && !EMAIL_PATTERN.test(email)) {
-      setFormError(addForm.validation.emailInvalid)
+    const errors: TechnicianFormErrors = {}
+    if (!fullName) errors.fullName = addForm.validation.nameRequired
+    if (!mobile) errors.mobile = addForm.validation.mobileRequired
+    else if (!isValidPhone(mobile)) errors.mobile = addForm.validation.mobileInvalid
+    if (email && !isValidEmail(email)) errors.email = addForm.validation.emailInvalid
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
       return
     }
 
@@ -194,40 +195,53 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
 
           <div className="mt-4 space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={addForm.fields.fullName.label} required labelWeight="medium" size="sm">
+              <Field
+                label={addForm.fields.fullName.label}
+                required
+                labelWeight="medium"
+                size="sm"
+                error={formErrors.fullName}
+              >
                 <Input
                   inputSize="sm"
                   value={form.fullName}
-                  onChange={(event) => {
-                    setForm((prev) => ({ ...prev, fullName: event.target.value }))
-                    if (formError) setFormError(null)
-                  }}
+                  aria-invalid={Boolean(formErrors.fullName)}
+                  onChange={(event) => updateForm('fullName', event.target.value)}
                   placeholder={addForm.fields.fullName.placeholder}
                   autoFocus
                 />
               </Field>
 
-              <Field label={addForm.fields.mobile.label} required labelWeight="medium" size="sm">
-                <Input
+              <Field
+                label={addForm.fields.mobile.label}
+                required
+                labelWeight="medium"
+                size="sm"
+                error={formErrors.mobile}
+              >
+                <PhoneInput
                   inputSize="sm"
-                  type="tel"
                   value={form.mobile}
-                  onChange={(event) => {
-                    setForm((prev) => ({ ...prev, mobile: event.target.value }))
-                    if (formError) setFormError(null)
-                  }}
+                  aria-invalid={Boolean(formErrors.mobile)}
+                  onValueChange={(mobile) => updateForm('mobile', mobile)}
                   placeholder={addForm.fields.mobile.placeholder}
                 />
               </Field>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={addForm.fields.email.label} labelWeight="medium" size="sm">
+              <Field
+                label={addForm.fields.email.label}
+                labelWeight="medium"
+                size="sm"
+                error={formErrors.email}
+              >
                 <Input
                   inputSize="sm"
                   type="email"
                   value={form.email}
-                  onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+                  aria-invalid={Boolean(formErrors.email)}
+                  onChange={(event) => updateForm('email', event.target.value)}
                   placeholder={addForm.fields.email.placeholder}
                 />
               </Field>
@@ -262,8 +276,6 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
               />
             </Field>
 
-            {formError ? <FieldError message={formError} size="sm" /> : null}
-
             <div className="flex flex-wrap gap-2 pt-1">
               <button
                 type="button"
@@ -293,6 +305,10 @@ export function TechnicianManagementStep({ initialValues, onSubmit }: Technician
           <span>{columns.appStatus}</span>
           <span className="sr-only">{columns.actions}</span>
         </div>
+
+        {technicians.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-muted">{technicianManagement.empty}</p>
+        ) : null}
 
         <ul className="divide-y divide-border">
           {technicians.map((technician) => (

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { SETUP_STEPS, SETUP_STEP_COUNT } from '@/config/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
@@ -30,6 +30,7 @@ import {
   techniciansToForm,
 } from '@/features/setup/lib/mappers'
 import { stepCompletionFlags } from '@/features/setup/lib/wizard'
+import { WizardDirtyContext } from '@/features/setup/lib/wizard-dirty'
 import { useWizardStep } from '@/features/setup/hooks/useWizardStep'
 import {
   useCompleteSetup,
@@ -114,7 +115,15 @@ const ROUND_DAY_OPTIONS = [
 type PendingBulkReplace = {
   target: BulkReplaceTarget
   values: unknown
+  /** Step to open once saved — the next step, or wherever Back/stepper was heading. */
+  navigateTo: number
 }
+
+/**
+ * Steps whose form is saved when the user leaves via Back or the stepper. Not 9
+ * (properties save individually) or 11 (saving generates visits — never implicit).
+ */
+const SAVE_ON_LEAVE_STEPS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 10])
 
 function StepError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -134,7 +143,7 @@ function StepError({ message, onRetry }: { message: string; onRetry: () => void 
 export default function SetupWizard() {
   const navigate = useNavigate()
   const { setupStatus, canMutate } = useAppBootstrap()
-  const { step, stepIndex, goToStep, goNext, goBack, skipStep, isFirstStep, isLastStep } =
+  const { step, stepIndex, goToStep, goNext, skipStep, isFirstStep, isLastStep } =
     useWizardStep()
   const currentStep = SETUP_STEPS[stepIndex]
   const completedSteps = stepCompletionFlags(setupStatus, SETUP_STEP_COUNT)
@@ -168,6 +177,12 @@ export default function SetupWizard() {
 
   const [formError, setFormError] = useState<string | null>(null)
   const [pendingBulkReplace, setPendingBulkReplace] = useState<PendingBulkReplace | null>(null)
+  const [stepDirty, setStepDirty] = useState(false)
+  /** Set when leaving a step failed to save — offers "discard and leave" instead of trapping the user. */
+  const [blockedLeaveTarget, setBlockedLeaveTarget] = useState<number | null>(null)
+  const leaveTargetRef = useRef<number | null>(null)
+  const submitStartedRef = useRef(false)
+  const reportDirty = useCallback((dirty: boolean) => setStepDirty(dirty), [])
 
   const pendingMutation =
     saveStep1.isPending ||
@@ -218,16 +233,69 @@ export default function SetupWizard() {
     [step3.data],
   )
 
+  const servicePrices = useMemo(
+    () =>
+      Object.fromEntries(
+        (step3.data ?? [])
+          .filter((service) => service.id && service.defaultPrice != null)
+          .map((service) => [service.id as string, Number.parseFloat(String(service.defaultPrice))])
+          .filter(([, price]) => Number.isFinite(price)),
+      ) as Record<string, number>,
+    [step3.data],
+  )
+
   const assignTechnicians = useMemo(
     () => techniciansForAssignStep(step6.data),
     [step6.data],
   )
 
+  // Built once per server response — steps resync their local lists when these
+  // change identity, so rebuilding them every render wiped unsaved edits.
+  const step1Initial = useMemo(() => businessProfileToForm(step1.data), [step1.data])
+  const step2Initial = useMemo(() => paymentSetupToForm(step2.data), [step2.data])
+  const step3Initial = useMemo(() => servicesToForm(step3.data), [step3.data])
+  const step4Initial = useMemo(() => roundSettingsToForm(step4.data), [step4.data])
+  const step5Initial = useMemo(() => messageTemplatesToForm(step5.data), [step5.data])
+  const step6Initial = useMemo(() => techniciansToForm(step6.data), [step6.data])
+  const step7Initial = useMemo(() => serviceAreasToForm(step7.data), [step7.data])
+  const step8Initial = useMemo(
+    () => firstRoundToForm(step8.data, step7.data, step4.data?.defaultCycleLength),
+    [step8.data, step7.data, step4.data?.defaultCycleLength],
+  )
+  const step9Initial = useMemo(
+    () => ({ properties: step9BundlesToRecords(step9.data) }),
+    [step9.data],
+  )
+  const step10Initial = useMemo(() => step10ToForm(step10.data), [step10.data])
+  const step11Initial = useMemo(
+    () =>
+      step11ToForm(
+        step11.data,
+        (step8.data ?? []).map((round) => round.id).filter((id): id is string => Boolean(id)),
+      ),
+    [step11.data, step8.data],
+  )
+
+  /** Service/area ids already saved server-side that `values` no longer contains. */
+  function removedSavedNames(target: BulkReplaceTarget, values: unknown): string[] {
+    if (target === 'services') {
+      const kept = new Set((values as ServiceCatalogueData).services.map((service) => service.id))
+      return (step3.data ?? [])
+        .filter((service) => service.id && !kept.has(service.id))
+        .map((service) => service.name ?? 'Unnamed service')
+    }
+    const kept = new Set((values as ServiceAreaData).areas.map((area) => area.id))
+    return (step7.data ?? [])
+      .filter((area) => area.id && !kept.has(area.id))
+      .map((area) => area.name ?? 'Unnamed area')
+  }
+
   async function persistCurrentStep(
     values?: unknown,
-    options?: { bulkReplaceConfirmed?: boolean },
-  ) {
+    options?: { bulkReplaceConfirmed?: boolean; navigateTo?: number },
+  ): Promise<'saved' | 'needs-confirm' | 'failed'> {
     setFormError(null)
+    const navigateTo = options?.navigateTo ?? step + 1
 
     try {
       switch (step) {
@@ -240,9 +308,10 @@ export default function SetupWizard() {
           await saveStep2.mutateAsync(paymentSetupFromForm(values as PaymentSetupData))
           break
         case 3:
-          if (!options?.bulkReplaceConfirmed) {
-            setPendingBulkReplace({ target: 'services', values })
-            return false
+          // Only warn when saving would actually delete something already saved.
+          if (!options?.bulkReplaceConfirmed && removedSavedNames('services', values).length > 0) {
+            setPendingBulkReplace({ target: 'services', values, navigateTo })
+            return 'needs-confirm'
           }
           await saveStep3.mutateAsync(
             servicesFromForm(values as ServiceCatalogueData),
@@ -264,9 +333,9 @@ export default function SetupWizard() {
           )
           break
         case 7:
-          if (!options?.bulkReplaceConfirmed) {
-            setPendingBulkReplace({ target: 'service-areas', values })
-            return false
+          if (!options?.bulkReplaceConfirmed && removedSavedNames('service-areas', values).length > 0) {
+            setPendingBulkReplace({ target: 'service-areas', values, navigateTo })
+            return 'needs-confirm'
           }
           await saveStep7.mutateAsync(
             serviceAreasFromForm(values as ServiceAreaData),
@@ -279,7 +348,7 @@ export default function SetupWizard() {
           break
         case 9:
           // Properties are added additively via onAddProperty — Continue only advances.
-          return true
+          return 'saved'
         case 10:
           await saveStep10.mutateAsync(
             step10FromForm(values as AssignTechniciansData),
@@ -293,7 +362,7 @@ export default function SetupWizard() {
         default:
           break
       }
-      return true
+      return 'saved'
     } catch (error) {
       if (error instanceof ApiError && (error.status === 400 || error.status === 409)) {
         setFormError(error.message)
@@ -303,16 +372,53 @@ export default function SetupWizard() {
         setPendingBulkReplace(null)
         if (step === 3) void step3.refetch()
         if (step === 7) void step7.refetch()
-        return false
+        return 'failed'
       }
       throw error
     }
   }
 
   async function handleStepSubmit(values?: unknown) {
+    // Read synchronously — requestSubmit() runs this before leaveTargetRef is cleared.
+    submitStartedRef.current = true
+    const leaveTarget = leaveTargetRef.current
     if (!canMutate) return
-    const saved = await persistCurrentStep(values)
-    if (saved) goNext()
+    const navigateTo = leaveTarget ?? step + 1
+    const outcome = await persistCurrentStep(values, { navigateTo })
+    if (outcome === 'saved') {
+      setBlockedLeaveTarget(null)
+      goToStep(navigateTo)
+    } else if (outcome === 'failed' && leaveTarget != null) {
+      setBlockedLeaveTarget(leaveTarget)
+    }
+  }
+
+  /** Back / stepper navigation — saves unsaved edits first so they aren't lost. */
+  function navigateToStep(target: number) {
+    if (target === step) return
+    setFormError(null)
+    setBlockedLeaveTarget(null)
+
+    const form = document.getElementById('setup-wizard-step-form')
+    if (!stepDirty || !canMutate || !SAVE_ON_LEAVE_STEPS.has(step) || !(form instanceof HTMLFormElement)) {
+      goToStep(target)
+      return
+    }
+
+    leaveTargetRef.current = target
+    submitStartedRef.current = false
+    form.requestSubmit()
+    leaveTargetRef.current = null
+    // The step's own validation stopped the submit — its errors are now showing.
+    if (!submitStartedRef.current) setBlockedLeaveTarget(target)
+  }
+
+  function discardAndLeave() {
+    if (blockedLeaveTarget == null) return
+    const target = blockedLeaveTarget
+    setBlockedLeaveTarget(null)
+    setFormError(null)
+    goToStep(target)
   }
 
   async function handleAddProperty(draft: PropertyDraft) {
@@ -327,19 +433,24 @@ export default function SetupWizard() {
   async function handleConfirmBulkReplace() {
     if (!canMutate || !pendingBulkReplace) return
     const { values } = pendingBulkReplace
-    const saved = await persistCurrentStep(values, { bulkReplaceConfirmed: true })
-    if (saved) {
+    const outcome = await persistCurrentStep(values, {
+      bulkReplaceConfirmed: true,
+      navigateTo: pendingBulkReplace.navigateTo,
+    })
+    if (outcome === 'saved') {
       setPendingBulkReplace(null)
-      goNext()
+      setBlockedLeaveTarget(null)
+      goToStep(pendingBulkReplace.navigateTo)
     }
   }
 
   async function handleContinue() {
     if (!canMutate) return
+    setBlockedLeaveTarget(null)
 
     if (step === 9) {
-      const saved = await persistCurrentStep()
-      if (saved) goNext()
+      const outcome = await persistCurrentStep()
+      if (outcome === 'saved') goNext()
       return
     }
 
@@ -376,7 +487,7 @@ export default function SetupWizard() {
         }
         return (
           <BusinessProfileStep
-            initialValues={businessProfileToForm(step1.data)}
+            initialValues={step1Initial}
             onSubmit={handleStepSubmit}
           />
         )
@@ -392,7 +503,7 @@ export default function SetupWizard() {
         }
         return (
           <PaymentSetupStep
-            initialValues={paymentSetupToForm(step2.data)}
+            initialValues={step2Initial}
             onSubmit={handleStepSubmit}
           />
         )
@@ -408,7 +519,7 @@ export default function SetupWizard() {
         }
         return (
           <ServiceCatalogueStep
-            initialValues={servicesToForm(step3.data)}
+            initialValues={step3Initial}
             onSubmit={handleStepSubmit}
           />
         )
@@ -424,7 +535,7 @@ export default function SetupWizard() {
         }
         return (
           <RoundSettingsStep
-            initialValues={roundSettingsToForm(step4.data)}
+            initialValues={step4Initial}
             onSubmit={handleStepSubmit}
           />
         )
@@ -440,7 +551,7 @@ export default function SetupWizard() {
         }
         return (
           <SmsTemplatesStep
-            initialValues={messageTemplatesToForm(step5.data)}
+            initialValues={step5Initial}
             onSubmit={handleStepSubmit}
           />
         )
@@ -456,7 +567,7 @@ export default function SetupWizard() {
         }
         return (
           <TechnicianManagementStep
-            initialValues={techniciansToForm(step6.data)}
+            initialValues={step6Initial}
             onSubmit={handleStepSubmit}
           />
         )
@@ -472,7 +583,7 @@ export default function SetupWizard() {
         }
         return (
           <ServiceAreaStep
-            initialValues={serviceAreasToForm(step7.data)}
+            initialValues={step7Initial}
             onSubmit={handleStepSubmit}
           />
         )
@@ -490,11 +601,7 @@ export default function SetupWizard() {
         }
         return (
           <FirstRoundStep
-            initialValues={firstRoundToForm(
-              step8.data,
-              step7.data,
-              step4.data?.defaultCycleLength,
-            )}
+            initialValues={step8Initial}
             serviceAreaOptions={serviceAreaOptions}
             onSubmit={handleStepSubmit}
           />
@@ -514,10 +621,11 @@ export default function SetupWizard() {
         }
         return (
           <AddPropertyStep
-            initialValues={{ properties: step9BundlesToRecords(step9.data) }}
+            initialValues={step9Initial}
             serviceAreaOptions={serviceAreaOptions}
             roundOptions={roundOptions}
             serviceOptions={serviceOptions}
+            servicePrices={servicePrices}
             adding={saveStep9.isPending}
             onAddProperty={handleAddProperty}
             onSubmit={() => {
@@ -538,7 +646,7 @@ export default function SetupWizard() {
         }
         return (
           <AssignTechniciansStep
-            initialValues={step10ToForm(step10.data)}
+            initialValues={step10Initial}
             technicians={assignTechnicians}
             roundDays={ROUND_DAY_OPTIONS}
             onSubmit={handleStepSubmit}
@@ -557,12 +665,7 @@ export default function SetupWizard() {
         }
         return (
           <ActivateSystemStep
-            initialValues={step11ToForm(
-              step11.data,
-              (step8.data ?? [])
-                .map((round) => round.id)
-                .filter((id): id is string => Boolean(id)),
-            )}
+            initialValues={step11Initial}
             roundOptions={roundOptions}
             alreadyGenerated={Boolean(step11.data?.activated || (step11.data?.visitsGenerated ?? 0) > 0)}
             visitsGenerated={step11.data?.visitsGenerated ?? 0}
@@ -604,23 +707,43 @@ export default function SetupWizard() {
         currentIndex={stepIndex}
         completedSteps={completedSteps}
         onSkip={setupStatus?.setupCompleted ? undefined : handleSkip}
-        onStepClick={(index) => goToStep(index + 1)}
+        onStepClick={(index) => navigateToStep(index + 1)}
       />
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         <div className="p-6 sm:p-8">
           {formError ? (
-            <p className="mb-4 text-sm text-destructive">{formError}</p>
+            <p role="alert" className="mb-4 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+              {formError}
+            </p>
           ) : null}
 
-          <SetupStepPanel stepKey={currentStep.id}>{renderStep()}</SetupStepPanel>
+          {blockedLeaveTarget != null ? (
+            <div
+              role="alert"
+              className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-foreground"
+            >
+              <p>{setupWizardContent.unsavedChanges.message}</p>
+              <button
+                type="button"
+                onClick={discardAndLeave}
+                className="font-semibold text-foreground underline underline-offset-2"
+              >
+                {setupWizardContent.unsavedChanges.discard}
+              </button>
+            </div>
+          ) : null}
+
+          <WizardDirtyContext.Provider value={reportDirty}>
+            <SetupStepPanel stepKey={currentStep.id}>{renderStep()}</SetupStepPanel>
+          </WizardDirtyContext.Provider>
 
           <SetupWizardFooter
             currentStep={step}
             totalSteps={SETUP_STEP_COUNT}
             isFirstStep={isFirstStep}
             isLastStep={isLastStep}
-            onBack={goBack}
+            onBack={() => navigateToStep(step - 1)}
             onContinue={onLastStepContinue}
             onSkipStep={skipStep}
             loading={pendingMutation || statusQuery.isFetching}
@@ -633,6 +756,11 @@ export default function SetupWizard() {
       <BulkReplaceConfirmModal
         open={pendingBulkReplace != null}
         target={pendingBulkReplace?.target ?? null}
+        removedNames={
+          pendingBulkReplace
+            ? removedSavedNames(pendingBulkReplace.target, pendingBulkReplace.values)
+            : []
+        }
         loading={saveStep3.isPending || saveStep7.isPending}
         onClose={() => {
           if (saveStep3.isPending || saveStep7.isPending) return

@@ -10,7 +10,6 @@ import type {
   SmsTemplatesData,
   Technician,
   TechnicianManagementData,
-  ServiceArea,
   ServiceAreaData,
   AssignRoundData,
   AssignedAreaRound,
@@ -46,6 +45,10 @@ export interface SetupWizardContent {
     cancel: string
     confirm: string
   }
+  unsavedChanges: {
+    message: string
+    discard: string
+  }
   stepper: {
     showNextSteps: string
     showPreviousSteps: string
@@ -56,6 +59,7 @@ export interface SetupWizardContent {
   }
   validation: {
     required: string
+    fieldRequired: string
     vatRequired: string
     emailInvalid: string
     phoneInvalid: string
@@ -78,7 +82,7 @@ export interface SetupWizardContent {
       currency: { label: string }
     }
     days: readonly { id: string; label: string }[]
-    timezones: SelectOption[]
+    timezoneSearch: string
     currencies: SelectOption[]
     bankDetails: {
       heading: string
@@ -104,6 +108,7 @@ export interface SetupWizardContent {
       notConnected: string
       connected: string
     }
+    disconnect: string
     providers: readonly {
       id: 'gocardless' | 'stripe'
       name: string
@@ -158,7 +163,7 @@ export interface SetupWizardContent {
     subheading: string
     fields: {
       recurringCycle: { label: string }
-      cleanMethods: { label: string }
+      cleanMethods: { label: string; hint: string }
       autoGenerateVisits: { label: string; description: string }
       reminderTiming: { label: string; description: string }
       reminderTimeOfDay: { label: string; description: string }
@@ -202,6 +207,7 @@ export interface SetupWizardContent {
     heading: string
     subheading: string
     addTechnician: string
+    empty: string
     addForm: {
       title: string
       fields: {
@@ -236,12 +242,12 @@ export interface SetupWizardContent {
     heading: string
     subheading: string
     addArea: string
+    empty: string
     addForm: {
       title: string
       fields: {
         areaName: { label: string; placeholder: string }
-        postcodeSectors: { label: string; placeholder: string }
-        notes: { label: string; placeholder: string }
+        postcodeSectors: { label: string; placeholder: string; hint: string }
       }
       actions: { confirm: string; cancel: string }
       validation: { nameRequired: string; postcodeRequired: string; postcodeInvalid: string }
@@ -313,6 +319,7 @@ export interface SetupWizardContent {
   }
   addProperty: {
     addProperty: string
+    addedTitle: string
     subSteps: readonly { label: string; title: string; subtitle: string }[]
     sections: {
       customerProperty: string
@@ -329,7 +336,7 @@ export interface SetupWizardContent {
       serviceArea: { label: string; placeholder: string }
       propertyType: { label: string; placeholder: string }
       cleaningFrequency: { label: string }
-      pricePerVisit: { label: string; placeholder: string }
+      pricePerVisit: { label: string; placeholder: string; hint: string }
       vat: { label: string; placeholder: string }
       paymentMethod: { label: string; placeholder: string }
       startDate: { label: string; placeholder: string }
@@ -442,54 +449,6 @@ const defaultMessageTemplates = [
     body: "Hi {{customer_name}}, due to weather conditions we've had to reschedule your clean to {{new_date}}. Sorry for any inconvenience. {{business_name}}",
   },
 ] satisfies MessageTemplate[]
-
-const defaultTechnicians = [
-  {
-    id: 'tech-james-smith',
-    fullName: 'James Smith',
-    mobile: '07111 111111',
-    email: 'james@example.com',
-    role: 'lead-technician',
-    defaultArea: 'Alnwick',
-    appStatus: 'active',
-  },
-  {
-    id: 'tech-sarah-johnson',
-    fullName: 'Sarah Johnson',
-    mobile: '07222 222222',
-    email: 'sarah@example.com',
-    role: 'technician',
-    defaultArea: 'Bamburgh',
-    appStatus: 'active',
-  },
-  {
-    id: 'tech-michael-brown',
-    fullName: 'Michael Brown',
-    mobile: '07333 333333',
-    email: 'michael@example.com',
-    role: 'technician',
-    defaultArea: 'Seahouses',
-    appStatus: 'active',
-  },
-  {
-    id: 'tech-emma-wilson',
-    fullName: 'Emma Wilson',
-    mobile: '07444 444444',
-    email: 'emma@example.com',
-    role: 'technician',
-    defaultArea: 'Ashington',
-    appStatus: 'active',
-  },
-] satisfies Technician[]
-
-const defaultServiceAreas = [
-  {
-    id: 'area-alnwick',
-    name: 'Alnwick',
-    postcodeSectors: ['NE66'],
-    notes: 'Main town center and surrounding areas',
-  },
-] satisfies ServiceArea[]
 
 const defaultAssignRounds = [
   {
@@ -609,13 +568,18 @@ export const setupWizardContent = {
     stepLabel: 'Step {current} of {total}',
   },
   bulkReplaceConfirm: {
-    title: 'Replace existing items?',
+    title: 'Delete removed items?',
     servicesDescription:
-      'Saving replaces all current services with the list shown. This cannot be undone from here.',
+      'You removed these saved services. Saving will permanently delete them from your account:',
     serviceAreasDescription:
-      'Saving replaces all current service areas with the list shown. This cannot be undone from here.',
-    cancel: 'Cancel',
-    confirm: 'Replace and continue',
+      'You removed these saved service areas. Saving will permanently delete them from your account:',
+    cancel: 'Keep them',
+    confirm: 'Delete and save',
+  },
+  unsavedChanges: {
+    message:
+      "This step has unsaved changes that couldn't be saved. Fix the highlighted fields, or discard your changes.",
+    discard: 'Discard changes and leave',
   },
   stepper: {
     showNextSteps: 'Show next steps',
@@ -627,9 +591,10 @@ export const setupWizardContent = {
   },
   validation: {
     required: 'Please fill in all required fields.',
+    fieldRequired: 'This field is required.',
     vatRequired: 'Please select whether your business is VAT registered.',
     emailInvalid: 'Enter a valid email address.',
-    phoneInvalid: 'Enter a valid phone number.',
+    phoneInvalid: 'Enter a valid phone number (7–15 digits).',
     companyNumberInvalid: 'Company number must be 15 characters or fewer (letters and numbers only).',
     vatNumberRequired: 'Enter your VAT registration number.',
     vatNumberInvalid: 'VAT registration number must be 5–12 characters (letters and numbers only).',
@@ -687,11 +652,7 @@ export const setupWizardContent = {
       { id: 'sat', label: 'Sat' },
       { id: 'sun', label: 'Sun' },
     ],
-    timezones: [
-      { value: 'Europe/London', label: 'Europe/London (GMT)' },
-      { value: 'Europe/Dublin', label: 'Europe/Dublin (GMT)' },
-      { value: 'America/New_York', label: 'America/New_York (EST)' },
-    ],
+    timezoneSearch: 'Search city or region…',
     currencies: [
       { value: 'GBP', label: 'GB (£)' },
       { value: 'USD', label: 'US ($)' },
@@ -700,7 +661,7 @@ export const setupWizardContent = {
     bankDetails: {
       heading: 'Bank Account Details',
       description:
-        'Printed in the invoice footer so customers paying by bank transfer know where to send payment.',
+        'Printed in the invoice footer so customers paying by bank transfer know where to send payment. UK accounts only: 8-digit account number and 6-digit sort code.',
       fields: {
         accountName: { label: 'Account Name', placeholder: 'e.g. Alnwick Window Cleaning Ltd' },
         bankName: { label: 'Bank Name', optional: '(optional)', placeholder: 'e.g. Barclays' },
@@ -722,7 +683,7 @@ export const setupWizardContent = {
       vatRegistered: null,
       workingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
       timezone: 'Europe/London',
-      currency: 'USD',
+      currency: 'GBP',
       bankDetails: { accountName: '', bankName: '', accountNumber: '', sortCode: '' },
     },
   },
@@ -733,6 +694,7 @@ export const setupWizardContent = {
       notConnected: 'Not Connected',
       connected: 'Connected',
     },
+    disconnect: 'Disconnect',
     providers: [
       {
         id: 'gocardless',
@@ -881,7 +843,7 @@ export const setupWizardContent = {
     subheading: 'Configure your cleaning round preferences',
     fields: {
       recurringCycle: { label: 'Default Recurring Cycle' },
-      cleanMethods: { label: 'Default Clean Methods' },
+      cleanMethods: { label: 'Default Clean Methods', hint: 'Select all that apply' },
       autoGenerateVisits: {
         label: 'Auto-Generate Visits',
         description: 'Automatically create visits based on schedule',
@@ -891,7 +853,7 @@ export const setupWizardContent = {
         description: 'Choose one or more times reminders are sent to customers before the scheduled clean.',
       },
       reminderTimeOfDay: {
-        label: 'Pre-Clean Reminder Timing',
+        label: 'Reminder Time of Day',
         description: 'Set the time of day reminders are sent to customers.',
       },
     },
@@ -967,6 +929,7 @@ export const setupWizardContent = {
     heading: 'Technician Management',
     subheading: 'Add your team members and assign areas',
     addTechnician: 'Add Technician',
+    empty: 'No technicians yet. Use "Add Technician" to invite your team — you can also do this later.',
     addForm: {
       title: 'Add New Technician',
       fields: {
@@ -1009,22 +972,23 @@ export const setupWizardContent = {
       moreOptions: 'More options',
     },
     defaults: {
-      technicians: defaultTechnicians.map((technician) => ({ ...technician })),
+      technicians: [],
     },
   },
   serviceArea: {
     heading: 'Service Areas',
     subheading: 'Define your service areas and postcode',
     addArea: 'Add Area',
+    empty: 'No service areas yet. Use "Add Area" to define where you work.',
     addForm: {
       title: 'Add New Area',
       fields: {
-        areaName: { label: 'Area Name', placeholder: 'Area Name: Alnwick' },
+        areaName: { label: 'Area Name', placeholder: 'e.g. Alnwick' },
         postcodeSectors: {
           label: 'Postcode Sectors',
-          placeholder: 'Postcode Sectors* (e.g; NE66,NE67)',
+          placeholder: 'e.g. NE66, NE67',
+          hint: 'Separate multiple sectors with commas.',
         },
-        notes: { label: 'Notes', placeholder: 'Notes (Optional)' },
       },
       actions: { confirm: 'Add Area', cancel: 'Cancel' },
       validation: {
@@ -1035,7 +999,7 @@ export const setupWizardContent = {
     },
     actions: { delete: 'Delete area' },
     defaults: {
-      areas: defaultServiceAreas.map((area) => ({ ...area, postcodeSectors: [...area.postcodeSectors] })),
+      areas: [],
     },
   },
   assignRound: {
@@ -1121,6 +1085,7 @@ export const setupWizardContent = {
   },
   addProperty: {
     addProperty: 'Add Property',
+    addedTitle: 'Added properties',
     subSteps: [
       {
         label: '01',
@@ -1167,7 +1132,11 @@ export const setupWizardContent = {
       serviceArea: { label: 'Service Area', placeholder: 'Select service area' },
       propertyType: { label: 'Property Type', placeholder: 'House' },
       cleaningFrequency: { label: 'Cleaning Frequency' },
-      pricePerVisit: { label: 'Price per visit', placeholder: '£ XX' },
+      pricePerVisit: {
+        label: 'Price per visit',
+        placeholder: '£ XX',
+        hint: "Filled in from the service's catalogue price — change it to override for this property.",
+      },
       vat: { label: 'VAT (Yes/No)', placeholder: 'Select' },
       paymentMethod: { label: 'Payment Method', placeholder: 'Select' },
       startDate: { label: 'Start Date', placeholder: '01/02/2025' },

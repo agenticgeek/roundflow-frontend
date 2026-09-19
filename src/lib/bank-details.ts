@@ -45,14 +45,22 @@ export function isBankDetailsBlank(values: BankDetailsForm): boolean {
   )
 }
 
-/** Returns a user-facing error, or null when valid. Fully blank is valid (details are optional). */
-export function validateBankDetails(values: BankDetailsForm): string | null {
+export type BankDetailsFieldErrors = Partial<Record<keyof BankDetailsForm, string>>
+
+/** Per-field errors; empty when valid. Fully blank is valid (details are optional). */
+export function bankDetailsFieldErrors(values: BankDetailsForm): BankDetailsFieldErrors {
   const { validation } = setupWizardContent.businessProfile.bankDetails
-  if (isBankDetailsBlank(values)) return null
-  if (!values.accountName.trim()) return validation.accountNameRequired
-  if (!/^\d{8}$/.test(values.accountNumber.trim())) return validation.accountNumberInvalid
-  if (!SORT_CODE_PATTERN.test(values.sortCode.trim())) return validation.sortCodeInvalid
-  return null
+  if (isBankDetailsBlank(values)) return {}
+  const errors: BankDetailsFieldErrors = {}
+  if (!values.accountName.trim()) errors.accountName = validation.accountNameRequired
+  if (!/^\d{8}$/.test(values.accountNumber.trim())) errors.accountNumber = validation.accountNumberInvalid
+  if (!SORT_CODE_PATTERN.test(values.sortCode.trim())) errors.sortCode = validation.sortCodeInvalid
+  return errors
+}
+
+/** First user-facing error, or null when valid. */
+export function validateBankDetails(values: BankDetailsForm): string | null {
+  return Object.values(bankDetailsFieldErrors(values))[0] ?? null
 }
 
 export function bankDetailsToForm(raw: unknown): BankDetailsForm {

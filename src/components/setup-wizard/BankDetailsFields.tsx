@@ -1,13 +1,15 @@
 import type { BankDetailsForm } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, FieldError, Input } from '@/components/ui'
-import { formatSortCode, stripSpaces } from '@/lib/bank-details'
+import { formatSortCode, stripSpaces, type BankDetailsFieldErrors } from '@/lib/bank-details'
 
 interface BankDetailsFieldsProps {
   values: BankDetailsForm
   onChange: (values: BankDetailsForm) => void
   disabled?: boolean
   error?: string | null
+  /** Per-field errors — flags the offending input instead of a detached message. */
+  fieldErrors?: BankDetailsFieldErrors
   /** Match the surrounding panel's label weight (`medium` in the wizard, `semibold` in Settings). */
   labelWeight?: 'medium' | 'semibold'
 }
@@ -18,6 +20,7 @@ export function BankDetailsFields({
   onChange,
   disabled = false,
   error,
+  fieldErrors = {},
   labelWeight = 'medium',
 }: BankDetailsFieldsProps) {
   const { bankDetails } = setupWizardContent.businessProfile
@@ -35,8 +38,9 @@ export function BankDetailsFields({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label={fields.accountName.label} labelWeight={labelWeight}>
+        <Field label={fields.accountName.label} labelWeight={labelWeight} error={fieldErrors.accountName}>
           <Input
+            aria-invalid={Boolean(fieldErrors.accountName)}
             value={values.accountName}
             onChange={(event) => set('accountName', stripSpaces(event.target.value))}
             placeholder={fields.accountName.placeholder}
@@ -61,8 +65,9 @@ export function BankDetailsFields({
             autoComplete="off"
           />
         </Field>
-        <Field label={fields.accountNumber.label} labelWeight={labelWeight}>
+        <Field label={fields.accountNumber.label} labelWeight={labelWeight} error={fieldErrors.accountNumber}>
           <Input
+            aria-invalid={Boolean(fieldErrors.accountNumber)}
             inputMode="numeric"
             maxLength={8}
             value={values.accountNumber}
@@ -74,8 +79,9 @@ export function BankDetailsFields({
             autoComplete="off"
           />
         </Field>
-        <Field label={fields.sortCode.label} labelWeight={labelWeight}>
+        <Field label={fields.sortCode.label} labelWeight={labelWeight} error={fieldErrors.sortCode}>
           <Input
+            aria-invalid={Boolean(fieldErrors.sortCode)}
             inputMode="numeric"
             maxLength={8}
             value={values.sortCode}

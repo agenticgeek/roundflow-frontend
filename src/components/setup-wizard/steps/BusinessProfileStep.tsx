@@ -1,21 +1,22 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { BusinessProfileData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
-import { Field, Input, Select } from '@/components/ui'
+import { Field, FieldError, Input, PhoneInput, Select } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { BankDetailsFields } from '@/components/setup-wizard/BankDetailsFields'
-import { validateBankDetails } from '@/lib/bank-details'
-import { cn } from '@/lib/utils'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
+import { bankDetailsFieldErrors, type BankDetailsFieldErrors } from '@/lib/bank-details'
+import { isValidEmail, isValidPhone } from '@/lib/contact'
+import { focusFirstInvalid, hasErrors, type FieldErrors } from '@/lib/form-errors'
+import { timezoneOptions } from '@/lib/timezones'
 
 interface BusinessProfileStepProps {
   initialValues: BusinessProfileData
   onSubmit: (values: BusinessProfileData) => void
 }
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-/** Loose enough for international formats; just guards against garbage input. */
-const PHONE_PATTERN = /^[+\d][\d\s()-]{6,19}$/
+type ProfileField = 'businessName' | 'businessPhone' | 'businessEmail' | 'vatRegistered' | 'vatNumber'
 
 /** Letters + digits only, uppercased, capped — for company/VAT registration numbers. */
 function filterRegistrationNumber(value: string, maxLength: number): string {
@@ -41,47 +42,52 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
   const { fields } = businessProfile
 
   const [values, setValues] = useState<BusinessProfileData>(initialValues)
-  const [error, setError] = useState<string | null>(null)
+  const [errors, setErrors] = useState<FieldErrors<ProfileField>>({})
+  const [bankErrors, setBankErrors] = useState<BankDetailsFieldErrors>({})
+  const formRef = useRef<HTMLFormElement>(null)
+  const timezones = useMemo(() => timezoneOptions(values.timezone), [values.timezone])
+  useReportWizardDirty(values, initialValues)
 
   function updateField<K extends keyof BusinessProfileData>(key: K, value: BusinessProfileData[K]) {
-    if (error) setError(null)
+    setErrors((prev) => (prev[key as ProfileField] ? { ...prev, [key]: undefined } : prev))
+    if (key === 'bankDetails') setBankErrors({})
     setValues((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function validate(): FieldErrors<ProfileField> {
+    const next: FieldErrors<ProfileField> = {}
+    if (!values.businessName.trim()) next.businessName = validation.fieldRequired
+
+    if (!values.businessPhone.trim()) next.businessPhone = validation.fieldRequired
+    else if (!isValidPhone(values.businessPhone)) next.businessPhone = validation.phoneInvalid
+
+    if (!values.businessEmail.trim()) next.businessEmail = validation.fieldRequired
+    else if (!isValidEmail(values.businessEmail)) next.businessEmail = validation.emailInvalid
+
+    if (values.vatRegistered === null) next.vatRegistered = validation.vatRequired
+    if (values.vatRegistered) {
+      const vatNumber = values.vatNumber.trim()
+      if (!vatNumber) next.vatNumber = validation.vatNumberRequired
+      else if (vatNumber.length < 5) next.vatNumber = validation.vatNumberInvalid
+    }
+    return next
+  }
+
+  /** Re-checks a single field when the user leaves it, so mistakes show before Continue. */
+  function validateOnBlur(field: ProfileField) {
+    const message = validate()[field]
+    setErrors((prev) => ({ ...prev, [field]: message }))
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setError(null)
+    const nextErrors = validate()
+    const nextBankErrors = bankDetailsFieldErrors(values.bankDetails)
+    setErrors(nextErrors)
+    setBankErrors(nextBankErrors)
 
-    if (!values.businessName.trim() || !values.businessPhone.trim() || !values.businessEmail.trim()) {
-      setError(validation.required)
-      return
-    }
-    if (!EMAIL_PATTERN.test(values.businessEmail.trim())) {
-      setError(validation.emailInvalid)
-      return
-    }
-    if (!PHONE_PATTERN.test(values.businessPhone.trim())) {
-      setError(validation.phoneInvalid)
-      return
-    }
-    if (values.vatRegistered === null) {
-      setError(validation.vatRequired)
-      return
-    }
-    if (values.vatRegistered) {
-      const vatNumber = values.vatNumber.trim()
-      if (!vatNumber) {
-        setError(validation.vatNumberRequired)
-        return
-      }
-      if (vatNumber.length < 5) {
-        setError(validation.vatNumberInvalid)
-        return
-      }
-    }
-    const bankError = validateBankDetails(values.bankDetails)
-    if (bankError) {
-      setError(bankError)
+    if (hasErrors(nextErrors) || hasErrors(nextBankErrors)) {
+      focusFirstInvalid(formRef.current)
       return
     }
 
@@ -89,7 +95,13 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
   }
 
   return (
-    <form id="setup-wizard-step-form" onSubmit={handleSubmit} noValidate className="space-y-6">
+    <form
+      ref={formRef}
+      id="setup-wizard-step-form"
+      onSubmit={handleSubmit}
+      noValidate
+      className="space-y-6"
+    >
       <div className="flex items-start gap-4 border-b border-border pb-6">
         <BusinessProfileIcon />
         <div>
@@ -98,9 +110,16 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
         </div>
       </div>
 
-      <Field label={fields.businessName.label} required={fields.businessName.required} labelWeight="medium">
+      <Field
+        label={fields.businessName.label}
+        required={fields.businessName.required}
+        labelWeight="medium"
+        error={errors.businessName}
+      >
         <Input
           value={values.businessName}
+          aria-invalid={Boolean(errors.businessName)}
+          onBlur={() => errors.businessName && validateOnBlur('businessName')}
           onChange={(e) => updateField('businessName', e.target.value)}
           placeholder={fields.businessName.placeholder}
           autoComplete="organization"
@@ -108,20 +127,32 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label={fields.businessPhone.label} required={fields.businessPhone.required} labelWeight="medium">
-          <Input
-            type="tel"
+        <Field
+          label={fields.businessPhone.label}
+          required={fields.businessPhone.required}
+          labelWeight="medium"
+          error={errors.businessPhone}
+        >
+          <PhoneInput
             value={values.businessPhone}
-            onChange={(e) => updateField('businessPhone', e.target.value)}
+            aria-invalid={Boolean(errors.businessPhone)}
+            onBlur={() => values.businessPhone.trim() && validateOnBlur('businessPhone')}
+            onValueChange={(value) => updateField('businessPhone', value)}
             placeholder={fields.businessPhone.placeholder}
-            autoComplete="tel"
           />
         </Field>
 
-        <Field label={fields.businessEmail.label} required={fields.businessEmail.required} labelWeight="medium">
+        <Field
+          label={fields.businessEmail.label}
+          required={fields.businessEmail.required}
+          labelWeight="medium"
+          error={errors.businessEmail}
+        >
           <Input
             type="email"
             value={values.businessEmail}
+            aria-invalid={Boolean(errors.businessEmail)}
+            onBlur={() => values.businessEmail.trim() && validateOnBlur('businessEmail')}
             onChange={(e) => updateField('businessEmail', e.target.value)}
             placeholder={fields.businessEmail.placeholder}
             autoComplete="email"
@@ -140,7 +171,10 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
       </Field>
 
       <div>
-        <span className="mb-3 block text-sm font-medium text-foreground">{fields.vatRegistered.label}</span>
+        <span className="mb-3 block text-sm font-medium text-foreground">
+          {fields.vatRegistered.label}
+          <span className="text-danger"> *</span>
+        </span>
         <div className="flex items-center gap-6">
           {([
             { label: fields.vatRegistered.yes, value: true },
@@ -149,6 +183,7 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
             <label key={option.label} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
+                aria-invalid={Boolean(errors.vatRegistered) && option.value === true}
                 checked={values.vatRegistered === option.value}
                 onChange={() => {
                   updateField('vatRegistered', option.value)
@@ -160,11 +195,13 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
             </label>
           ))}
         </div>
+        {errors.vatRegistered ? <FieldError message={errors.vatRegistered} /> : null}
       </div>
 
       {values.vatRegistered ? (
-        <Field label={fields.vatNumber.label} required labelWeight="medium">
+        <Field label={fields.vatNumber.label} required labelWeight="medium" error={errors.vatNumber}>
           <Input
+            aria-invalid={Boolean(errors.vatNumber)}
             value={values.vatNumber}
             onChange={(e) => updateField('vatNumber', filterRegistrationNumber(e.target.value, 12))}
             placeholder={fields.vatNumber.placeholder}
@@ -185,7 +222,9 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
           <Select
             value={values.timezone}
             onChange={(e) => updateField('timezone', e.target.value)}
-            options={businessProfile.timezones}
+            options={timezones}
+            searchable
+            searchPlaceholder={businessProfile.timezoneSearch}
           />
         </Field>
 
@@ -202,14 +241,9 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
         <BankDetailsFields
           values={values.bankDetails}
           onChange={(bankDetails) => updateField('bankDetails', bankDetails)}
+          fieldErrors={bankErrors}
         />
       </div>
-
-      {error ? (
-        <p role="alert" className={cn('animate-fade-in text-sm text-danger')}>
-          {error}
-        </p>
-      ) : null}
     </form>
   )
 }

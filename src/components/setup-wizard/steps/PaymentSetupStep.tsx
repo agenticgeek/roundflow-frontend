@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { PaymentSetupData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, Select, Toggle } from '@/components/ui'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 import { cn } from '@/lib/utils'
 
 interface PaymentSetupStepProps {
@@ -43,6 +44,7 @@ export function PaymentSetupStep({ initialValues, onSubmit }: PaymentSetupStepPr
   const { providers, settings, status } = paymentSetup
 
   const [values, setValues] = useState<PaymentSetupData>(initialValues)
+  useReportWizardDirty(values, initialValues)
 
   function updateField<K extends keyof PaymentSetupData>(key: K, value: PaymentSetupData[K]) {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -53,9 +55,9 @@ export function PaymentSetupStep({ initialValues, onSubmit }: PaymentSetupStepPr
     onSubmit(values)
   }
 
-  function handleConnect(providerId: 'gocardless' | 'stripe') {
-    if (providerId === 'gocardless') updateField('goCardlessConnected', true)
-    if (providerId === 'stripe') updateField('stripeConnected', true)
+  function setConnected(providerId: 'gocardless' | 'stripe', connected: boolean) {
+    if (providerId === 'gocardless') updateField('goCardlessConnected', connected)
+    if (providerId === 'stripe') updateField('stripeConnected', connected)
   }
 
   const connectionMap = {
@@ -88,15 +90,24 @@ export function PaymentSetupStep({ initialValues, onSubmit }: PaymentSetupStepPr
                 </span>
               </div>
               <p className="mt-1 text-sm text-muted">{provider.description}</p>
-              <button
-                type="button"
-                onClick={() => handleConnect(provider.id)}
-                disabled={connected}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-[15px] font-semibold text-primary-foreground transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-default disabled:opacity-60"
-              >
-                <ExternalLinkIcon />
-                {provider.connectLabel}
-              </button>
+              {connected ? (
+                <button
+                  type="button"
+                  onClick={() => setConnected(provider.id, false)}
+                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-3 text-[15px] font-semibold text-danger transition-colors duration-200 hover:bg-danger/5 active:scale-[0.98]"
+                >
+                  {paymentSetup.disconnect} {provider.name}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConnected(provider.id, true)}
+                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-[15px] font-semibold text-primary-foreground transition-all duration-200 hover:opacity-90 active:scale-[0.98]"
+                >
+                  <ExternalLinkIcon />
+                  {provider.connectLabel}
+                </button>
+              )}
             </div>
           )
         })}
