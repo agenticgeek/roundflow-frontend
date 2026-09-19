@@ -33,12 +33,25 @@ export function MultiToggleButtons<T extends string>({
             aria-pressed={active}
             onClick={() => toggle(option.id)}
             className={cn(
-              'rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150',
+              'flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors duration-150',
               active
-                ? 'bg-primary text-primary-foreground'
-                : 'border border-border bg-background text-foreground hover:bg-surface',
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-background text-muted hover:bg-surface hover:text-foreground',
             )}
           >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
+                active ? 'border-primary-foreground bg-primary-foreground text-primary' : 'border-border',
+              )}
+            >
+              {active ? (
+                <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M2.5 6l2.5 2.5 4.5-5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : null}
+            </span>
             {option.label}
           </button>
         )

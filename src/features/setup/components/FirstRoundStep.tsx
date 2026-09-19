@@ -1,8 +1,10 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, Input, Select } from '@/components/ui'
 import type { FirstRoundFormValues } from '@/features/setup/lib/mappers'
+import { focusFirstInvalid } from '@/lib/form-errors'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 
 interface FirstRoundStepProps {
   initialValues: FirstRoundFormValues
@@ -48,22 +50,31 @@ export function FirstRoundStep({
 }: FirstRoundStepProps) {
   const { assignRound } = setupWizardContent
   const [values, setValues] = useState<FirstRoundFormValues>(initialValues)
-  const [error, setError] = useState<string | null>(null)
+  useReportWizardDirty(values, initialValues)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setError(null)
 
     if (!values.name.trim()) {
-      setError('Round name is required.')
+      setNameError('Round name is required.')
+      focusFirstInvalid(formRef.current)
       return
     }
 
+    setNameError(null)
     onSubmit(values)
   }
 
   return (
-    <form id="setup-wizard-step-form" onSubmit={handleSubmit} noValidate className="space-y-6">
+    <form
+      ref={formRef}
+      id="setup-wizard-step-form"
+      onSubmit={handleSubmit}
+      noValidate
+      className="space-y-6"
+    >
       <div className="flex items-start gap-4 border-b border-border pb-6">
         <FirstRoundIcon />
         <div>
@@ -74,10 +85,14 @@ export function FirstRoundStep({
         </div>
       </div>
 
-      <Field label="Round name" required labelWeight="medium">
+      <Field label="Round name" required labelWeight="medium" error={nameError}>
         <Input
           value={values.name}
-          onChange={(event) => setValues((prev) => ({ ...prev, name: event.target.value }))}
+          aria-invalid={Boolean(nameError)}
+          onChange={(event) => {
+            setValues((prev) => ({ ...prev, name: event.target.value }))
+            if (nameError) setNameError(null)
+          }}
           placeholder="e.g. Alnwick Monday"
         />
       </Field>
@@ -119,8 +134,6 @@ export function FirstRoundStep({
           ]}
         />
       </Field>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <p className="text-sm text-muted">{assignRound.subheading}</p>
     </form>

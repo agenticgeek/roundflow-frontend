@@ -6,6 +6,7 @@ import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
 import { FilterPills } from '@/components/setup-wizard/FilterPills'
 import { Input, Toggle } from '@/components/ui'
 import { formatCurrency } from '@/lib/utils'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 
 interface ServiceCatalogueStepProps {
   initialValues: ServiceCatalogueData
@@ -42,6 +43,7 @@ export function ServiceCatalogueStep({ initialValues, onSubmit }: ServiceCatalog
   const { categories, statusFilters, columns, tags, actions } = serviceCatalogue
 
   const [services, setServices] = useState<CatalogueService[]>(initialValues.services)
+  useReportWizardDirty({ services }, initialValues)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { TechnicianRecord } from '@/content/technicians'
 import { techniciansContent } from '@/content/technicians'
 import type { TechnicianCreateInput, TechnicianUpdateInput } from '@/api/technicians.api'
-import { Field, Input, Select, Textarea, Toggle } from '@/components/ui'
+import { Field, Input, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { useServiceAreas } from '@/features/settings/hooks/useSettings'
 import { settingsServiceAreasToRows } from '@/features/settings/lib/mappers'
@@ -142,11 +142,10 @@ export function TechnicianForm({
               />
             </Field>
             <Field label={content.mobile} required labelWeight="medium" size="sm">
-              <Input
-                type="tel"
+              <PhoneInput
                 inputSize="sm"
                 value={phone}
-                onChange={(event) => setPhone(event.target.value)}
+                onValueChange={setPhone}
                 placeholder="e.g. 07700 900000"
                 disabled={!canMutate || pending}
               />

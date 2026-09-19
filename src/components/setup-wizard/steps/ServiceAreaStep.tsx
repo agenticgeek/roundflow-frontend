@@ -2,8 +2,9 @@ import type { FormEvent } from 'react'
 import { useEffect, useState } from 'react'
 import type { ServiceArea, ServiceAreaData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
-import { FieldError, Input } from '@/components/ui'
+import { Field, Input } from '@/components/ui'
 import { isValidPostcodeSector } from '@/lib/postcode'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 
 interface ServiceAreaStepProps {
   initialValues: ServiceAreaData
@@ -13,13 +14,13 @@ interface ServiceAreaStepProps {
 interface NewAreaForm {
   name: string
   postcodeSectors: string
-  notes: string
 }
+
+type AreaFormErrors = Partial<Record<keyof NewAreaForm, string>>
 
 const emptyForm = (): NewAreaForm => ({
   name: '',
   postcodeSectors: '',
-  notes: '',
 })
 
 function ServiceAreaIcon() {
@@ -62,9 +63,10 @@ export function ServiceAreaStep({ initialValues, onSubmit }: ServiceAreaStepProp
   const { addForm, actions } = serviceArea
 
   const [areas, setAreas] = useState<ServiceArea[]>(initialValues.areas)
+  useReportWizardDirty({ areas }, initialValues)
   const [showAddForm, setShowAddForm] = useState(false)
   const [form, setForm] = useState<NewAreaForm>(emptyForm)
-  const [formError, setFormError] = useState<string | null>(null)
+  const [formErrors, setFormErrors] = useState<AreaFormErrors>({})
 
   // Resync when the parent refetches (e.g. after a failed save rolls back a
   // locally-deleted area that's still referenced server-side) — a deleted area
@@ -81,29 +83,32 @@ export function ServiceAreaStep({ initialValues, onSubmit }: ServiceAreaStepProp
   function openForm() {
     setShowAddForm(true)
     setForm(emptyForm())
-    setFormError(null)
+    setFormErrors({})
   }
 
   function closeForm() {
     setShowAddForm(false)
     setForm(emptyForm())
-    setFormError(null)
+    setFormErrors({})
+  }
+
+  function updateForm(key: keyof NewAreaForm, value: string) {
+    setForm((prev) => ({ ...prev, [key]: value }))
+    setFormErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev))
   }
 
   function addArea() {
     const name = form.name.trim()
     const postcodeSectors = parsePostcodeSectors(form.postcodeSectors)
 
-    if (!name) {
-      setFormError(addForm.validation.nameRequired)
-      return
+    const errors: AreaFormErrors = {}
+    if (!name) errors.name = addForm.validation.nameRequired
+    if (postcodeSectors.length === 0) errors.postcodeSectors = addForm.validation.postcodeRequired
+    else if (postcodeSectors.some((sector) => !isValidPostcodeSector(sector))) {
+      errors.postcodeSectors = addForm.validation.postcodeInvalid
     }
-    if (postcodeSectors.length === 0) {
-      setFormError(addForm.validation.postcodeRequired)
-      return
-    }
-    if (postcodeSectors.some((sector) => !isValidPostcodeSector(sector))) {
-      setFormError(addForm.validation.postcodeInvalid)
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
       return
     }
 
@@ -113,7 +118,7 @@ export function ServiceAreaStep({ initialValues, onSubmit }: ServiceAreaStepProp
         id: `area-${Date.now()}`,
         name,
         postcodeSectors,
-        notes: form.notes.trim(),
+        notes: '',
       },
     ])
 
@@ -148,39 +153,42 @@ export function ServiceAreaStep({ initialValues, onSubmit }: ServiceAreaStepProp
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 sm:p-5">
           <h3 className="text-sm font-medium text-foreground">{addForm.title}</h3>
 
-          <div className="mt-4 space-y-3">
-            <Input
-              inputSize="sm"
-              value={form.name}
-              onChange={(event) => {
-                setForm((prev) => ({ ...prev, name: event.target.value }))
-                if (formError) setFormError(null)
-              }}
-              placeholder={addForm.fields.areaName.placeholder}
-              aria-label={addForm.fields.areaName.label}
-              autoFocus
-            />
+          <div className="mt-4 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label={addForm.fields.areaName.label}
+                required
+                labelWeight="medium"
+                size="sm"
+                error={formErrors.name}
+              >
+                <Input
+                  inputSize="sm"
+                  value={form.name}
+                  aria-invalid={Boolean(formErrors.name)}
+                  onChange={(event) => updateForm('name', event.target.value)}
+                  placeholder={addForm.fields.areaName.placeholder}
+                  autoFocus
+                />
+              </Field>
 
-            <Input
-              inputSize="sm"
-              value={form.postcodeSectors}
-              onChange={(event) => {
-                setForm((prev) => ({ ...prev, postcodeSectors: event.target.value }))
-                if (formError) setFormError(null)
-              }}
-              placeholder={addForm.fields.postcodeSectors.placeholder}
-              aria-label={addForm.fields.postcodeSectors.label}
-            />
-
-            <Input
-              inputSize="sm"
-              value={form.notes}
-              onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
-              placeholder={addForm.fields.notes.placeholder}
-              aria-label={addForm.fields.notes.label}
-            />
-
-            {formError ? <FieldError message={formError} size="sm" /> : null}
+              <Field
+                label={addForm.fields.postcodeSectors.label}
+                required
+                labelWeight="medium"
+                size="sm"
+                error={formErrors.postcodeSectors}
+              >
+                <Input
+                  inputSize="sm"
+                  value={form.postcodeSectors}
+                  aria-invalid={Boolean(formErrors.postcodeSectors)}
+                  onChange={(event) => updateForm('postcodeSectors', event.target.value)}
+                  placeholder={addForm.fields.postcodeSectors.placeholder}
+                />
+                <p className="mt-1.5 text-xs text-muted">{addForm.fields.postcodeSectors.hint}</p>
+              </Field>
+            </div>
 
             <div className="flex flex-wrap gap-2 pt-1">
               <button
@@ -200,6 +208,12 @@ export function ServiceAreaStep({ initialValues, onSubmit }: ServiceAreaStepProp
             </div>
           </div>
         </div>
+      ) : null}
+
+      {areas.length === 0 && !showAddForm ? (
+        <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
+          {serviceArea.empty}
+        </p>
       ) : null}
 
       <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

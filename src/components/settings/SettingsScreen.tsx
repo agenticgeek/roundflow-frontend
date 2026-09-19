@@ -5,6 +5,7 @@ import { setupWizardContent } from '@/content/setup-wizard'
 import type { CatalogueService } from '@/types/setup-wizard'
 import { BankDetailsFields } from '@/components/setup-wizard/BankDetailsFields'
 import { validateBankDetails } from '@/lib/bank-details'
+import { timezoneOptions } from '@/lib/timezones'
 import {
   useBusinessProfile,
   useConnectPayment,
@@ -48,7 +49,7 @@ import { ApiError } from '@/lib/errors'
 import { isValidPostcodeSector } from '@/lib/postcode'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
-import { Field, FieldError, Input, MultiSelect, Select, Toggle } from '@/components/ui'
+import { Field, FieldError, Input, MultiSelect, PhoneInput, Select, Toggle } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
 import { useToast } from '@/components/ui/toast'
@@ -315,7 +316,8 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
     }
   }
 
-  const { fields, timezones, currencies } = setupWizardContent.businessProfile
+  const { fields, currencies, timezoneSearch } = setupWizardContent.businessProfile
+  const timezones = timezoneOptions(values.timezone)
 
   return (
     <article className={cn(cardClass, 'p-6')}>
@@ -341,10 +343,9 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
 
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label={fields.businessPhone.label} required labelWeight="medium">
-            <Input
-              type="tel"
+            <PhoneInput
               value={values.businessPhone}
-              onChange={(e) => updateField('businessPhone', e.target.value)}
+              onValueChange={(value) => updateField('businessPhone', value)}
               placeholder={fields.businessPhone.placeholder}
               readOnly={!editing}
               className={cn(!editing && 'bg-surface')}
@@ -389,6 +390,8 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
               value={values.timezone}
               onChange={(e) => updateField('timezone', e.target.value)}
               options={timezones}
+              searchable
+              searchPlaceholder={timezoneSearch}
               disabled={!editing}
               className={settingsSelectClass}
             />
@@ -878,11 +881,10 @@ function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
                 />
               </Field>
               <Field label={addForm.fields.mobile.label} required labelWeight="medium" size="sm">
-                <Input
+                <PhoneInput
                   inputSize="sm"
-                  type="tel"
                   value={form.mobile}
-                  onChange={(e) => setForm((p) => ({ ...p, mobile: e.target.value }))}
+                  onValueChange={(mobile) => setForm((p) => ({ ...p, mobile }))}
                   placeholder={addForm.fields.mobile.placeholder}
                   className="rounded-lg bg-card"
                 />

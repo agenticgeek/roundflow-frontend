@@ -5,6 +5,7 @@ import { setupWizardContent } from '@/content/setup-wizard'
 import { MultiToggleButtons } from '@/components/setup-wizard/MultiToggleButtons'
 import { SegmentCardGroup } from '@/components/setup-wizard/SegmentCardGroup'
 import { MultiSelect, Toggle } from '@/components/ui'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 
 interface RoundSettingsStepProps {
   initialValues: RoundSettingsData
@@ -61,6 +62,7 @@ export function RoundSettingsStep({ initialValues, onSubmit }: RoundSettingsStep
   const { fields } = roundSettings
 
   const [values, setValues] = useState<RoundSettingsData>(initialValues)
+  useReportWizardDirty(values, initialValues)
 
   function updateField<K extends keyof RoundSettingsData>(key: K, value: RoundSettingsData[K]) {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -95,7 +97,8 @@ export function RoundSettingsStep({ initialValues, onSubmit }: RoundSettingsStep
 
       <div>
         <span className="mb-2.5 block text-sm font-medium text-foreground">
-          {fields.cleanMethods.label}
+          {fields.cleanMethods.label}{' '}
+          <span className="font-normal text-muted">({fields.cleanMethods.hint})</span>
         </span>
         <MultiToggleButtons
           ariaLabel={fields.cleanMethods.label}

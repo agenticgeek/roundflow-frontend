@@ -17,7 +17,7 @@ const dropdownSizeClass = {
 export type DropdownSize = keyof typeof dropdownSizeClass
 
 export const dropdownTriggerClass =
-  'flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-card text-left font-medium text-foreground shadow-sm transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60'
+  'flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-card text-left font-medium text-foreground shadow-sm transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger'
 
 export const dropdownMenuClass =
   'overflow-hidden rounded-xl border border-border bg-card py-1.5 shadow-lg'
@@ -213,14 +213,29 @@ export interface SelectProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   value?: string
   onChange?: (event: { target: { value: string } }) => void
   inputSize?: DropdownSize
+  /** Adds a filter box at the top of the menu — for long lists like timezones. */
+  searchable?: boolean
+  searchPlaceholder?: string
 }
 
 /** Custom single-select dropdown — replaces native `<select>` across the app. */
 export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select(
-  { options, value = '', onChange, className, inputSize = 'default', disabled, 'aria-label': ariaLabel, ...props },
+  {
+    options,
+    value = '',
+    onChange,
+    className,
+    inputSize = 'default',
+    disabled,
+    searchable = false,
+    searchPlaceholder = 'Search…',
+    'aria-label': ariaLabel,
+    ...props
+  },
   ref,
 ) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -230,9 +245,16 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
   const selected = options.find((option) => option.value === value)
   const triggerLabel = selected?.label ?? options[0]?.label ?? 'Select'
 
+  const normalizedQuery = query.trim().toLowerCase()
+  const visibleOptions =
+    searchable && normalizedQuery
+      ? options.filter((option) => option.label.toLowerCase().includes(normalizedQuery))
+      : options
+
   function handleSelect(nextValue: string) {
     onChange?.({ target: { value: nextValue } })
     setOpen(false)
+    setQuery('')
   }
 
   function setRefs(node: HTMLButtonElement | null) {
@@ -263,7 +285,19 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
       </button>
 
       <DropdownMenuPortal open={open} triggerRef={triggerRef} menuRef={menuRef} labelledBy={triggerId}>
-        {options.map((option) => (
+        {searchable ? (
+          <div className="sticky top-0 z-10 border-b border-border bg-card px-3 pt-1 pb-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-foreground"
+            />
+          </div>
+        ) : null}
+        {visibleOptions.map((option) => (
           <DropdownItem
             key={option.value || '__empty__'}
             label={option.label}
@@ -271,6 +305,9 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
             onSelect={() => handleSelect(option.value)}
           />
         ))}
+        {searchable && visibleOptions.length === 0 ? (
+          <p className="px-4 py-3 text-sm text-muted">No matches</p>
+        ) : null}
       </DropdownMenuPortal>
     </div>
   )

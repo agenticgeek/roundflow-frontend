@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AddPropertyData, PropertyDraft, PropertyRecord } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
@@ -8,16 +8,31 @@ import { SegmentCardGroup } from '@/components/setup-wizard/SegmentCardGroup'
 import { SetupStepHeader } from '@/components/setup-wizard/SetupStepHeader'
 import { SubStepFooter } from '@/components/setup-wizard/SubStepFooter'
 import { VerticalSubStepper } from '@/components/setup-wizard/VerticalSubStepper'
-import { Field, FieldError, Input, Select } from '@/components/ui'
+import { Field, FieldError, Input, PhoneInput, Select } from '@/components/ui'
 import { isValidEmail, isValidPhone } from '@/lib/contact'
+import { focusFirstInvalid, hasErrors } from '@/lib/form-errors'
 import { isValidUkPostcode } from '@/lib/postcode'
 import { cn } from '@/lib/utils'
+
+export type PropertyDraftErrors = Partial<Record<keyof PropertyDraft, string>>
+
+/**
+ * The wizard's POST /setup/step/9 has no scheduling, customer-notes or VAT fields,
+ * so those inputs are left out here (the standalone Add Property modal keeps them,
+ * where its API does save them). Visit timing in setup comes from the round's
+ * default day + frequency (step 8) and the first-cycle start date (step 11).
+ */
+const WIZARD_SUB_STEPS = ['details', 'plan', 'risk', 'assign'] as const
+type WizardSubStep = (typeof WIZARD_SUB_STEPS)[number]
+const CONTENT_SUB_STEP_INDEX: Record<WizardSubStep, number> = { details: 0, plan: 1, risk: 3, assign: 4 }
 
 interface AddPropertyStepProps {
   initialValues: AddPropertyData
   serviceAreaOptions: SelectOption[]
   roundOptions: SelectOption[]
   serviceOptions?: SelectOption[]
+  /** Catalogue default price per service id — prefills "Price per visit". */
+  servicePrices?: Readonly<Record<string, number>>
   adding?: boolean
   onAddProperty: (draft: PropertyDraft) => Promise<void> | void
   onSubmit: () => void
@@ -54,6 +69,7 @@ export function AddPropertyStep({
   serviceAreaOptions,
   roundOptions,
   serviceOptions = [],
+  servicePrices = {},
   adding = false,
   onAddProperty,
   onSubmit,
@@ -63,72 +79,61 @@ export function AddPropertyStep({
 
   const [properties, setProperties] = useState<PropertyRecord[]>(initialValues.properties)
   const [draft, setDraft] = useState<PropertyDraft>({ ...draftDefaults })
-  const [subStep, setSubStep] = useState(0)
-  const [error, setError] = useState<string | null>(null)
+  const [subStepIndex, setSubStepIndex] = useState(0)
+  const [errors, setErrors] = useState<PropertyDraftErrors>({})
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setProperties(initialValues.properties)
   }, [initialValues.properties])
 
-  const currentMeta = subSteps[subStep]
+  const subStep = WIZARD_SUB_STEPS[subStepIndex]!
+  const stepperSteps = WIZARD_SUB_STEPS.map((key, index) => ({
+    ...subSteps[CONTENT_SUB_STEP_INDEX[key]]!,
+    label: String(index + 1).padStart(2, '0'),
+  }))
+  const currentMeta = stepperSteps[subStepIndex]!
+  const isLastSubStep = subStepIndex === WIZARD_SUB_STEPS.length - 1
 
   function updateDraft<K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }))
-    if (error) setError(null)
+    setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev))
+    setSaveError(null)
   }
 
   function resetDraft() {
     setDraft({ ...draftDefaults })
-    setSubStep(0)
-    setError(null)
+    setSubStepIndex(0)
+    setErrors({})
+    setSaveError(null)
+  }
+
+  function subStepErrors(): PropertyDraftErrors {
+    const next: PropertyDraftErrors = {}
+    if (subStep === 'details') {
+      if (!draft.customerName.trim()) next.customerName = validation.customerNameRequired
+      if (!draft.phone.trim()) next.phone = validation.phoneRequired
+      else if (!isValidPhone(draft.phone)) next.phone = validation.phoneInvalid
+      if (draft.landline.trim() && !isValidPhone(draft.landline)) next.landline = validation.landlineInvalid
+      if (draft.email.trim() && !isValidEmail(draft.email)) next.email = validation.emailInvalid
+      if (!draft.fullAddress.trim()) next.fullAddress = validation.fullAddressRequired
+      if (!draft.postcode.trim()) next.postcode = validation.postcodeRequired
+      else if (!isValidUkPostcode(draft.postcode)) next.postcode = validation.postcodeInvalid
+    }
+    if (subStep === 'plan') {
+      const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, ''))
+      if (!Number.isFinite(price) || price <= 0) next.pricePerVisit = validation.priceRequired
+    }
+    if (subStep === 'assign' && !draft.round) next.round = validation.roundRequired
+    return next
   }
 
   function validateSubStep(): boolean {
-    if (subStep === 0 && !draft.customerName.trim()) {
-      setError(validation.customerNameRequired)
-      return false
-    }
-    if (subStep === 0 && !draft.phone.trim()) {
-      setError(validation.phoneRequired)
-      return false
-    }
-    if (subStep === 0 && !isValidPhone(draft.phone)) {
-      setError(validation.phoneInvalid)
-      return false
-    }
-    if (subStep === 0 && draft.landline.trim() && !isValidPhone(draft.landline)) {
-      setError(validation.landlineInvalid)
-      return false
-    }
-    if (subStep === 0 && draft.email.trim() && !isValidEmail(draft.email)) {
-      setError(validation.emailInvalid)
-      return false
-    }
-    if (subStep === 0 && !draft.fullAddress.trim()) {
-      setError(validation.fullAddressRequired)
-      return false
-    }
-    if (subStep === 0 && !draft.postcode.trim()) {
-      setError(validation.postcodeRequired)
-      return false
-    }
-    if (subStep === 0 && !isValidUkPostcode(draft.postcode)) {
-      setError(validation.postcodeInvalid)
-      return false
-    }
-    if (subStep === 1) {
-      const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, ''))
-      if (!Number.isFinite(price) || price <= 0) {
-        setError(validation.priceRequired)
-        return false
-      }
-    }
-    if (subStep === 2 && draft.nextVisitDate && draft.startDate && draft.nextVisitDate < draft.startDate) {
-      setError(validation.nextVisitDateBeforeStart)
-      return false
-    }
-    if (subStep === 4 && !draft.round) {
-      setError(validation.roundRequired)
+    const next = subStepErrors()
+    setErrors(next)
+    if (hasErrors(next)) {
+      focusFirstInvalid(panelRef.current)
       return false
     }
     return true
@@ -136,12 +141,13 @@ export function AddPropertyStep({
 
   function handleSubContinue() {
     if (!validateSubStep()) return
-    setSubStep((index) => Math.min(index + 1, subSteps.length - 1))
+    setSubStepIndex((index) => Math.min(index + 1, WIZARD_SUB_STEPS.length - 1))
   }
 
   function handleSubBack() {
-    setError(null)
-    setSubStep((index) => Math.max(index - 1, 0))
+    setErrors({})
+    setSaveError(null)
+    setSubStepIndex((index) => Math.max(index - 1, 0))
   }
 
   async function saveProperty() {
@@ -150,7 +156,7 @@ export function AddPropertyStep({
       await onAddProperty(draft)
       resetDraft()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add property.')
+      setSaveError(err instanceof Error ? err.message : 'Could not add property.')
     }
   }
 
@@ -159,43 +165,32 @@ export function AddPropertyStep({
     onSubmit()
   }
 
-  const addPropertyButton = (
-    <button
-      type="button"
-      onClick={resetDraft}
-      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:opacity-90 active:scale-[0.98]"
-    >
-      <span aria-hidden="true">+</span>
-      {addPropertyContent.addProperty}
-    </button>
-  )
-
   return (
     <form id="setup-wizard-step-form" onSubmit={handleSubmit} noValidate className="space-y-5">
       <div className="flex gap-6 lg:gap-8">
-        <VerticalSubStepper steps={subSteps} currentIndex={subStep} />
+        <VerticalSubStepper steps={stepperSteps} currentIndex={subStepIndex} />
 
-        <div className="min-w-0 flex-1">
+        <div ref={panelRef} className="min-w-0 flex-1">
           <SetupStepHeader
             icon={<PropertyClipboardIcon />}
             title={currentMeta.title}
             subtitle={currentMeta.subtitle}
-            action={subStep === 0 ? addPropertyButton : undefined}
           />
 
           <div className="space-y-5">
-            {subStep === 0 ? (
+            {subStep === 'details' ? (
               <PropertyDetailsPanel
                 draft={draft}
                 sections={sections}
                 fields={fields}
                 serviceAreaOptions={serviceAreaOptions}
                 propertyTypes={addPropertyContent.propertyTypes}
+                errors={errors}
                 onChange={updateDraft}
               />
             ) : null}
 
-            {subStep === 1 ? (
+            {subStep === 'plan' ? (
               <ServicePlanPanel
                 draft={draft}
                 fields={fields}
@@ -203,24 +198,18 @@ export function AddPropertyStep({
                 vatOptions={addPropertyContent.vatOptions}
                 paymentMethods={addPropertyContent.paymentMethods}
                 serviceOptions={serviceOptions}
+                servicePrices={servicePrices}
+                showVat={false}
+                errors={errors}
                 onChange={updateDraft}
               />
             ) : null}
 
-            {subStep === 2 ? (
-              <SchedulingPanel
-                draft={draft}
-                fields={fields}
-                preferredDays={addPropertyContent.preferredDays}
-                onChange={updateDraft}
-              />
+            {subStep === 'risk' ? (
+              <RiskNotesPanel draft={draft} fields={fields} showCustomerNotes={false} onChange={updateDraft} />
             ) : null}
 
-            {subStep === 3 ? (
-              <RiskNotesPanel draft={draft} fields={fields} onChange={updateDraft} />
-            ) : null}
-
-            {subStep === 4 ? (
+            {subStep === 'assign' ? (
               <AssignPropertyPanel
                 draft={draft}
                 fields={fields}
@@ -229,49 +218,51 @@ export function AddPropertyStep({
                   { value: '', label: fields.assignServiceArea.placeholder },
                   ...serviceAreaOptions,
                 ]}
+                errors={errors}
                 onChange={updateDraft}
               />
             ) : null}
 
-            {error ? <FieldError message={error} size="sm" /> : null}
+            {saveError ? <FieldError message={saveError} size="sm" /> : null}
           </div>
 
           <SubStepFooter
-            currentStep={subStep + 1}
-            totalSteps={subSteps.length}
-            isFirstStep={subStep === 0}
+            currentStep={subStepIndex + 1}
+            totalSteps={WIZARD_SUB_STEPS.length}
+            isFirstStep={subStepIndex === 0}
             onBack={handleSubBack}
-            onContinue={subStep === subSteps.length - 1 ? () => void saveProperty() : handleSubContinue}
+            onContinue={isLastSubStep ? () => void saveProperty() : handleSubContinue}
             continueLabel={
-              subStep === subSteps.length - 1
-                ? adding
-                  ? 'Saving…'
-                  : addPropertyContent.actions.addProperty
-                : undefined
+              isLastSubStep ? (adding ? 'Saving…' : addPropertyContent.actions.addProperty) : undefined
             }
-            loading={subStep === subSteps.length - 1 && adding}
+            loading={isLastSubStep && adding}
           />
         </div>
       </div>
 
       {properties.length > 0 ? (
-        <ul className="grid gap-3 border-t border-border pt-5 sm:grid-cols-2 xl:grid-cols-3">
-          {properties.map((property) => (
-            <li
-              key={property.id}
-              className="rounded-lg border border-border bg-background p-3 shadow-sm"
-            >
-              <p className="text-sm font-medium text-foreground">{property.propertyName}</p>
-              <p className="mt-0.5 text-xs text-muted">{property.fullAddress || property.customerName}</p>
-              {property.round ? (
-                <p className="mt-1.5 text-xs font-medium text-primary">
-                  {roundOptions.find((option) => option.value === property.round)?.label ??
-                    property.round}
-                </p>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        <div className="border-t border-border pt-5">
+          <h3 className="mb-3 text-sm font-medium text-foreground">
+            {addPropertyContent.addedTitle} ({properties.length})
+          </h3>
+          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {properties.map((property) => (
+              <li
+                key={property.id}
+                className="rounded-lg border border-border bg-background p-3 shadow-sm"
+              >
+                <p className="text-sm font-medium text-foreground">{property.propertyName}</p>
+                <p className="mt-0.5 text-xs text-muted">{property.fullAddress || property.customerName}</p>
+                {property.round ? (
+                  <p className="mt-1.5 text-xs font-medium text-primary">
+                    {roundOptions.find((option) => option.value === property.round)?.label ??
+                      property.round}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </form>
   )
@@ -284,6 +275,7 @@ export function PropertyDetailsPanel({
   serviceAreaOptions,
   propertyTypes,
   serviceAreaRequired = false,
+  errors = {},
   onChange,
 }: {
   draft: PropertyDraft
@@ -293,15 +285,17 @@ export function PropertyDetailsPanel({
   propertyTypes: SelectOption[]
   /** Some callers (e.g. the standalone Add Property modal) require this against the live API. */
   serviceAreaRequired?: boolean
+  errors?: PropertyDraftErrors
   onChange: <K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) => void
 }) {
   return (
     <>
       <SectionHeading>{sections.customerProperty}</SectionHeading>
       <div className="space-y-4">
-        <Field label={fields.customerName.label} required labelWeight="medium" size="sm">
+        <Field label={fields.customerName.label} required labelWeight="medium" size="sm" error={errors.customerName}>
           <Input
             inputSize="sm"
+            aria-invalid={Boolean(errors.customerName)}
             value={draft.customerName}
             onChange={(e) => onChange('customerName', e.target.value)}
             placeholder={fields.customerName.placeholder}
@@ -325,12 +319,12 @@ export function PropertyDetailsPanel({
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={fields.phone.label} required labelWeight="medium" size="sm">
-            <Input
+          <Field label={fields.phone.label} required labelWeight="medium" size="sm" error={errors.phone}>
+            <PhoneInput
               inputSize="sm"
-              type="tel"
+              aria-invalid={Boolean(errors.phone)}
               value={draft.phone}
-              onChange={(e) => onChange('phone', e.target.value)}
+              onValueChange={(value) => onChange('phone', value)}
               placeholder={fields.phone.placeholder}
             />
           </Field>
@@ -338,12 +332,13 @@ export function PropertyDetailsPanel({
             label={<LabelWithHint label={fields.landline.label} hint={fields.landline.optional} />}
             labelWeight="medium"
             size="sm"
+            error={errors.landline}
           >
-            <Input
+            <PhoneInput
               inputSize="sm"
-              type="tel"
+              aria-invalid={Boolean(errors.landline)}
               value={draft.landline}
-              onChange={(e) => onChange('landline', e.target.value)}
+              onValueChange={(value) => onChange('landline', value)}
               placeholder={fields.landline.placeholder}
             />
           </Field>
@@ -352,9 +347,11 @@ export function PropertyDetailsPanel({
           label={<LabelWithHint label={fields.email.label} hint={fields.email.optional} />}
           labelWeight="medium"
           size="sm"
+          error={errors.email}
         >
           <Input
             inputSize="sm"
+            aria-invalid={Boolean(errors.email)}
             type="email"
             value={draft.email}
             onChange={(e) => onChange('email', e.target.value)}
@@ -365,18 +362,20 @@ export function PropertyDetailsPanel({
 
       <SectionHeading>{sections.address}</SectionHeading>
       <div className="space-y-4">
-        <Field label={fields.fullAddress.label} required labelWeight="medium" size="sm">
+        <Field label={fields.fullAddress.label} required labelWeight="medium" size="sm" error={errors.fullAddress}>
           <Input
             inputSize="sm"
+            aria-invalid={Boolean(errors.fullAddress)}
             value={draft.fullAddress}
             onChange={(e) => onChange('fullAddress', e.target.value)}
             placeholder={fields.fullAddress.placeholder}
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={fields.postcode.label} required labelWeight="medium" size="sm">
+          <Field label={fields.postcode.label} required labelWeight="medium" size="sm" error={errors.postcode}>
             <Input
               inputSize="sm"
+              aria-invalid={Boolean(errors.postcode)}
               value={draft.postcode}
               onChange={(e) => onChange('postcode', e.target.value)}
               placeholder={fields.postcode.placeholder}
@@ -416,6 +415,9 @@ export function ServicePlanPanel({
   vatOptions,
   paymentMethods,
   serviceOptions,
+  servicePrices = {},
+  showVat = true,
+  errors = {},
   onChange,
 }: {
   draft: PropertyDraft
@@ -424,6 +426,10 @@ export function ServicePlanPanel({
   vatOptions: SelectOption[]
   paymentMethods: SelectOption[]
   serviceOptions: SelectOption[]
+  /** Catalogue default price per service id — prefills the price when a service is picked. */
+  servicePrices?: Readonly<Record<string, number>>
+  showVat?: boolean
+  errors?: PropertyDraftErrors
   onChange: <K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) => void
 }) {
   return (
@@ -439,33 +445,50 @@ export function ServicePlanPanel({
           onChange={(value) => onChange('cleaningFrequency', value)}
         />
       </div>
-      <Field label={fields.pricePerVisit.label} labelWeight="medium" size="sm">
-        <Input
-          inputSize="sm"
-          value={draft.pricePerVisit}
-          onChange={(e) => onChange('pricePerVisit', e.target.value)}
-          placeholder={fields.pricePerVisit.placeholder}
-        />
-      </Field>
       {serviceOptions.length > 0 ? (
         <Field label="Service" labelWeight="medium" size="sm">
           <Select
             inputSize="sm"
             value={draft.serviceId}
-            onChange={(e) => onChange('serviceId', e.target.value)}
+            onChange={(e) => {
+              const nextId = e.target.value
+              const previousDefault = servicePrices[draft.serviceId]
+              const nextDefault = servicePrices[nextId]
+              onChange('serviceId', nextId)
+              // Prefill from the catalogue unless the user already typed their own price.
+              const untouched =
+                !String(draft.pricePerVisit).trim() ||
+                (previousDefault != null && Number(draft.pricePerVisit) === previousDefault)
+              if (nextDefault != null && untouched) onChange('pricePerVisit', String(nextDefault))
+            }}
             options={[{ value: '', label: 'Select service' }, ...serviceOptions]}
           />
         </Field>
       ) : null}
+      <Field label={fields.pricePerVisit.label} required labelWeight="medium" size="sm" error={errors.pricePerVisit}>
+        <Input
+          inputSize="sm"
+          inputMode="decimal"
+          aria-invalid={Boolean(errors.pricePerVisit)}
+          value={draft.pricePerVisit}
+          onChange={(e) => onChange('pricePerVisit', e.target.value)}
+          placeholder={fields.pricePerVisit.placeholder}
+        />
+        {Object.keys(servicePrices).length > 0 ? (
+          <p className="mt-1.5 text-xs text-muted">{fields.pricePerVisit.hint}</p>
+        ) : null}
+      </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label={fields.vat.label} labelWeight="medium" size="sm">
-          <Select
-            inputSize="sm"
-            value={draft.vat}
-            onChange={(e) => onChange('vat', e.target.value)}
-            options={vatOptions}
-          />
-        </Field>
+        {showVat ? (
+          <Field label={fields.vat.label} labelWeight="medium" size="sm">
+            <Select
+              inputSize="sm"
+              value={draft.vat}
+              onChange={(e) => onChange('vat', e.target.value)}
+              options={vatOptions}
+            />
+          </Field>
+        ) : null}
         <Field label={fields.paymentMethod.label} labelWeight="medium" size="sm">
           <Select
             inputSize="sm"
@@ -534,26 +557,30 @@ export function SchedulingPanel({
 export function RiskNotesPanel({
   draft,
   fields,
+  showCustomerNotes = true,
   onChange,
 }: {
   draft: PropertyDraft
   fields: (typeof setupWizardContent)['addProperty']['fields']
+  showCustomerNotes?: boolean
   onChange: <K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) => void
 }) {
   return (
     <div className="space-y-4">
-      <Field
-        label={<LabelWithHint label={fields.customerNotes.label} hint={fields.customerNotes.hint} />}
-        labelWeight="medium"
-        size="sm"
-      >
-        <Input
-          inputSize="sm"
-          value={draft.customerNotes}
-          onChange={(e) => onChange('customerNotes', e.target.value)}
-          placeholder={fields.customerNotes.placeholder}
-        />
-      </Field>
+      {showCustomerNotes ? (
+        <Field
+          label={<LabelWithHint label={fields.customerNotes.label} hint={fields.customerNotes.hint} />}
+          labelWeight="medium"
+          size="sm"
+        >
+          <Input
+            inputSize="sm"
+            value={draft.customerNotes}
+            onChange={(e) => onChange('customerNotes', e.target.value)}
+            placeholder={fields.customerNotes.placeholder}
+          />
+        </Field>
+      ) : null}
       <Field
         label={
           <LabelWithHint
@@ -589,19 +616,22 @@ function AssignPropertyPanel({
   fields,
   roundOptions,
   serviceAreaOptions,
+  errors = {},
   onChange,
 }: {
   draft: PropertyDraft
   fields: (typeof setupWizardContent)['addProperty']['fields']
   roundOptions: SelectOption[]
   serviceAreaOptions: SelectOption[]
+  errors?: PropertyDraftErrors
   onChange: <K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) => void
 }) {
   return (
     <div className="space-y-4">
-      <Field label={fields.round.label} labelWeight="medium" size="sm">
+      <Field label={fields.round.label} required labelWeight="medium" size="sm" error={errors.round}>
         <Select
           inputSize="sm"
+          aria-invalid={Boolean(errors.round)}
           value={draft.round}
           onChange={(e) => onChange('round', e.target.value)}
           options={roundOptions}

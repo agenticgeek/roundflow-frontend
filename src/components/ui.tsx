@@ -5,6 +5,7 @@ import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
 import { usePasswordVisibility } from '@/hooks/use-password-visibility'
 import { cn } from '@/lib/utils'
+import { PHONE_MAX_LENGTH, sanitizePhoneInput } from '@/lib/contact'
 import type { DropdownSize as InputSize } from '@/components/ui/dropdown'
 
 export { MultiSelect, Select } from '@/components/ui/dropdown'
@@ -19,7 +20,7 @@ export type {
 const { ui } = authContent
 
 export const inputClass =
-  'w-full rounded-xl border border-border bg-background text-foreground outline-none transition-[border-color,box-shadow] duration-200 placeholder:text-muted focus:border-foreground focus:ring-4 focus:ring-foreground/[0.06]'
+  'w-full rounded-xl border border-border bg-background text-foreground outline-none transition-[border-color,box-shadow] duration-200 placeholder:text-muted focus:border-foreground focus:ring-4 focus:ring-foreground/[0.06] aria-[invalid=true]:border-danger aria-[invalid=true]:focus:border-danger aria-[invalid=true]:focus:ring-danger/10'
 
 const inputSizeClass = {
   default: 'px-4 py-3 text-[15px]',
@@ -159,6 +160,29 @@ export const Input = forwardRef<
       />
       <PasswordToggleButton visible={visible} onToggle={toggle} />
     </div>
+  )
+})
+
+/** Phone field — filters out non-phone characters and caps the length while typing. */
+export const PhoneInput = forwardRef<
+  HTMLInputElement,
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange'> & {
+    value: string
+    onValueChange: (value: string) => void
+    inputSize?: InputSize
+  }
+>(function PhoneInput({ value, onValueChange, ...props }, ref) {
+  return (
+    <Input
+      ref={ref}
+      type="tel"
+      inputMode="tel"
+      autoComplete="tel"
+      maxLength={PHONE_MAX_LENGTH}
+      value={value}
+      onChange={(event) => onValueChange(sanitizePhoneInput(event.target.value))}
+      {...props}
+    />
   )
 })
 

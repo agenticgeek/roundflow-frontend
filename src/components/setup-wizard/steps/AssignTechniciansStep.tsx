@@ -9,6 +9,7 @@ import { MetricCard } from '@/components/ui/metric-card'
 import { SetupStepHeader } from '@/components/setup-wizard/SetupStepHeader'
 import { RoundDetailsModal } from '@/components/setup-wizard/RoundDetailsModal'
 import { cn } from '@/lib/utils'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 
 interface AssignTechniciansStepProps {
   initialValues: AssignTechniciansData
@@ -106,6 +107,7 @@ export function AssignTechniciansStep({
   const { summary, sections, columns, actions } = assignTechnicians
 
   const [rounds, setRounds] = useState<WizardRound[]>(initialValues.rounds)
+  useReportWizardDirty({ rounds }, initialValues)
   const [editingRoundId, setEditingRoundId] = useState<string | null>(null)
 
   useEffect(() => {

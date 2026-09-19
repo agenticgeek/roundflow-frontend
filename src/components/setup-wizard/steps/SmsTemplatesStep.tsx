@@ -4,6 +4,7 @@ import type { MessageTemplate, SmsTemplatesData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { EditTemplateModal } from '@/components/setup-wizard/EditTemplateModal'
 import { cn, interpolateTemplate, truncateTemplateBody } from '@/lib/utils'
+import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 
 interface SmsTemplatesStepProps {
   initialValues: SmsTemplatesData
@@ -45,6 +46,7 @@ export function SmsTemplatesStep({ initialValues, onSubmit }: SmsTemplatesStepPr
   const { labels, channelLabels, previewVariables } = smsTemplates
 
   const [templates, setTemplates] = useState<MessageTemplate[]>(initialValues.templates)
+  useReportWizardDirty({ templates }, initialValues)
   const [selectedId, setSelectedId] = useState(initialValues.templates[0]?.id ?? '')
   const [editOpen, setEditOpen] = useState(false)
 
