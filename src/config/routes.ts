@@ -10,6 +10,7 @@ export const ROUTES = {
   forgotPassword: '/forgot-password',
   resetPassword: '/reset-password',
   acceptInvite: '/accept-invite',
+  technicianApp: '/technician-app',
   setupWizard: '/setup',
   dashboard: '/dashboard',
   emergencies: '/emergencies',
