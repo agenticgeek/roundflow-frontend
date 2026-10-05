@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
-import { GuestRoute, ProtectedRoute, SetupRoute } from '@/providers/RouteGuards'
+import { GuestRoute, ProtectedRoute, SetupRoute, TechnicianAppRoute } from '@/providers/RouteGuards'
 import Login from '@/pages/Login'
 import Signup from '@/pages/Signup'
 import AuthCallback from '@/pages/AuthCallback'
@@ -19,6 +19,7 @@ import Complaints from '@/pages/Complaints'
 import Settings from '@/pages/Settings'
 import Technicians from '@/pages/Technicians'
 import SetupWizard from '@/pages/SetupWizard'
+import TechnicianApp from '@/pages/TechnicianApp'
 
 const technicianRoutes = [
   ROUTES.technicianNew,
@@ -32,6 +33,14 @@ const technicianRoutes = [
 /** Router config built entirely from ROUTES constants — no path strings inline. */
 export const router = createBrowserRouter([
   { path: ROUTES.home, element: <Navigate to={ROUTES.dashboard} replace /> },
+  {
+    path: ROUTES.technicianApp,
+    element: (
+      <TechnicianAppRoute>
+        <TechnicianApp />
+      </TechnicianAppRoute>
+    ),
+  },
   {
     path: ROUTES.setupWizard,
     element: (
