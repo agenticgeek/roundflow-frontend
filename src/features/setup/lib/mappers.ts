@@ -379,6 +379,7 @@ export function step9BundlesToRecords(
     round: bundle.property.roundId ?? '',
     assignServiceArea: bundle.property.serviceAreaId ?? '',
     serviceId: bundle.servicePlan.serviceId ?? '',
+    serviceIds: bundle.servicePlan.serviceId ? [bundle.servicePlan.serviceId] : [],
   }))
 }
 
@@ -409,7 +410,11 @@ export function propertyDraftToStep9Input(draft: PropertyDraft): SetupStep9Input
     ...(draft.paymentMethod
       ? { paymentMethod: draft.paymentMethod as SetupStep9Input['paymentMethod'] }
       : {}),
-    ...(draft.serviceId ? { serviceId: draft.serviceId } : {}),
+    ...(draft.serviceIds.length > 0
+      ? { serviceId: draft.serviceIds[0], serviceIds: draft.serviceIds }
+      : draft.serviceId
+        ? { serviceId: draft.serviceId }
+        : {}),
     ...(draft.accessNotes.trim() ? { accessNotes: draft.accessNotes.trim() } : {}),
     ...(draft.riskNotes.trim() ? { riskNotes: draft.riskNotes.trim() } : {}),
   }

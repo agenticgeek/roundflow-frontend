@@ -17,7 +17,7 @@ import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { customerListRowToRecord, formatMoney } from '@/features/customers/lib/mappers'
 import { useCreateProperty } from '@/features/properties/hooks/useProperties'
 import { useRounds } from '@/features/rounds/hooks/useRounds'
-import { useServiceAreas } from '@/features/settings/hooks/useSettings'
+import { useServiceAreas, useServices } from '@/features/settings/hooks/useSettings'
 import { settingsServiceAreasToRows } from '@/features/settings/lib/mappers'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
@@ -77,6 +77,7 @@ export function CustomersScreen() {
   const createProperty = useCreateProperty()
   const roundsQuery = useRounds('ACTIVE')
   const serviceAreasQuery = useServiceAreas(showImport)
+  const servicesQuery = useServices()
   const listParams = useMemo(
     () => ({
       search: search.trim() || undefined,
@@ -160,6 +161,25 @@ export function CustomersScreen() {
       })),
     [serviceAreasQuery.data],
   )
+  const importServiceOptions = useMemo(
+    () =>
+      (servicesQuery.data ?? [])
+        .filter((service): service is typeof service & { id: string; name: string } =>
+          Boolean(service.id && service.name && service.active !== false),
+        )
+        .map((service) => ({ value: service.id, label: service.name })),
+    [servicesQuery.data],
+  )
+  const importServicePrices = useMemo(
+    () =>
+      Object.fromEntries(
+        (servicesQuery.data ?? [])
+          .filter((service) => service.id && service.defaultPrice != null)
+          .map((service) => [service.id as string, Number.parseFloat(String(service.defaultPrice))])
+          .filter(([, price]) => Number.isFinite(price as number)),
+      ) as Record<string, number>,
+    [servicesQuery.data],
+  )
 
   async function handleImportSave(draft: PropertyDraft) {
     const round = (roundsQuery.data ?? []).find((item) => item.id === draft.round)
@@ -179,6 +199,8 @@ export function CustomersScreen() {
       landline: draft.landline.trim() || undefined,
       email: draft.email.trim() || undefined,
       serviceAreaId: draft.serviceArea,
+      serviceId: draft.serviceIds[0] ?? (draft.serviceId || undefined),
+      serviceIds: draft.serviceIds.length > 0 ? draft.serviceIds : undefined,
       roundId: round.id,
     }
     await createProperty.mutateAsync(input)
@@ -217,6 +239,8 @@ export function CustomersScreen() {
         <ImportPropertiesPanel
           roundOptions={importRoundOptions}
           serviceAreaOptions={importServiceAreaOptions}
+          serviceOptions={importServiceOptions}
+          servicePrices={importServicePrices}
           draftDefaults={setupWizardContent.addProperty.draftDefaults}
           onSaveProperty={handleImportSave}
           onClose={() => setShowImport(false)}

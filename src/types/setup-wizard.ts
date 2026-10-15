@@ -168,7 +168,10 @@ export interface PropertyDraft {
   accessNotes: string
   round: string
   assignServiceArea: string
+  /** Primary service (kept for back-compat; = serviceIds[0]). */
   serviceId: string
+  /** All services chosen for this property. Price is the sum of their catalogue prices (editable). */
+  serviceIds: string[]
 }
 
 export interface PropertyRecord extends PropertyDraft {

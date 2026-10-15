@@ -18,7 +18,12 @@ export type PaymentConnectResponse = components['schemas']['ProviderConnectRespo
 export type PaymentMethod = components['schemas']['PaymentMethod']
 export type CleaningFrequency = components['schemas']['CleaningFrequency']
 export type Property = components['schemas']['Property']
-export type PropertyCreateInput = components['schemas']['PropertyCreateInput']
+// CONTRACT-DIFF: the generated schema only has a single `serviceId`, but the backend
+// accepts multiple services per property (OpenAPI not yet regenerated). `serviceId`
+// is still sent as the primary for back-compat.
+export type PropertyCreateInput = components['schemas']['PropertyCreateInput'] & {
+  serviceIds?: string[]
+}
 export type PropertyCreateResult = {
   customerId?: string
   propertyId?: string
@@ -108,6 +113,8 @@ export type SetupStep9Input = {
   cleaningFrequency?: CleaningFrequency
   paymentMethod?: PaymentMethod
   serviceId?: string
+  // CONTRACT-DIFF: multiple services per property (OpenAPI not yet regenerated).
+  serviceIds?: string[]
   accessNotes?: string
   riskNotes?: string
 }

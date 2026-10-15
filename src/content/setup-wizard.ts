@@ -334,8 +334,12 @@ export interface SetupWizardContent {
       roundPlaceholder: string
       serviceAreaLabel: string
       serviceAreaPlaceholder: string
+      servicesFilterLabel: string
+      servicesFilterPlaceholder: string
+      noServicesHint: string
       priceLabel: string
       pricePlaceholder: string
+      customizeHint: string
       parse: string
       clear: string
       cancel: string
@@ -350,9 +354,18 @@ export interface SetupWizardContent {
       roundRequired: string
       serviceAreaRequired: string
       priceRequired: string
+      allPricesRequired: string
       emptyPaste: string
       noValidRows: string
-      columns: { name: string; address: string; postcode: string; phone: string; email: string }
+      columns: {
+        name: string
+        address: string
+        postcode: string
+        phone: string
+        email: string
+        service: string
+        price: string
+      }
     }
     subSteps: readonly { label: string; title: string; subtitle: string }[]
     sections: {
@@ -1136,8 +1149,13 @@ export const setupWizardContent = {
       roundPlaceholder: 'Select a round',
       serviceAreaLabel: 'Service area for imported properties',
       serviceAreaPlaceholder: 'Select a service area',
+      servicesFilterLabel: 'Services to offer (pick which apply, then check/uncheck per property)',
+      servicesFilterPlaceholder: 'Select services',
+      noServicesHint: 'Pick services above to assign them per property.',
       priceLabel: 'Default price per visit (£)',
       pricePlaceholder: 'e.g. 20',
+      customizeHint:
+        'Each property’s price is the sum of its checked services — tick/untick services per row, or type a custom price.',
       parse: 'Preview',
       clear: 'Clear',
       cancel: 'Cancel',
@@ -1153,9 +1171,18 @@ export const setupWizardContent = {
       roundRequired: 'Choose a round for the imported properties.',
       serviceAreaRequired: 'Choose a service area for the imported properties.',
       priceRequired: 'Enter a default price per visit.',
+      allPricesRequired: 'Enter a price for every property before importing.',
       emptyPaste: 'Paste some rows first.',
       noValidRows: 'No rows could be imported — check the skipped list below.',
-      columns: { name: 'Customer', address: 'Address', postcode: 'Postcode', phone: 'Phone', email: 'Email' },
+      columns: {
+        name: 'Customer',
+        address: 'Address',
+        postcode: 'Postcode',
+        phone: 'Phone',
+        email: 'Email',
+        service: 'Services',
+        price: 'Price (£)',
+      },
     },
     subSteps: [
       {
@@ -1303,6 +1330,7 @@ export const setupWizardContent = {
       round: '',
       assignServiceArea: '',
       serviceId: '',
+      serviceIds: [],
     },
   },
   activateSystem: {

@@ -278,6 +278,17 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       ),
     [roundsQuery.data],
   )
+  // Catalogue default price per service id — lets the multi-service picker sum a price.
+  const servicePrices = useMemo(
+    () =>
+      Object.fromEntries(
+        (servicesQuery.data ?? [])
+          .filter((service) => service.id && service.defaultPrice != null)
+          .map((service) => [service.id as string, Number.parseFloat(String(service.defaultPrice))])
+          .filter(([, price]) => Number.isFinite(price as number)),
+      ) as Record<string, number>,
+    [servicesQuery.data],
+  )
 
   // "Pre-filled from round": selecting a round fills its default day, and its
   // first assigned technician once the round detail loads.
@@ -307,6 +318,13 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
     setDraft((prev) => ({ ...prev, [key]: value }))
     if (error) setError(null)
   }
+
+  // The shared setup-wizard panels type onChange over keyof PropertyDraft; updateDraft
+  // handles the superset AddPropertyDraft, so narrow it for those panels.
+  const updatePropertyField = updateDraft as <K extends keyof PropertyDraft>(
+    key: K,
+    value: PropertyDraft[K],
+  ) => void
 
   function resetDraft() {
     setDraft(draftDefaults())
@@ -406,7 +424,10 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       propertyName: draft.propertyName.trim() || undefined,
       propertyType: (draft.propertyType || undefined) as PropertyType | undefined,
       serviceAreaId: draft.serviceArea,
-      serviceId: realId(draft.serviceId),
+      // Multiple services supported; strip dummy sample ids. serviceId stays as the
+      // primary for back-compat.
+      serviceId: realId(draft.serviceIds[0] ?? draft.serviceId),
+      serviceIds: draft.serviceIds.map(realId).filter((id): id is string => Boolean(id)),
       paymentMethod: (draft.paymentMethod || undefined) as PaymentMethod | undefined,
       accessNotes: draft.accessNotes.trim() || undefined,
       riskNotes: draft.riskNotes.trim() || undefined,
@@ -502,7 +523,7 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
                 serviceAreaOptions={serviceAreaOptions}
                 propertyTypes={addPropertyContent.propertyTypes}
                 serviceAreaRequired
-                onChange={updateDraft}
+                onChange={updatePropertyField}
               />
             ) : null}
 
@@ -514,7 +535,8 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
                 vatOptions={addPropertyContent.vatOptions}
                 paymentMethods={addPropertyContent.paymentMethods}
                 serviceOptions={serviceOptions}
-                onChange={updateDraft}
+                servicePrices={servicePrices}
+                onChange={updatePropertyField}
               />
             ) : null}
 
@@ -523,11 +545,11 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
                 draft={draft}
                 fields={fields}
                 preferredDays={addPropertyContent.preferredDays}
-                onChange={updateDraft}
+                onChange={updatePropertyField}
               />
             ) : null}
 
-            {subStep === 3 ? <RiskNotesPanel draft={draft} fields={fields} onChange={updateDraft} /> : null}
+            {subStep === 3 ? <RiskNotesPanel draft={draft} fields={fields} onChange={updatePropertyField} /> : null}
 
             {subStep === 4 ? (
               <AssignRoundPanel

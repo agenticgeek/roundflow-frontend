@@ -9,13 +9,21 @@ import { ImportPropertiesPanel } from '@/components/setup-wizard/ImportPropertie
 import { SetupStepHeader } from '@/components/setup-wizard/SetupStepHeader'
 import { SubStepFooter } from '@/components/setup-wizard/SubStepFooter'
 import { VerticalSubStepper } from '@/components/setup-wizard/VerticalSubStepper'
-import { Field, FieldError, Input, PhoneInput, Select } from '@/components/ui'
+import { Field, FieldError, Input, MultiSelect, PhoneInput, Select } from '@/components/ui'
 import { isValidEmail, isValidPhone } from '@/lib/contact'
 import { focusFirstInvalid, hasErrors } from '@/lib/form-errors'
 import { isValidUkPostcode } from '@/lib/postcode'
 import { cn } from '@/lib/utils'
 
 export type PropertyDraftErrors = Partial<Record<keyof PropertyDraft, string>>
+
+/** Sum the catalogue prices of the selected services (missing prices count as 0). */
+function sumServicePrices(
+  ids: readonly string[],
+  prices: Readonly<Record<string, number>>,
+): number {
+  return ids.reduce((total, id) => total + (prices[id] ?? 0), 0)
+}
 
 /**
  * The wizard's POST /setup/step/9 has no scheduling, customer-notes or VAT fields,
@@ -194,6 +202,8 @@ export function AddPropertyStep({
             <ImportPropertiesPanel
               roundOptions={roundOptions}
               serviceAreaOptions={serviceAreaOptions}
+              serviceOptions={serviceOptions}
+              servicePrices={servicePrices}
               draftDefaults={draftDefaults}
               onSaveProperty={onAddProperty}
               onClose={() => setImporting(false)}
@@ -471,22 +481,29 @@ export function ServicePlanPanel({
         />
       </div>
       {serviceOptions.length > 0 ? (
-        <Field label="Service" labelWeight="medium" size="sm">
-          <Select
+        <Field label="Services" labelWeight="medium" size="sm">
+          <MultiSelect
             inputSize="sm"
-            value={draft.serviceId}
-            onChange={(e) => {
-              const nextId = e.target.value
-              const previousDefault = servicePrices[draft.serviceId]
-              const nextDefault = servicePrices[nextId]
-              onChange('serviceId', nextId)
-              // Prefill from the catalogue unless the user already typed their own price.
+            label="Select services"
+            placeholder="Select services"
+            displayMode="values"
+            showAllOption={false}
+            value={draft.serviceIds}
+            options={serviceOptions}
+            onChange={(nextIds) => {
+              // Price = sum of the selected services' catalogue prices. Prefill it
+              // unless the user already typed a custom total.
+              const previousSum = sumServicePrices(draft.serviceIds, servicePrices)
+              const nextSum = sumServicePrices(nextIds, servicePrices)
+              onChange('serviceIds', nextIds)
+              onChange('serviceId', nextIds[0] ?? '')
               const untouched =
                 !String(draft.pricePerVisit).trim() ||
-                (previousDefault != null && Number(draft.pricePerVisit) === previousDefault)
-              if (nextDefault != null && untouched) onChange('pricePerVisit', String(nextDefault))
+                Number(draft.pricePerVisit) === previousSum
+              if (untouched) {
+                onChange('pricePerVisit', nextIds.length > 0 ? String(nextSum) : '')
+              }
             }}
-            options={[{ value: '', label: 'Select service' }, ...serviceOptions]}
           />
         </Field>
       ) : null}
