@@ -9,9 +9,17 @@ import { dashboardCtaClass, dashboardHoverCardClass } from '@/components/dashboa
 import { Input, MultiSelect, Select } from '@/components/ui'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
 import { CustomersScreenSkeleton } from '@/components/customers/CustomersSkeletons'
+import { ImportPropertiesPanel } from '@/components/setup-wizard/ImportPropertiesPanel'
+import { setupWizardContent } from '@/content/setup-wizard'
+import type { PropertyDraft } from '@/types/setup-wizard'
+import type { PropertyCreateInput } from '@/api/types'
 import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { customerListRowToRecord, formatMoney } from '@/features/customers/lib/mappers'
+import { useCreateProperty } from '@/features/properties/hooks/useProperties'
 import { useRounds } from '@/features/rounds/hooks/useRounds'
+import { useServiceAreas } from '@/features/settings/hooks/useSettings'
+import { settingsServiceAreasToRows } from '@/features/settings/lib/mappers'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
 
 const statusClass: Record<CustomerStatus, string> = {
@@ -63,8 +71,12 @@ export function CustomersScreen() {
   const [roundId, setRoundId] = useState('all')
   const [statusIds, setStatusIds] = useState<string[]>(() => [...defaultStatusFilters])
   const [assignRecordId, setAssignRecordId] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
 
+  const { canMutate } = useAppBootstrap()
+  const createProperty = useCreateProperty()
   const roundsQuery = useRounds('ACTIVE')
+  const serviceAreasQuery = useServiceAreas(showImport)
   const listParams = useMemo(
     () => ({
       search: search.trim() || undefined,
@@ -133,22 +145,83 @@ export function CustomersScreen() {
     ]
   }, [roundsQuery.data])
 
+  // Import reuses the setup wizard's CSV/Excel panel. It collects a round, a
+  // service area, and a default price per batch; serviceAreaId (required on
+  // create) comes from the chosen service area dropdown.
+  const importRoundOptions = useMemo(
+    () => (roundsQuery.data ?? []).map((round) => ({ value: round.id, label: round.name })),
+    [roundsQuery.data],
+  )
+  const importServiceAreaOptions = useMemo(
+    () =>
+      settingsServiceAreasToRows(serviceAreasQuery.data).map((area) => ({
+        value: area.id,
+        label: area.name,
+      })),
+    [serviceAreasQuery.data],
+  )
+
+  async function handleImportSave(draft: PropertyDraft) {
+    const round = (roundsQuery.data ?? []).find((item) => item.id === draft.round)
+    if (!round) {
+      throw new Error('Pick a round to import into.')
+    }
+    if (!draft.serviceArea) {
+      throw new Error('Pick a service area to import into.')
+    }
+    const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, '')) || 0
+    const input: PropertyCreateInput = {
+      customerName: draft.customerName.trim(),
+      addressLine: draft.fullAddress.trim(),
+      postcode: draft.postcode.trim(),
+      price,
+      phone: draft.phone.trim() || undefined,
+      landline: draft.landline.trim() || undefined,
+      email: draft.email.trim() || undefined,
+      serviceAreaId: draft.serviceArea,
+      roundId: round.id,
+    }
+    await createProperty.mutateAsync(input)
+  }
+
   if (customersQuery.isPending) {
     return <CustomersScreenSkeleton />
   }
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          {customersContent.header.title}
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          {customersQuery.isError
-            ? 'Could not load customers.'
-            : `Showing ${filteredRecords.length} customer${filteredRecords.length === 1 ? '' : 's'}`}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            {customersContent.header.title}
+          </h1>
+          <p className="mt-1 text-sm text-muted">
+            {customersQuery.isError
+              ? 'Could not load customers.'
+              : `Showing ${filteredRecords.length} customer${filteredRecords.length === 1 ? '' : 's'}`}
+          </p>
+        </div>
+        {canMutate && !showImport ? (
+          <button
+            type="button"
+            onClick={() => setShowImport(true)}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface"
+          >
+            <DashboardIcon name="upload" className="h-4 w-4" />
+            {setupWizardContent.addProperty.importCsv.openButton}
+          </button>
+        ) : null}
       </header>
+
+      {showImport ? (
+        <ImportPropertiesPanel
+          roundOptions={importRoundOptions}
+          serviceAreaOptions={importServiceAreaOptions}
+          draftDefaults={setupWizardContent.addProperty.draftDefaults}
+          onSaveProperty={handleImportSave}
+          onClose={() => setShowImport(false)}
+        />
+      ) : null}
 
       <PanelCard interactive={false} className="border-primary/15 bg-accent-surface/50 px-5 py-4">
         <p className="text-sm text-foreground">

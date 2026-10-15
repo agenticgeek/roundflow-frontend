@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query'
 export const queryKeys = {
   auth: {
     me: ['auth', 'me'] as const,
+    preferences: ['auth', 'preferences'] as const,
   },
   dashboard: {
     all: ['dashboard'] as const,

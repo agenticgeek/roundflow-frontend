@@ -89,6 +89,15 @@ export function useConnectPayment() {
   })
 }
 
+export function useConnectGoCardless() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { accessToken: string; environment: 'sandbox' | 'live' }) =>
+      settingsApi.connectGoCardless(input),
+    onSuccess: () => invalidateBusinessSettings(queryClient),
+  })
+}
+
 export function useServices() {
   const enabled = useSettingsEnabled()
   return useQuery({

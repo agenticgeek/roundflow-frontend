@@ -62,3 +62,17 @@ export function useSendInvoice() {
     },
   })
 }
+
+/** Fetches a SAVED invoice's PDF bytes (the caller downloads or prints the Blob). */
+export function useInvoicePdf() {
+  return useMutation({
+    mutationFn: (id: string) => invoicesApi.pdf(id),
+  })
+}
+
+/** Fetches a PREVIEW/quote PDF's bytes by visit id. */
+export function useInvoicePreviewPdf() {
+  return useMutation({
+    mutationFn: (visitId: string) => invoicesApi.previewPdf(visitId),
+  })
+}

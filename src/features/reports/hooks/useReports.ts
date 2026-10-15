@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   reportsApi,
   type ReportsActivityParams,
+  type ReportsExportParams,
   type ReportsPeriodParam,
   type ReportsRevenueParams,
   type ReportsSummaryParams,
@@ -64,6 +65,13 @@ export function useReportsActivity(params: ReportsActivityParams = {}, enabled =
     queryKey: queryKeys.reports.activity(type),
     queryFn: ({ signal }) => reportsApi.activity({ type }, signal),
     enabled: useReportsEnabled(enabled),
+  })
+}
+
+/** Streams a CSV export of a report (defaults to visits). The caller downloads the Blob. */
+export function useReportsExport() {
+  return useMutation({
+    mutationFn: (params: ReportsExportParams = {}) => reportsApi.exportCsv(params),
   })
 }
 

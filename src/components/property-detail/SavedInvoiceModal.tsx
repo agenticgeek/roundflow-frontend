@@ -6,13 +6,14 @@ import { dashboardCtaShadowClass } from '@/components/dashboard/dashboard-styles
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
-import { useInvoice, useSendInvoice } from '@/features/invoices/hooks/useInvoices'
+import { useInvoice, useInvoicePdf, useSendInvoice } from '@/features/invoices/hooks/useInvoices'
 import {
   formatInvoiceDate,
   formatInvoiceMoney,
   formatInvoiceNumber,
 } from '@/features/invoices/lib/mappers'
 import { ApiError } from '@/lib/errors'
+import { downloadBlob, printBlob } from '@/lib/download'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
 
@@ -53,7 +54,32 @@ export function SavedInvoiceModal({
   const { canMutate } = useAppBootstrap()
   const invoiceQuery = useInvoice(invoiceId ?? '', open && Boolean(invoiceId))
   const sendInvoice = useSendInvoice()
+  const pdf = useInvoicePdf()
   const invoice = invoiceQuery.data
+
+  async function getPdf(): Promise<Blob | null> {
+    if (!invoice || pdf.isPending) return null
+    try {
+      return await pdf.mutateAsync(invoice.id)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not generate the PDF')
+      return null
+    }
+  }
+
+  async function handleDownload() {
+    const blob = await getPdf()
+    if (blob && invoice) {
+      downloadBlob(blob, `${formatInvoiceNumber(invoice.invoiceNumber)}.pdf`)
+    }
+  }
+
+  async function handlePrint() {
+    const blob = await getPdf()
+    if (blob && invoice) {
+      printBlob(blob, `${formatInvoiceNumber(invoice.invoiceNumber)}.pdf`)
+    }
+  }
 
   async function handleSend() {
     if (!canMutate || !invoice || sendInvoice.isPending) return
@@ -104,8 +130,8 @@ export function SavedInvoiceModal({
               compact
               variant="secondary"
               className="gap-2 rounded-lg"
-              disabled={!invoice || sendInvoice.isPending}
-              onClick={() => showToast(invoicePreviewModal.printToast)}
+              disabled={!invoice || sendInvoice.isPending || pdf.isPending}
+              onClick={() => void handlePrint()}
             >
               <DashboardIcon name="print" className="h-4 w-4" />
               {invoicePreviewModal.actions.print}
@@ -126,11 +152,11 @@ export function SavedInvoiceModal({
                 compact
                 variant="primary"
                 className={cn('gap-2 rounded-lg', dashboardCtaShadowClass)}
-                disabled={!invoice}
-                onClick={() => showToast(invoicePreviewModal.downloadToast)}
+                disabled={!invoice || pdf.isPending}
+                onClick={() => void handleDownload()}
               >
                 <DashboardIcon name="download" className="h-4 w-4" />
-                {invoicePreviewModal.actions.downloadPdf}
+                {pdf.isPending ? 'Preparing…' : invoicePreviewModal.actions.downloadPdf}
               </ModalButton>
             )}
           </div>

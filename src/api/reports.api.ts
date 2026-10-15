@@ -1,4 +1,4 @@
-import { api } from '@/api/client'
+import { api, apiBlob } from '@/api/client'
 
 /** CONTRACT-DIFF: `/reports/*` not in generated OpenAPI yet — live per REPORTS_HANDOFF. */
 
@@ -69,6 +69,16 @@ export type ReportsActivityParams = {
   type?: string
 }
 
+export type ReportsExportType = 'visits' | 'technicians' | 'revenue'
+
+export type ReportsExportParams = {
+  /** Defaults to `visits` server-side. */
+  type?: ReportsExportType
+  period?: ReportsPeriodParam
+  /** Only applies to `type: 'visits'`. */
+  status?: ReportsVisitStatusParam
+}
+
 function toQuery(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -113,5 +123,16 @@ export const reportsApi = {
     api<ReportsActivityRow[]>(
       `/reports/activity${toQuery({ type: params.type })}`,
       { signal },
+    ),
+
+  /** Streams a CSV download. `type` defaults to `visits` server-side. */
+  exportCsv: (params: ReportsExportParams = {}, signal?: AbortSignal) =>
+    apiBlob(
+      `/reports/export${toQuery({
+        type: params.type,
+        period: params.period,
+        status: params.status,
+      })}`,
+      { signal, headers: { Accept: 'text/csv' } },
     ),
 }

@@ -11,6 +11,10 @@ export type SignupResponse = {
   tenantId: string
 }
 
+/** Free-form per-user preferences bag (CONTRACT-DIFF: not in generated OpenAPI). */
+export type UserPreferences = Record<string, unknown>
+export type UserPreferencesResponse = { preferences: UserPreferences }
+
 export const authApi = {
   getMe: (signal?: AbortSignal, accessToken?: string) =>
     api<Profile>('/auth/me', { signal, accessToken }),
@@ -21,5 +25,14 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(input),
       accessToken,
+    }),
+
+  getPreferences: (signal?: AbortSignal) =>
+    api<UserPreferencesResponse>('/auth/me/preferences', { signal }),
+  // Shallow-merges the given keys into the stored bag (100KB cap server-side).
+  updatePreferences: (patch: UserPreferences) =>
+    api<UserPreferencesResponse>('/auth/me/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
     }),
 }

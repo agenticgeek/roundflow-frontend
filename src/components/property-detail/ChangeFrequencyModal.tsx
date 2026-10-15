@@ -79,8 +79,16 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
       onClose()
       showToast(changeFrequencyModal.successToast)
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) return
-      showToast(error instanceof Error ? error.message : 'Could not change frequency')
+      // Surface the reason on every failure, including a 400 (e.g. the backend
+      // rejecting the frequency) — previously a 400 was swallowed and the modal
+      // just sat there with no feedback.
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Could not change frequency'
+      showToast(message)
     }
   }
 

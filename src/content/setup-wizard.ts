@@ -320,6 +320,40 @@ export interface SetupWizardContent {
   addProperty: {
     addProperty: string
     addedTitle: string
+    importCsv: {
+      openButton: string
+      title: string
+      description: string
+      pasteLabel: string
+      pastePlaceholder: string
+      uploadButton: string
+      orDivider: string
+      fileSelected: string
+      fileError: string
+      roundLabel: string
+      roundPlaceholder: string
+      serviceAreaLabel: string
+      serviceAreaPlaceholder: string
+      priceLabel: string
+      pricePlaceholder: string
+      parse: string
+      clear: string
+      cancel: string
+      readyTitle: string
+      skippedTitle: string
+      importButton: string
+      importing: string
+      done: string
+      partial: string
+      failedTitle: string
+      unrecognized: string
+      roundRequired: string
+      serviceAreaRequired: string
+      priceRequired: string
+      emptyPaste: string
+      noValidRows: string
+      columns: { name: string; address: string; postcode: string; phone: string; email: string }
+    }
     subSteps: readonly { label: string; title: string; subtitle: string }[]
     sections: {
       customerProperty: string
@@ -1086,6 +1120,43 @@ export const setupWizardContent = {
   addProperty: {
     addProperty: 'Add Property',
     addedTitle: 'Added properties',
+    importCsv: {
+      openButton: 'Import from CSV',
+      title: 'Import properties from a spreadsheet',
+      description:
+        'Upload a CSV or Excel (.xlsx) file, or paste rows copied from your customer export. We read the name, phone, email and service address columns. Pick the round and a default price to apply to every imported property — you can edit each one later.',
+      pasteLabel: 'Paste your rows (including the header row)',
+      pastePlaceholder:
+        'First name\tLast name\tMobile phone\tEmail\tService street 1\tService city\tService postcode\nOliver\tClarke\t07500 208 733\toliver@example.com\t63 Manor Road\tLiverpool\tL24 2XD',
+      uploadButton: 'Upload CSV or Excel file',
+      orDivider: 'or paste below',
+      fileSelected: 'Loaded {name}',
+      fileError: "Couldn't read that file. Use a .csv, .tsv or .xlsx export.",
+      roundLabel: 'Round for imported properties',
+      roundPlaceholder: 'Select a round',
+      serviceAreaLabel: 'Service area for imported properties',
+      serviceAreaPlaceholder: 'Select a service area',
+      priceLabel: 'Default price per visit (£)',
+      pricePlaceholder: 'e.g. 20',
+      parse: 'Preview',
+      clear: 'Clear',
+      cancel: 'Cancel',
+      readyTitle: 'Ready to import',
+      skippedTitle: 'Skipped rows',
+      importButton: 'Import {count} properties',
+      importing: 'Importing {done} of {total}…',
+      done: 'Imported {added} properties.',
+      partial: 'Imported {added} of {total}. {failed} failed.',
+      failedTitle: 'Failed to save',
+      unrecognized:
+        "Couldn't recognise the columns. Make sure the first pasted line is the header row (e.g. First name, Last name, Service postcode).",
+      roundRequired: 'Choose a round for the imported properties.',
+      serviceAreaRequired: 'Choose a service area for the imported properties.',
+      priceRequired: 'Enter a default price per visit.',
+      emptyPaste: 'Paste some rows first.',
+      noValidRows: 'No rows could be imported — check the skipped list below.',
+      columns: { name: 'Customer', address: 'Address', postcode: 'Postcode', phone: 'Phone', email: 'Email' },
+    },
     subSteps: [
       {
         label: '01',

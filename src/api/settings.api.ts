@@ -1,4 +1,6 @@
 import { api } from '@/api/client'
+import { apiBaseUrl } from '@/lib/env'
+import { getCachedAccessToken } from '@/lib/supabase'
 import type { components } from '@/api/types.gen'
 import type { BankDetailsPayload } from '@/lib/bank-details'
 import type {
@@ -53,6 +55,25 @@ export const settingsApi = {
     api<PaymentConnectResponse>(
       `/settings/payment/${provider}/connect`,
       jsonRequest('POST'),
+    ),
+
+  // Stripe uses a real OAuth redirect: the browser navigates to this endpoint,
+  // which 302s to Stripe and sends the user back to the configured callback.
+  // CAVEAT: this is a top-level navigation, so the bearer token can't ride in a
+  // header — it's passed as a query param, which the authorize endpoint must
+  // accept. Confirm with backend; otherwise this will 401.
+  stripeAuthorizeUrl: (): string => {
+    const url = `${apiBaseUrl()}/settings/stripe/authorize`
+    const token = getCachedAccessToken()
+    return token ? `${url}?access_token=${encodeURIComponent(token)}` : url
+  },
+
+  // GoCardless is token-based (not an OAuth redirect): the user pastes an access
+  // token, we validate + store it server-side.
+  connectGoCardless: (input: { accessToken: string; environment: 'sandbox' | 'live' }) =>
+    api<PaymentConnectResponse>(
+      '/settings/payment/gocardless/connect',
+      jsonRequest('POST', input),
     ),
 
   getServices: (signal?: AbortSignal) =>

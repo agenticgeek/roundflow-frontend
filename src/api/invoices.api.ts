@@ -1,4 +1,4 @@
-import { api } from '@/api/client'
+import { api, apiBlob } from '@/api/client'
 
 /** CONTRACT-DIFF: `/invoices` not in generated OpenAPI yet — live per INVOICING_HANDOFF. */
 
@@ -109,4 +109,18 @@ export const invoicesApi = {
       `/customers/${encodeURIComponent(customerId)}/invoices`,
       { signal },
     ),
+
+  /** PDF bytes for a SAVED invoice. */
+  pdf: (id: string, signal?: AbortSignal) =>
+    apiBlob(`/invoices/${encodeURIComponent(id)}/pdf`, {
+      signal,
+      headers: { Accept: 'application/pdf' },
+    }),
+
+  /** PDF bytes for a PREVIEW/quote, before the invoice is created. */
+  previewPdf: (visitId: string, signal?: AbortSignal) =>
+    apiBlob(`/invoices/preview/pdf?visitId=${encodeURIComponent(visitId)}`, {
+      signal,
+      headers: { Accept: 'application/pdf' },
+    }),
 }

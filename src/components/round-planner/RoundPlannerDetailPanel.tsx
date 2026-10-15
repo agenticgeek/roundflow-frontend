@@ -39,7 +39,12 @@ export function RoundPlannerDetailPanel({
 
   const stops = dayQuery.data?.stops ?? []
   const dateLabel = formatLongDate(card.date)
-  const roundSummary = { name: card.roundName, stopCount: card.stopCount, holdCount: card.holdCount }
+  const roundSummary = {
+    id: card.roundId,
+    name: card.roundName,
+    stopCount: card.stopCount,
+    holdCount: card.holdCount,
+  }
 
   return (
     <>

@@ -26,11 +26,13 @@ import { Select } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
 import {
   useReportsActivity,
+  useReportsExport,
   useReportsRevenue,
   useReportsSummary,
   useReportsTechnicians,
   useReportsVisits,
 } from '@/features/reports/hooks/useReports'
+import { downloadBlob } from '@/lib/download'
 import {
   activityToItems,
   cycleLabelForPeriod,
@@ -79,6 +81,21 @@ export function ReportsScreen() {
   const techniciansQuery = useReportsTechnicians({ period: apiPeriod })
   const visitsQuery = useReportsVisits({ period: apiPeriod, status: visitStatus })
   const activityQuery = useReportsActivity()
+  const reportsExport = useReportsExport()
+
+  async function handleExport() {
+    if (reportsExport.isPending) return
+    try {
+      const blob = await reportsExport.mutateAsync({
+        type: 'visits',
+        period: apiPeriod,
+        status: visitStatus,
+      })
+      downloadBlob(blob, `roundflow-visits-${apiPeriod}.csv`)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not export the report.')
+    }
+  }
 
   const metrics = useMemo(() => summaryToMetrics(summaryQuery.data), [summaryQuery.data])
   const revenuePoints = useMemo(
@@ -131,7 +148,7 @@ export function ReportsScreen() {
           cycleLabel={cycleLabelForPeriod(apiPeriod)}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
-          onExport={() => showToast('Export is not available yet.')}
+          onExport={() => void handleExport()}
         />
 
         {focusedReport === 'technicians' ? (
@@ -173,7 +190,7 @@ export function ReportsScreen() {
         cycleLabel={cycleLabelForPeriod(apiPeriod)}
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
-        onExport={() => showToast('Export is not available yet.')}
+        onExport={() => void handleExport()}
       />
 
       <ReportsMetricGrid metrics={metrics} loading={summaryQuery.isPending} />

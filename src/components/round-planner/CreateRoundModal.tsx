@@ -304,7 +304,8 @@ function PropertiesStep({
       <div>
         <p className="text-xs font-semibold tracking-wide text-foreground uppercase">Add existing properties</p>
         <p className="mt-1 text-sm text-muted">
-          Search unassigned properties to attach to this round. You can also assign properties later from Customers.
+          Search properties to attach to this round. Properties already on another round can still be
+          picked — they&apos;ll be moved here. You can also assign properties later from Customers.
         </p>
       </div>
 
@@ -353,7 +354,7 @@ function PropertiesStep({
         </div>
       ) : results.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
-          No unassigned properties match &quot;{query}&quot;.
+          No properties match &quot;{query}&quot;.
         </p>
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
@@ -380,6 +381,11 @@ function PropertiesStep({
                     <span className="block truncate text-xs text-muted">
                       {row.customerName} · {row.postcode}
                     </span>
+                    {row.roundId ? (
+                      <span className="mt-1 inline-flex items-center rounded-full bg-warning-surface px-2 py-0.5 text-[11px] font-medium text-warning-foreground">
+                        On {row.roundName ?? 'another round'} — will move here
+                      </span>
+                    ) : null}
                   </span>
                   {row.price != null ? (
                     <span className="text-sm font-semibold text-foreground">{formatCurrency(row.price)}</span>
@@ -433,7 +439,15 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
     open && step === 3 && debouncedPropertyQuery.trim().length >= 2,
   )
   const propertyResults = useMemo(
-    () => (propertiesQuery.data?.customers ?? []).filter((row) => !row.roundId && row.propertyId),
+    () =>
+      (propertiesQuery.data?.customers ?? [])
+        // Need a real property to attach; previously this also dropped anything
+        // already on a round, so a search that only matched assigned properties
+        // showed "no results" even though the API returned them. Now assigned
+        // ones are shown too (selecting one moves it to the new round) and just
+        // sorted after the unassigned.
+        .filter((row) => row.propertyId)
+        .sort((a, b) => Number(Boolean(a.roundId)) - Number(Boolean(b.roundId))),
     [propertiesQuery.data?.customers],
   )
 

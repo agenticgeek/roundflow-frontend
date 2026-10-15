@@ -10,6 +10,9 @@ import {
 } from '@/api/rounds.api'
 import { invalidateCustomers, invalidateRounds, queryKeys } from '@/lib/query-keys'
 
+/** Per-round fan-out queries reuse cached results this long before refetching. */
+const FAN_OUT_STALE_TIME = 60_000
+
 export function useRounds(status?: RoundStatus, enabled = true) {
   return useQuery({
     queryKey: queryKeys.rounds.list(status),
@@ -131,6 +134,10 @@ export function useRoundsOccurrences(
       queryFn: ({ signal }: { signal?: AbortSignal }) =>
         roundsApi.getOccurrences(id, range, signal),
       enabled: enabled && Boolean(id) && Boolean(range.from && range.to),
+      // This fans out one request per round, so keep results fresh for a bit to
+      // avoid re-firing the whole set on quick re-navigation. Mutations still
+      // invalidate rounds, so completions etc. refresh immediately.
+      staleTime: FAN_OUT_STALE_TIME,
     })),
   })
   return collect(roundIds, results)
@@ -148,6 +155,7 @@ export function useRoundsOccurrenceDay(
       queryFn: ({ signal }: { signal?: AbortSignal }) =>
         roundsApi.getOccurrenceDay(id, date, signal),
       enabled: enabled && Boolean(id) && Boolean(date),
+      staleTime: FAN_OUT_STALE_TIME,
     })),
   })
   return collect(roundIds, results)

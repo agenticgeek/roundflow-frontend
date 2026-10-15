@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { SettingsSectionId } from '@/content/settings'
 import { settingsContent } from '@/content/settings'
+import { settingsApi } from '@/api/settings.api'
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { CatalogueService } from '@/types/setup-wizard'
 import { BankDetailsFields } from '@/components/setup-wizard/BankDetailsFields'
@@ -8,7 +9,7 @@ import { validateBankDetails } from '@/lib/bank-details'
 import { timezoneOptions } from '@/lib/timezones'
 import {
   useBusinessProfile,
-  useConnectPayment,
+  useConnectGoCardless,
   useCreateService,
   useCreateServiceArea,
   useCreateTechnician,
@@ -436,11 +437,34 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
 function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   const query = usePaymentSettings()
   const update = useUpdatePaymentSettings()
-  const connect = useConnectPayment()
+  const connectGoCardless = useConnectGoCardless()
   const { showToast } = useToast()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<SettingsPaymentForm | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  // GoCardless is token-based, so Connect opens an inline token form.
+  const [gcForm, setGcForm] = useState<{ token: string; environment: 'sandbox' | 'live' } | null>(
+    null,
+  )
+  const [gcError, setGcError] = useState<string | null>(null)
+
+  // Stripe sends the user back here with ?stripe=connected after its OAuth flow.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('stripe') === 'connected') {
+      showToast('Stripe connected')
+      void query.refetch()
+      params.delete('stripe')
+      const next = params.toString()
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}${next ? `?${next}` : ''}`,
+      )
+    }
+    // Run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (query.isPending) return <SettingsPaymentSkeleton />
   if (query.isError) {
@@ -491,10 +515,41 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
     }
   }
 
-  async function handleConnect(providerId: 'gocardless' | 'stripe') {
+  function handleConnect(providerId: 'gocardless' | 'stripe') {
     if (!canMutate) return
-    await connect.mutateAsync(providerId)
-    showToast(providerId === 'gocardless' ? 'GoCardless connected' : 'Stripe connected')
+    if (providerId === 'stripe') {
+      // Full-page redirect into Stripe's OAuth; it returns to ?stripe=connected.
+      window.location.assign(settingsApi.stripeAuthorizeUrl())
+      return
+    }
+    // GoCardless: reveal the inline token form.
+    setGcError(null)
+    setGcForm({ token: '', environment: 'live' })
+  }
+
+  async function submitGoCardless() {
+    if (!gcForm || connectGoCardless.isPending) return
+    if (!gcForm.token.trim()) {
+      setGcError('Paste your GoCardless access token.')
+      return
+    }
+    setGcError(null)
+    try {
+      await connectGoCardless.mutateAsync({
+        accessToken: gcForm.token.trim(),
+        environment: gcForm.environment,
+      })
+      setGcForm(null)
+      showToast('GoCardless connected')
+    } catch (error) {
+      setGcError(
+        error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Could not connect GoCardless.',
+      )
+    }
   }
 
   const connectionMap = {
@@ -533,19 +588,71 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
                 </span>
               </div>
               <MutationGate canMutate={canMutate}>
-                <button
-                  type="button"
-                  onClick={() => handleConnect(provider.id)}
-                  disabled={connected || connect.isPending}
-                  className={cn(
-                    'mt-4 inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors',
-                    connected
-                      ? 'cursor-not-allowed border-border text-muted'
-                      : 'border-primary/30 text-primary hover:bg-accent-surface',
-                  )}
-                >
-                  {provider.connectLabel}
-                </button>
+                {provider.id === 'gocardless' && gcForm ? (
+                  <div className="mt-4 space-y-3 rounded-lg border border-border bg-surface p-3">
+                    <Field label="Access token" labelWeight="medium" size="sm">
+                      <Input
+                        inputSize="sm"
+                        value={gcForm.token}
+                        onChange={(e) =>
+                          setGcForm((prev) => (prev ? { ...prev, token: e.target.value } : prev))
+                        }
+                        placeholder="Paste your GoCardless access token"
+                        autoComplete="off"
+                      />
+                    </Field>
+                    <Field label="Environment" labelWeight="medium" size="sm">
+                      <Select
+                        inputSize="sm"
+                        value={gcForm.environment}
+                        onChange={(e) =>
+                          setGcForm((prev) =>
+                            prev
+                              ? { ...prev, environment: e.target.value as 'sandbox' | 'live' }
+                              : prev,
+                          )
+                        }
+                        options={[
+                          { value: 'live', label: 'Live' },
+                          { value: 'sandbox', label: 'Sandbox' },
+                        ]}
+                      />
+                    </Field>
+                    {gcError ? <FieldError message={gcError} size="sm" /> : null}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void submitGoCardless()}
+                        disabled={connectGoCardless.isPending}
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+                      >
+                        {connectGoCardless.isPending ? 'Connecting…' : 'Connect'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGcForm(null)}
+                        disabled={connectGoCardless.isPending}
+                        className="rounded-xl border border-border px-3.5 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-card disabled:opacity-60"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleConnect(provider.id)}
+                    disabled={connected}
+                    className={cn(
+                      'mt-4 inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors',
+                      connected
+                        ? 'cursor-not-allowed border-border text-muted'
+                        : 'border-primary/30 text-primary hover:bg-accent-surface',
+                    )}
+                  >
+                    {provider.connectLabel}
+                  </button>
+                )}
               </MutationGate>
             </div>
           )

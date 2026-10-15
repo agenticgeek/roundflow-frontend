@@ -5,6 +5,7 @@ import { setupWizardContent } from '@/content/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
 import { PropertyClipboardIcon } from '@/components/setup-wizard/PropertyClipboardIcon'
 import { SegmentCardGroup } from '@/components/setup-wizard/SegmentCardGroup'
+import { ImportPropertiesPanel } from '@/components/setup-wizard/ImportPropertiesPanel'
 import { SetupStepHeader } from '@/components/setup-wizard/SetupStepHeader'
 import { SubStepFooter } from '@/components/setup-wizard/SubStepFooter'
 import { VerticalSubStepper } from '@/components/setup-wizard/VerticalSubStepper'
@@ -82,6 +83,7 @@ export function AddPropertyStep({
   const [subStepIndex, setSubStepIndex] = useState(0)
   const [errors, setErrors] = useState<PropertyDraftErrors>({})
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -175,9 +177,30 @@ export function AddPropertyStep({
             icon={<PropertyClipboardIcon />}
             title={currentMeta.title}
             subtitle={currentMeta.subtitle}
+            action={
+              subStepIndex === 0 && !importing ? (
+                <button
+                  type="button"
+                  onClick={() => setImporting(true)}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface"
+                >
+                  {addPropertyContent.importCsv.openButton}
+                </button>
+              ) : undefined
+            }
           />
 
-          <div className="space-y-5">
+          {importing ? (
+            <ImportPropertiesPanel
+              roundOptions={roundOptions}
+              serviceAreaOptions={serviceAreaOptions}
+              draftDefaults={draftDefaults}
+              onSaveProperty={onAddProperty}
+              onClose={() => setImporting(false)}
+            />
+          ) : null}
+
+          <div className={cn('space-y-5', importing && 'hidden')}>
             {subStep === 'details' ? (
               <PropertyDetailsPanel
                 draft={draft}
@@ -226,17 +249,19 @@ export function AddPropertyStep({
             {saveError ? <FieldError message={saveError} size="sm" /> : null}
           </div>
 
-          <SubStepFooter
-            currentStep={subStepIndex + 1}
-            totalSteps={WIZARD_SUB_STEPS.length}
-            isFirstStep={subStepIndex === 0}
-            onBack={handleSubBack}
-            onContinue={isLastSubStep ? () => void saveProperty() : handleSubContinue}
-            continueLabel={
-              isLastSubStep ? (adding ? 'Saving…' : addPropertyContent.actions.addProperty) : undefined
-            }
-            loading={isLastSubStep && adding}
-          />
+          {importing ? null : (
+            <SubStepFooter
+              currentStep={subStepIndex + 1}
+              totalSteps={WIZARD_SUB_STEPS.length}
+              isFirstStep={subStepIndex === 0}
+              onBack={handleSubBack}
+              onContinue={isLastSubStep ? () => void saveProperty() : handleSubContinue}
+              continueLabel={
+                isLastSubStep ? (adding ? 'Saving…' : addPropertyContent.actions.addProperty) : undefined
+              }
+              loading={isLastSubStep && adding}
+            />
+          )}
         </div>
       </div>
 

@@ -5,6 +5,7 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaShadowClass } from '@/components/dashboard/dashboard-styles'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { useInvoicePreviewPdf } from '@/features/invoices/hooks/useInvoices'
 import {
   formatInvoiceDate,
   formatInvoiceDateLong,
@@ -13,11 +14,14 @@ import {
   paymentMethodLabel,
   vatPercentLabel,
 } from '@/features/invoices/lib/mappers'
+import { downloadBlob, printBlob } from '@/lib/download'
 import { cn } from '@/lib/utils'
 
 interface InvoicePreviewModalProps {
   open: boolean
   preview: InvoicePreview | undefined
+  /** The visit this preview is for — needed for the preview-PDF endpoint. */
+  visitId?: string
   dueDate?: string
   notes?: string
   generating?: boolean
@@ -37,6 +41,7 @@ const invoiceRuleClass = 'border-border/55'
 export function InvoicePreviewModal({
   open,
   preview,
+  visitId,
   dueDate,
   notes,
   generating = false,
@@ -47,6 +52,27 @@ export function InvoicePreviewModal({
 }: InvoicePreviewModalProps) {
   const { invoicePreviewModal, generateInvoiceModal } = propertyDetailContent
   const { showToast } = useToast()
+  const pdf = useInvoicePreviewPdf()
+
+  async function getPdf(): Promise<Blob | null> {
+    if (!visitId || pdf.isPending) return null
+    try {
+      return await pdf.mutateAsync(visitId)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not generate the PDF')
+      return null
+    }
+  }
+
+  async function handleDownload() {
+    const blob = await getPdf()
+    if (blob && preview) downloadBlob(blob, `${formatInvoiceNumber(preview.invoiceNumber)}.pdf`)
+  }
+
+  async function handlePrint() {
+    const blob = await getPdf()
+    if (blob && preview) printBlob(blob, `${formatInvoiceNumber(preview.invoiceNumber)}.pdf`)
+  }
 
   if (!preview) return null
 
@@ -85,8 +111,8 @@ export function InvoicePreviewModal({
               compact
               variant="secondary"
               className="gap-2 rounded-lg"
-              disabled={generating}
-              onClick={() => showToast(invoicePreviewModal.printToast)}
+              disabled={generating || !visitId || pdf.isPending}
+              onClick={() => void handlePrint()}
             >
               <DashboardIcon name="print" className="h-4 w-4" />
               {invoicePreviewModal.actions.print}
@@ -111,10 +137,11 @@ export function InvoicePreviewModal({
                 compact
                 variant="primary"
                 className={`gap-2 rounded-lg ${dashboardCtaShadowClass}`}
-                onClick={() => showToast(invoicePreviewModal.downloadToast)}
+                disabled={!visitId || pdf.isPending}
+                onClick={() => void handleDownload()}
               >
                 <DashboardIcon name="download" className="h-4 w-4" />
-                {invoicePreviewModal.actions.downloadPdf}
+                {pdf.isPending ? 'Preparing…' : invoicePreviewModal.actions.downloadPdf}
               </ModalButton>
             )}
           </div>

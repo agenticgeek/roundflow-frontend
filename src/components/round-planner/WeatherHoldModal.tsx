@@ -5,9 +5,13 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Select } from '@/components/ui'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { useBulkMessage } from '@/features/messages/hooks/useMessages'
+import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 export interface PlannerRoundSummary {
+  /** Real round id — required to message the round's recipients. */
+  id: string
   name: string
   stopCount: number
   holdCount: number
@@ -27,6 +31,7 @@ interface WeatherHoldModalProps {
 export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHoldModalProps) {
   const { weatherHoldModal } = roundPlannerContent
   const { showToast } = useToast()
+  const bulkMessage = useBulkMessage()
   const [condition, setCondition] = useState(weatherHoldModal.conditions[0]?.value ?? '')
   const [reschedulingId, setReschedulingId] = useState(
     weatherHoldModal.reschedulingOptions[0]?.id ?? '',
@@ -42,7 +47,32 @@ export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHol
 
   if (!round) return null
 
-  function handleApply() {
+  async function handleApply() {
+    if (bulkMessage.isPending) return
+    // The weather-hold reschedule itself has no endpoint yet; the only live action
+    // here is notifying customers, which goes through the bulk-message endpoint.
+    if (notifyCustomers && round) {
+      try {
+        const result = await bulkMessage.mutateAsync({
+          roundId: round.id,
+          channel: 'sms',
+          body: weatherHoldModal.messagePreview,
+        })
+        onClose()
+        showToast(weatherHoldModal.successToast, {
+          description: `Notified ${result.queued} customer${result.queued === 1 ? '' : 's'}.`,
+        })
+      } catch (error) {
+        showToast(
+          error instanceof ApiError && error.status === 409
+            ? 'Messaging isn’t connected yet (GoHighLevel). Connect it in Settings first.'
+            : error instanceof Error
+              ? error.message
+              : 'Could not notify customers.',
+        )
+      }
+      return
+    }
     onClose()
     showToast(weatherHoldModal.successToast)
   }
@@ -68,10 +98,11 @@ export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHol
             compact
             variant="primary"
             className="flex w-full items-center justify-center gap-2"
-            onClick={handleApply}
+            disabled={bulkMessage.isPending}
+            onClick={() => void handleApply()}
           >
             <DashboardIcon name="cloud" className="h-4 w-4" />
-            {weatherHoldModal.actions.apply}
+            {bulkMessage.isPending ? 'Applying…' : weatherHoldModal.actions.apply}
           </ModalButton>
         </div>
       }
