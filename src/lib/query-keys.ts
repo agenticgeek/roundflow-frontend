@@ -1,5 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query'
 
+/** Debt board page size — matches the backend default (max 100). */
+export const DEBT_BOARD_PAGE_SIZE = 50
+
 export const queryKeys = {
   auth: {
     me: ['auth', 'me'] as const,
@@ -39,6 +42,9 @@ export const queryKeys = {
     list: (status?: string) => ['rounds', 'list', status ?? 'ALL'] as const,
     detail: (id: string) => ['rounds', 'detail', id] as const,
     today: (id: string) => ['rounds', 'today', id] as const,
+    /** Batch occurrences for a chunk of rounds (ids joined in request order). */
+    occurrencesBatch: (roundIds: readonly string[], from?: string, to?: string) =>
+      ['rounds', 'occurrences-batch', roundIds.join(','), from ?? '', to ?? ''] as const,
     occurrences: (id: string, from?: string, to?: string) =>
       ['rounds', 'occurrences', id, from ?? '', to ?? ''] as const,
     occurrenceDay: (id: string, date: string) =>
@@ -77,8 +83,17 @@ export const queryKeys = {
   debt: {
     all: ['debt'] as const,
     kpis: ['debt', 'kpis'] as const,
-    board: (bucket: string, roundId?: string, paymentMethod?: string) =>
-      ['debt', 'board', bucket, roundId ?? 'ALL', paymentMethod ?? 'ALL'] as const,
+    board: (
+      bucket: string,
+      roundId?: string,
+      paymentMethod?: string,
+      page = 1,
+      pageSize = DEBT_BOARD_PAGE_SIZE,
+    ) =>
+      ['debt', 'board', bucket, roundId ?? 'ALL', paymentMethod ?? 'ALL', page, pageSize] as const,
+    /** Bucket totals only (pageSize=1) — kept apart from the paged board rows. */
+    boardCount: (bucket: string, roundId?: string, paymentMethod?: string) =>
+      ['debt', 'board-count', bucket, roundId ?? 'ALL', paymentMethod ?? 'ALL'] as const,
   },
   invoices: {
     all: ['invoices'] as const,

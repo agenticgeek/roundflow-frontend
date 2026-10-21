@@ -3,24 +3,27 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import { setupApi } from '@/api/setup.api'
+import { roundsApi, type RoundCreateInput, type RoundUpdateInput } from '@/api/rounds.api'
+import {
+  techniciansApi,
+  type TechnicianCreateInput,
+  type TechnicianUpdateInput,
+} from '@/api/technicians.api'
+import { invitesApi, type InviteCreateInput } from '@/api/invites.api'
 import type {
-  RoundInput,
   ServiceAreaInput,
   ServiceInput,
+  SetupStep9BulkInput,
   SetupStep9Input,
-  SetupStep10Input,
   SetupStep11Input,
-  TechnicianInput,
 } from '@/api/types'
 import type {
   SetupStep1Input,
   SetupStep2Input,
   SetupStep4Input,
 } from '@/api/setup.api'
-import { ROUTES } from '@/config/routes'
-import { queryKeys } from '@/lib/query-keys'
+import { invalidateRounds, invalidateTechnicians, queryKeys } from '@/lib/query-keys'
 import { clearSetupDeferred } from '@/lib/setup-deferred'
 
 export function useSetupStatus(enabled = true) {
@@ -123,22 +126,6 @@ export function useSaveStep5() {
   })
 }
 
-export function useSetupStep6(enabled = true) {
-  return useQuery({
-    queryKey: queryKeys.setup.step(6),
-    queryFn: ({ signal }) => setupApi.getStep6(signal),
-    enabled,
-  })
-}
-
-export function useSaveStep6() {
-  const invalidate = useInvalidateSetupStep(6)
-  return useMutation({
-    mutationFn: (input: TechnicianInput[]) => setupApi.saveStep6(input),
-    onSuccess: invalidate,
-  })
-}
-
 export function useSetupStep7(enabled = true) {
   return useQuery({
     queryKey: queryKeys.setup.step(7),
@@ -163,10 +150,87 @@ export function useSetupStep8(enabled = true) {
   })
 }
 
-export function useSaveStep8() {
-  const invalidate = useInvalidateSetupStep(8)
+/** After any round change: step 8 lists rounds, step 7 counts them per area, and later steps pick from them. */
+function useInvalidateSetupRounds() {
+  const queryClient = useQueryClient()
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.setup.status }),
+      ...[7, 8, 9, 10, 11].map((step) =>
+        queryClient.invalidateQueries({ queryKey: queryKeys.setup.step(step) }),
+      ),
+      invalidateRounds(queryClient),
+    ])
+}
+
+/**
+ * Adds a round from the Rounds step. POST /setup/step/8 only upserts a single setup round,
+ * so it's used for the first round (it also marks the step complete); later rounds go
+ * through POST /rounds.
+ */
+export function useCreateSetupRound() {
+  const invalidate = useInvalidateSetupRounds()
   return useMutation({
-    mutationFn: (input: RoundInput) => setupApi.saveStep8(input),
+    mutationFn: ({
+      input,
+      isFirst,
+    }: {
+      input: RoundCreateInput
+      isFirst: boolean
+    }): Promise<{ id?: string }> =>
+      isFirst
+        ? setupApi.saveStep8({ ...input, defaultDay: input.defaultDay ?? undefined })
+        : roundsApi.create(input),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateSetupRound() {
+  const invalidate = useInvalidateSetupRounds()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: RoundUpdateInput }) =>
+      roundsApi.update(id, input),
+    onSuccess: invalidate,
+  })
+}
+
+/**
+ * After any technician change: step 6/10 read technicians, and step completion is derived
+ * server-side. The Technicians step saves through /technicians, never the step 6 bulk
+ * replace (which would wipe invite-pending technicians added this way).
+ */
+function useInvalidateSetupTechnicians() {
+  const queryClient = useQueryClient()
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.setup.status }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.setup.step(6) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.setup.step(10) }),
+      invalidateTechnicians(queryClient),
+    ])
+}
+
+export function useCreateSetupTechnician() {
+  const invalidate = useInvalidateSetupTechnicians()
+  return useMutation({
+    mutationFn: (input: TechnicianCreateInput) => techniciansApi.create(input),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateSetupTechnician() {
+  const invalidate = useInvalidateSetupTechnicians()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: TechnicianUpdateInput }) =>
+      techniciansApi.update(id, input),
+    onSuccess: invalidate,
+  })
+}
+
+export function useSendSetupTechnicianInvite() {
+  const invalidate = useInvalidateSetupTechnicians()
+  return useMutation({
+    mutationFn: (input: InviteCreateInput) => invitesApi.create(input),
     onSuccess: invalidate,
   })
 }
@@ -192,19 +256,20 @@ export function useSaveStep9() {
   })
 }
 
-export function useSetupStep10(enabled = true) {
-  return useQuery({
-    queryKey: queryKeys.setup.step(10),
-    queryFn: ({ signal }) => setupApi.getStep10(signal),
-    enabled,
-  })
-}
-
-export function useSaveStep10() {
-  const invalidate = useInvalidateSetupStep(10)
+export function useSaveStep9Bulk() {
+  const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: SetupStep10Input) => setupApi.saveStep10(input),
-    onSuccess: invalidate,
+    mutationFn: (input: SetupStep9BulkInput) => setupApi.saveStep9Bulk(input),
+    // The import panel reports every failure itself (per-row 400s, partial 5xx).
+    meta: { silenceGlobalError: true },
+    // Refresh even on failure: a mid-import batch error (500) still leaves earlier
+    // batches committed, so the "Added properties" list must reflect them.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.setup.status }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.setup.step(9) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.setup.step(10) }),
+      ]),
   })
 }
 
@@ -224,24 +289,14 @@ export function useSaveStep11() {
   })
 }
 
-export function useSetupStep12(enabled = true) {
-  return useQuery({
-    queryKey: queryKeys.setup.step(12),
-    queryFn: ({ signal }) => setupApi.getStep12(signal),
-    enabled,
-  })
-}
-
 export function useCompleteSetup() {
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
 
   return useMutation({
     mutationFn: setupApi.complete,
     onSuccess: async () => {
       clearSetupDeferred()
       await queryClient.invalidateQueries({ queryKey: queryKeys.setup.status })
-      navigate(ROUTES.dashboard, { replace: true })
     },
   })
 }

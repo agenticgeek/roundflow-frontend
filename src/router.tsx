@@ -29,6 +29,8 @@ const Complaints = lazy(() => import('@/pages/Complaints'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const Technicians = lazy(() => import('@/pages/Technicians'))
 const SetupWizard = lazy(() => import('@/pages/SetupWizard'))
+const SetupLive = lazy(() => import('@/pages/SetupLive'))
+const AssignTechnicians = lazy(() => import('@/pages/AssignTechnicians'))
 const TechnicianApp = lazy(() => import('@/pages/TechnicianApp'))
 
 /** Wrap a lazy page element in a Suspense boundary with the app's loader. */
@@ -57,6 +59,11 @@ export const router = createBrowserRouter([
     element: <SetupRoute>{page(<SetupWizard />)}</SetupRoute>,
   },
   {
+    // Outside SetupRoute: setup is complete by the time this opens.
+    path: ROUTES.setupLive,
+    element: <ProtectedRoute>{page(<SetupLive />)}</ProtectedRoute>,
+  },
+  {
     path: ROUTES.dashboard,
     element: <ProtectedRoute>{page(<Dashboard />)}</ProtectedRoute>,
   },
@@ -67,6 +74,10 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.roundPlanner,
     element: <ProtectedRoute>{page(<RoundPlanner />)}</ProtectedRoute>,
+  },
+  {
+    path: ROUTES.roundPlannerAssign,
+    element: <ProtectedRoute>{page(<AssignTechnicians />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.propertyDetail,

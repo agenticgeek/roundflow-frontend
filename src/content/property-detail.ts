@@ -42,6 +42,25 @@ export interface PropertyDetailRecord {
   planStatus?: PropertyPlanStatus
   needsAssignment?: boolean
   customerRecordId?: string
+  /** Every service plan on the property (multi-plan). The summary fields above use the primary one. */
+  servicePlans?: PropertyServicePlan[]
+}
+
+export type PropertyServicePlanStatus = 'active' | 'paused' | 'cancelled'
+
+export interface PropertyServicePlan {
+  id: string
+  serviceName: string
+  frequency: string
+  price: string
+  status: PropertyServicePlanStatus
+  nextDue: string
+  lastCompleted: string
+  paymentMethod: string
+  /** e.g. "12 Oct 2026 – 9 Nov 2026" when paused, otherwise null. */
+  pauseWindow: string | null
+  /** The plan standingInfo and the header summary are based on (first ACTIVE, else first). */
+  isPrimary: boolean
 }
 
 export type VisitStatus = 'completed' | 'scheduled'
@@ -351,7 +370,26 @@ export const propertyDetailContent = {
     roundAssignment: 'Round Assignment',
     planStatus: 'Plan Status',
     notAssigned: 'Not assigned',
-    defaultServiceType: 'Window Cleaning',
+    // Shown only when no plan has a service name — never invent a service.
+    defaultServiceType: '—',
+    plansTitle: 'Services on this property',
+    plansCount: '{count} plans',
+    noPlans: 'No service plans on this property yet.',
+    primaryBadge: 'Primary',
+    unnamedService: 'Unnamed service',
+    pausedWindow: 'Paused {window}',
+    plan: {
+      frequency: 'Frequency',
+      price: 'Price',
+      nextDue: 'Next due',
+      lastCompleted: 'Last completed',
+      paymentMethod: 'Payment method',
+    },
+    planStatusLabels: {
+      active: 'Active',
+      paused: 'Paused',
+      cancelled: 'Cancelled',
+    },
   },
   visitHistory: {
     title: 'Visit History',

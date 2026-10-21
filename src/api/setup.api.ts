@@ -11,6 +11,8 @@ import type {
   ServiceInput,
   SetupStatus,
   SetupStep9Bundle,
+  SetupStep9BulkInput,
+  SetupStep9BulkResult,
   SetupStep9Input,
   SetupStep10Input,
   SetupStep10Result,
@@ -94,6 +96,10 @@ export const setupApi = {
     api<SetupStep9Bundle[]>('/setup/step/9', { signal }),
   saveStep9: (input: SetupStep9Input) =>
     api<SetupStep9Bundle>('/setup/step/9', jsonPost(input)),
+  // All-or-nothing validation up front (400, nothing inserted); then inserted in batches of
+  // 100, each in its own transaction — a later batch failing (500) keeps earlier batches.
+  saveStep9Bulk: (input: SetupStep9BulkInput) =>
+    api<SetupStep9BulkResult>('/setup/step/9/bulk', jsonPost(input)),
 
   getStep10: (signal?: AbortSignal) =>
     api<SetupStep10Result>('/setup/step/10', { signal }),

@@ -35,7 +35,21 @@ export type PropertyUpdateInput = components['schemas']['PropertyUpdateInput'] &
   cleaningFrequency?: CleaningFrequency | null
 }
 export type CustomerUpdateInput = components['schemas']['CustomerUpdateInput']
-export type CustomerDetail = components['schemas']['CustomerDetail']
+type GeneratedCustomerDetail = components['schemas']['CustomerDetail']
+type GeneratedCustomerDetailTabs = NonNullable<GeneratedCustomerDetail['tabs']>
+// CONTRACT-DIFF: multi-plan handoff — GET /customers/:id now returns `servicePlans[]`
+// (and `tabs.servicePlans[]`) instead of a single `servicePlan`. The legacy single-plan
+// fields stay optional so an environment still on the old backend keeps working.
+export type CustomerDetail = Omit<GeneratedCustomerDetail, 'servicePlan' | 'tabs'> & {
+  servicePlans?: ServicePlanView[]
+  /** @deprecated legacy single plan — read via `customerServicePlans()` instead. */
+  servicePlan?: ServicePlanView | null
+  tabs?: Omit<GeneratedCustomerDetailTabs, 'servicePlan'> & {
+    servicePlans?: ServicePlanView[]
+    /** @deprecated legacy single plan. */
+    servicePlan?: ServicePlanView | null
+  }
+}
 export type CustomerListRowPaymentStatus =
   | 'paid'
   | 'hold'
@@ -66,7 +80,10 @@ export type CustomerListResult = Omit<
 export type PauseServiceInput = components['schemas']['PauseServiceInput']
 export type NoteCreateInput = components['schemas']['NoteCreateInput']
 export type PropertyNote = components['schemas']['PropertyNote']
-export type ServicePlanView = components['schemas']['ServicePlanView']
+// CONTRACT-DIFF: each plan now carries its own cleaningFrequency (multi-plan handoff).
+export type ServicePlanView = components['schemas']['ServicePlanView'] & {
+  cleaningFrequency?: CleaningFrequency | null
+}
 export type NoteType = components['schemas']['NoteType']
 export type DayOfWeek = components['schemas']['DayOfWeek']
 export type LifecycleStatus = components['schemas']['LifecycleStatus']
@@ -103,7 +120,8 @@ export type SetupStep9Input = {
   fullAddress: string
   postcode: string
   price: number
-  roundId: string
+  // CONTRACT-DIFF: omitted for "Leave unassigned for now" — the API still lists it as required.
+  roundId?: string
   propertyName?: string
   phone?: string
   landline?: string
@@ -117,6 +135,38 @@ export type SetupStep9Input = {
   serviceIds?: string[]
   accessNotes?: string
   riskNotes?: string
+}
+
+// CONTRACT-DIFF: POST /setup/step/9/bulk (bulk-import handoff). One row per property; the
+// accepted fields are a subset of SetupStep9Input — no landline and a single serviceId.
+// serviceAreaId is required here (optional on the single-property endpoint).
+export type SetupStep9BulkItem = {
+  customerName: string
+  fullAddress: string
+  postcode: string
+  serviceAreaId: string
+  roundId: string
+  price: number
+  propertyName?: string
+  phone?: string
+  email?: string
+  propertyType?: PropertyType
+  cleaningFrequency?: CleaningFrequency
+  paymentMethod?: PaymentMethod
+  serviceId?: string
+  accessNotes?: string
+  riskNotes?: string | null
+}
+
+export type SetupStep9BulkInput = { properties: SetupStep9BulkItem[] }
+
+export type SetupStep9BulkResult = {
+  created: number
+  results: {
+    customer: { id: string }
+    property: { id: string }
+    servicePlan: { id: string }
+  }[]
 }
 
 export type SetupStep9Bundle = {

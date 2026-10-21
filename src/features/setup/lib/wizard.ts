@@ -1,5 +1,12 @@
 import type { SetupStatus } from '@/api/types'
-import { SETUP_STEP_COUNT } from '@/config/setup-wizard'
+import {
+  FIRST_SETUP_STEP,
+  LAST_SETUP_STEP,
+  SETUP_STEPS,
+  SETUP_STEP_COUNT,
+  SETUP_STEP_ORDER,
+  setupStepPosition,
+} from '@/config/setup-wizard'
 
 export { SETUP_STEP_COUNT }
 
@@ -23,11 +30,12 @@ export function getMaxAllowedStep(
   status: SetupStatus,
   skippedSteps?: ReadonlySet<number>,
 ): number {
-  for (const step of [...status.steps].sort((a, b) => a.step - b.step)) {
-    if (step.deferred || step.complete || skippedSteps?.has(step.step)) continue
-    return step.step
+  for (const stepNumber of SETUP_STEP_ORDER) {
+    const step = status.steps.find((item) => item.step === stepNumber)
+    if (!step || step.deferred || step.complete || skippedSteps?.has(stepNumber)) continue
+    return stepNumber
   }
-  return SETUP_STEP_COUNT
+  return LAST_SETUP_STEP
 }
 
 export function clampWizardStep(
@@ -35,21 +43,23 @@ export function clampWizardStep(
   status: SetupStatus | undefined,
   skippedSteps?: ReadonlySet<number>,
 ): number {
-  const normalized = Number.isFinite(requested)
-    ? Math.min(SETUP_STEP_COUNT, Math.max(1, Math.trunc(requested)))
-    : 1
+  const normalized =
+    Number.isFinite(requested) && setupStepPosition(Math.trunc(requested)) !== -1
+      ? Math.trunc(requested)
+      : FIRST_SETUP_STEP
 
-  if (!status) return normalized === 1 ? 1 : normalized
+  if (!status) return normalized
 
-  return Math.min(normalized, getMaxAllowedStep(status, skippedSteps))
+  // Steps unlock in display order, so compare positions — not backend numbers.
+  const maxAllowed = getMaxAllowedStep(status, skippedSteps)
+  return setupStepPosition(normalized) > setupStepPosition(maxAllowed) ? maxAllowed : normalized
 }
 
 export function stepCompletionFlags(
   status: SetupStatus | undefined,
   stepCount = SETUP_STEP_COUNT,
 ): boolean[] {
-  return Array.from({ length: stepCount }, (_, index) => {
-    const stepNumber = index + 1
+  return SETUP_STEPS.slice(0, stepCount).map(({ step: stepNumber }) => {
     const step = status?.steps.find((item) => item.step === stepNumber)
     return step?.complete ?? false
   })
@@ -63,6 +73,7 @@ export function getSetupProgress(status: SetupStatus) {
 
   const pending = required
     .filter((step) => !step.complete)
+    .sort((a, b) => setupStepPosition(a.step) - setupStepPosition(b.step))
     .map((step) => ({
       step: step.step,
       label: SETUP_STEP_TASKS[step.step] ?? `Complete step ${step.step}`,

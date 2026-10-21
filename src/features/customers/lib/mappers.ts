@@ -6,6 +6,7 @@ import type {
   LifecycleStatus,
   NoteType,
   PaymentMethod,
+  ServicePlanView,
 } from '@/api/types'
 import type {
   CustomerPaymentStatus,
@@ -19,6 +20,8 @@ import type {
   PropertyPaymentRecord,
   PropertyPaymentStatus,
   PropertyPlanStatus,
+  PropertyServicePlan,
+  PropertyServicePlanStatus,
   PropertyServiceStatus,
   PropertyVisitRecord,
   VisitInvoiceAction,
@@ -133,12 +136,60 @@ function mapDetailPaymentStatus(
   return 'paid'
 }
 
+/**
+ * All service plans on the customer's property. GET /customers/:id returns `servicePlans[]`
+ * (multi-plan); falls back to `tabs.servicePlans`, then the legacy single `servicePlan`
+ * for an environment still on the old backend.
+ */
+export function customerServicePlans(detail: CustomerDetail): ServicePlanView[] {
+  if (detail.servicePlans) return detail.servicePlans
+  if (detail.tabs?.servicePlans) return detail.tabs.servicePlans
+  const legacy = detail.servicePlan ?? detail.tabs?.servicePlan
+  return legacy ? [legacy] : []
+}
+
+/** The plan standingInfo is based on: first ACTIVE, else the first, else null. */
+export function primaryServicePlan(plans: readonly ServicePlanView[]): ServicePlanView | null {
+  return plans.find((plan) => plan.status === 'ACTIVE') ?? plans[0] ?? null
+}
+
+function mapServicePlanStatus(status: LifecycleStatus | undefined): PropertyServicePlanStatus {
+  if (status === 'PAUSED') return 'paused'
+  if (status === 'CANCELLED') return 'cancelled'
+  return 'active'
+}
+
+function servicePlanToRecord(
+  plan: ServicePlanView,
+  primary: ServicePlanView | null,
+): PropertyServicePlan {
+  const pauseWindow =
+    plan.status === 'PAUSED' && (plan.pauseStartDate || plan.pauseEndDate)
+      ? `${formatDate(plan.pauseStartDate)} – ${plan.pauseEndDate ? formatDate(plan.pauseEndDate) : 'until resumed'}`
+      : null
+  return {
+    id: plan.id ?? '',
+    serviceName: plan.serviceName?.trim() || '',
+    frequency: plan.cleaningFrequency ? FREQUENCY_LABELS[plan.cleaningFrequency] : '—',
+    price: formatMoney(plan.price) ?? '—',
+    status: mapServicePlanStatus(plan.status),
+    nextDue: formatDate(plan.nextDueDate),
+    lastCompleted: formatDate(plan.lastCompleted),
+    paymentMethod: plan.paymentMethod ? PAYMENT_METHOD_LABELS[plan.paymentMethod] : '—',
+    pauseWindow,
+    isPrimary: primary != null && plan.id === primary.id,
+  }
+}
+
 export function customerDetailToPropertyRecord(
   detail: CustomerDetail,
 ): PropertyDetailRecord | null {
   const customer = detail.customer
   const property = detail.property
-  const plan = detail.servicePlan
+  const plans = customerServicePlans(detail)
+  // Summary fields (price, next due, payment method…) follow the primary plan, matching
+  // standingInfo on the backend; the Service Plan tab lists every plan.
+  const plan = primaryServicePlan(plans)
   const standing = detail.standingInfo
   if (!customer?.id) return null
 
@@ -183,11 +234,21 @@ export function customerDetailToPropertyRecord(
     // with landline yet, even though the Create/Update Customer input schemas already have it.
     landline: (customer as { landline?: string | null }).landline ?? '',
     email: customer.email ?? '',
-    serviceType: plan?.serviceName ?? undefined,
+    serviceType: serviceTypeLabel(plans),
     planStatus: mapPlanStatus(plan?.status, hasRound, onHold),
     needsAssignment: !hasRound,
     customerRecordId: customer.id,
+    servicePlans: plans.map((item) => servicePlanToRecord(item, plan)),
   }
+}
+
+/** Service names of the non-cancelled plans, e.g. "Windows Only, Conservatory". */
+function serviceTypeLabel(plans: readonly ServicePlanView[]): string | undefined {
+  const names = plans
+    .filter((item) => item.status !== 'CANCELLED')
+    .map((item) => item.serviceName?.trim())
+    .filter((name): name is string => Boolean(name))
+  return names.length > 0 ? [...new Set(names)].join(', ') : undefined
 }
 
 function mapVisitStatus(status: string | undefined): VisitStatus {

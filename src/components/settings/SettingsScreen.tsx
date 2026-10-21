@@ -1106,7 +1106,7 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
   const create = useCreateServiceArea()
   const remove = useDeleteServiceArea()
   const { showToast } = useToast()
-  const { addForm, actions } = setupWizardContent.serviceArea
+  const { addForm, actions } = settingsContent.serviceArea
 
   const [showAddForm, setShowAddForm] = useState(false)
   const [form, setForm] = useState({ name: '', postcodeSectors: '' })
@@ -1189,7 +1189,7 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
             className={cn(dashboardCtaClass, 'shrink-0 px-4 py-2 text-sm')}
           >
             <DashboardIcon name="plus" className="h-4 w-4" />
-            {setupWizardContent.serviceArea.addArea}
+            {settingsContent.serviceArea.addArea}
           </button>
         </MutationGate>
       </div>

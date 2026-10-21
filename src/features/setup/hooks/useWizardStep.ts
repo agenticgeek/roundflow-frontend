@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import type { SetupStatus } from '@/api/types'
-import { SETUP_STEP_COUNT } from '@/config/setup-wizard'
+import {
+  FIRST_SETUP_STEP,
+  LAST_SETUP_STEP,
+  nextSetupStep,
+  previousSetupStep,
+  setupStepPosition,
+} from '@/config/setup-wizard'
 import { clampWizardStep } from '@/features/setup/lib/wizard'
 import { queryKeys } from '@/lib/query-keys'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
@@ -21,11 +27,12 @@ export function useWizardStep() {
     )
   }
 
-  const raw = Number(searchParams.get('step') ?? '1')
-  const requested = Number.isFinite(raw) ? raw : 1
+  // `?step=` holds the backend step number, so existing deep links keep working.
+  const raw = Number(searchParams.get('step') ?? String(FIRST_SETUP_STEP))
+  const requested = Number.isFinite(raw) ? raw : FIRST_SETUP_STEP
   const status = latestStatus()
   const step = clampWizardStep(requested, status, skippedSteps)
-  const stepIndex = step - 1
+  const stepIndex = setupStepPosition(step)
 
   useEffect(() => {
     if (requested !== step) {
@@ -39,13 +46,13 @@ export function useWizardStep() {
   }
 
   function skipStep() {
-    if (step >= SETUP_STEP_COUNT) return
+    if (step === LAST_SETUP_STEP) return
 
     const nextSkipped = new Set(skippedSteps)
     nextSkipped.add(step)
     setSkippedSteps(nextSkipped)
 
-    const nextStep = Math.min(SETUP_STEP_COUNT, step + 1)
+    const nextStep = nextSetupStep(step)
     const clamped = clampWizardStep(nextStep, latestStatus(), nextSkipped)
     setSearchParams({ step: String(clamped) }, { replace: true })
   }
@@ -54,10 +61,12 @@ export function useWizardStep() {
     step,
     stepIndex,
     goToStep,
-    goNext: () => goToStep(step + 1),
-    goBack: () => goToStep(step - 1),
+    nextStep: nextSetupStep(step),
+    previousStep: previousSetupStep(step),
+    goNext: () => goToStep(nextSetupStep(step)),
+    goBack: () => goToStep(previousSetupStep(step)),
     skipStep,
-    isFirstStep: step === 1,
-    isLastStep: step === SETUP_STEP_COUNT,
+    isFirstStep: step === FIRST_SETUP_STEP,
+    isLastStep: step === LAST_SETUP_STEP,
   }
 }

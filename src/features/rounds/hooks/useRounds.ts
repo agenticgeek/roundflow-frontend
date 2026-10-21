@@ -1,13 +1,16 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  PLANNER_BATCH_MAX_ROUNDS,
   roundsApi,
   type PlannerDayResult,
   type PlannerOccurrence,
+  type PlannerOccurrencesBatchItem,
   type RoundCreateInput,
   type RoundDetail,
   type RoundStatus,
   type RoundUpdateInput,
 } from '@/api/rounds.api'
+import { ApiError } from '@/lib/errors'
 import { invalidateCustomers, invalidateRounds, queryKeys } from '@/lib/query-keys'
 
 /** Per-round fan-out queries reuse cached results this long before refetching. */
@@ -119,28 +122,66 @@ function collect<T>(
   }
 }
 
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
 /**
- * There is no cross-round planner endpoint — "All rounds" fans out one
- * occurrences call per round and merges client-side (handoff §4.1).
+ * One batch request for a chunk of rounds. If the backend doesn't have the batch route yet
+ * (404), falls back to the per-round endpoint so the planner works against either version.
+ */
+async function fetchOccurrencesChunk(
+  roundIds: string[],
+  range: { from: string; to: string },
+  signal?: AbortSignal,
+): Promise<PlannerOccurrencesBatchItem[]> {
+  try {
+    return await roundsApi.getOccurrencesBatch(roundIds, range, signal)
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 404)) throw error
+    const perRound = await Promise.all(
+      roundIds.map((id) => roundsApi.getOccurrences(id, range, signal)),
+    )
+    return roundIds.map((roundId, index) => ({ roundId, occurrences: perRound[index] ?? [] }))
+  }
+}
+
+/**
+ * Occurrence summaries across rounds via GET /rounds/planner/occurrences — one request per
+ * 50 rounds instead of one per round. Same result shape as before, keyed by round id.
  */
 export function useRoundsOccurrences(
   roundIds: string[],
   range: { from: string; to: string },
   enabled = true,
 ): FanOutResult<PlannerOccurrence[]> {
+  const chunks = chunk(roundIds, PLANNER_BATCH_MAX_ROUNDS)
   const results = useQueries({
-    queries: roundIds.map((id) => ({
-      queryKey: queryKeys.rounds.occurrences(id, range.from, range.to),
+    queries: chunks.map((ids) => ({
+      queryKey: queryKeys.rounds.occurrencesBatch(ids, range.from, range.to),
       queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        roundsApi.getOccurrences(id, range, signal),
-      enabled: enabled && Boolean(id) && Boolean(range.from && range.to),
-      // This fans out one request per round, so keep results fresh for a bit to
-      // avoid re-firing the whole set on quick re-navigation. Mutations still
+        fetchOccurrencesChunk(ids, range, signal),
+      enabled: enabled && ids.length > 0 && Boolean(range.from && range.to),
+      // Keep results briefly so quick re-navigation doesn't refetch. Mutations still
       // invalidate rounds, so completions etc. refresh immediately.
       staleTime: FAN_OUT_STALE_TIME,
     })),
   })
-  return collect(roundIds, results)
+
+  const byRoundId = new Map<string, PlannerOccurrence[]>()
+  results.forEach((result) => {
+    result.data?.forEach((item) => byRoundId.set(item.roundId, item.occurrences))
+  })
+  return {
+    byRoundId,
+    isLoading: results.some((result) => result.isLoading),
+    isFetching: results.some((result) => result.isFetching),
+    isError: results.some((result) => result.isError),
+    error: results.find((result) => result.isError)?.error,
+    refetch: () => results.forEach((result) => void result.refetch()),
+  }
 }
 
 /** Day view (List/Map) across one or many rounds for a single date. */

@@ -4,6 +4,7 @@ import type {
   PropertyDetailRecord,
   PropertyDetailTabId,
   PropertyPlanStatus,
+  PropertyServicePlan,
 } from '@/content/property-detail'
 import { propertyDetailContent } from '@/content/property-detail'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
@@ -505,7 +506,85 @@ function ServicePlanTab({
           </dd>
         </div>
       </dl>
+
+      <ServicePlanList plans={property.servicePlans ?? []} />
     </>
+  )
+}
+
+const servicePlanStatusClass: Record<PropertyServicePlan['status'], string> = {
+  active: 'bg-success/10 text-success',
+  paused: 'bg-muted/15 text-muted',
+  cancelled: 'bg-danger/10 text-danger',
+}
+
+/** Every service plan on the property (multi-plan) — each with its own service, price and cadence. */
+function ServicePlanList({ plans }: { plans: readonly PropertyServicePlan[] }) {
+  const { servicePlan } = propertyDetailContent
+
+  return (
+    <section className="mt-8 border-t border-border pt-6">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold text-foreground">{servicePlan.plansTitle}</h3>
+        {plans.length > 0 ? (
+          <span className="text-xs text-muted">
+            {servicePlan.plansCount.replace('{count}', String(plans.length))}
+          </span>
+        ) : null}
+      </div>
+
+      {plans.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">{servicePlan.noPlans}</p>
+      ) : (
+        <ul className="mt-3 grid gap-3 lg:grid-cols-2">
+          {plans.map((plan) => (
+            <li key={plan.id} className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {plan.serviceName || servicePlan.unnamedService}
+                  </p>
+                  {plan.isPrimary && plans.length > 1 ? (
+                    <span className="shrink-0 rounded-md bg-accent-surface px-1.5 py-0.5 text-[11px] font-semibold text-accent">
+                      {servicePlan.primaryBadge}
+                    </span>
+                  ) : null}
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold',
+                    servicePlanStatusClass[plan.status],
+                  )}
+                >
+                  {servicePlan.planStatusLabels[plan.status]}
+                </span>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <PlanFact label={servicePlan.plan.frequency} value={plan.frequency} />
+                <PlanFact label={servicePlan.plan.price} value={plan.price} />
+                <PlanFact label={servicePlan.plan.nextDue} value={plan.nextDue} />
+                <PlanFact label={servicePlan.plan.lastCompleted} value={plan.lastCompleted} />
+                <PlanFact label={servicePlan.plan.paymentMethod} value={plan.paymentMethod} />
+              </dl>
+              {plan.pauseWindow ? (
+                <p className="mt-3 text-xs text-muted">
+                  {servicePlan.pausedWindow.replace('{window}', plan.pauseWindow)}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function PlanFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-muted">{label}</dt>
+      <dd className="mt-0.5 font-medium text-foreground">{value}</dd>
+    </div>
   )
 }
 

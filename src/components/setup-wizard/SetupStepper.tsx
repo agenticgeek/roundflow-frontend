@@ -41,7 +41,7 @@ export function SetupStepper({ currentIndex, completedSteps, onStepClick }: Setu
       <div ref={containerRef} className="min-w-0 flex-1 overflow-hidden">
         <ol
           ref={trackRef}
-          className={cn('flex w-max items-center gap-6 sm:gap-8 lg:gap-10', transitionClass)}
+          className={cn('flex w-max items-center gap-5 sm:gap-6', transitionClass)}
           style={{ transform: `translateX(-${offset}px)` }}
         >
           {SETUP_STEPS.map((step, index) => {
@@ -56,25 +56,31 @@ export function SetupStepper({ currentIndex, completedSteps, onStepClick }: Setu
                   disabled={!onStepClick}
                   aria-current={isActive ? 'step' : undefined}
                   className={cn(
-                    'flex shrink-0 items-center gap-2.5 rounded-full py-1 pr-1 transition-opacity',
+                    'flex shrink-0 items-center gap-2 rounded-full py-1 pr-1 transition-opacity',
                     onStepClick && 'cursor-pointer hover:opacity-75',
                   )}
                 >
                   <span
                     aria-hidden="true"
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors duration-300',
+                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums transition-colors duration-300',
                       isActive && 'bg-primary text-primary-foreground',
-                      !isActive && 'bg-surface text-muted',
-                      isComplete && !isActive && 'bg-primary/10 text-primary',
+                      !isActive && 'bg-border/70 text-muted',
+                      isComplete && !isActive && 'bg-primary text-primary-foreground',
                     )}
                   >
-                    {index + 1}
+                    {isComplete && !isActive ? (
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-3.5 w-3.5">
+                        <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    ) : (
+                      index + 1
+                    )}
                   </span>
                   <span
                     className={cn(
                       'whitespace-nowrap text-sm transition-colors duration-300 sm:text-[15px]',
-                      isActive ? 'font-semibold text-foreground' : 'font-normal text-foreground',
+                      isActive || isComplete ? 'font-medium text-foreground' : 'font-normal text-muted',
                     )}
                   >
                     {step.label}

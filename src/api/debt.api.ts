@@ -49,6 +49,23 @@ export type DebtBoardParams = {
   bucket: DebtBucket
   roundId?: string
   paymentMethod?: DebtPaymentMethodParam
+  /** 1-based. */
+  page?: number
+  /** Default 50, max 100 (server-side). */
+  pageSize?: number
+}
+
+export type DebtBoardPagination = {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+/** GET /debt/board is paginated (performance handoff 2026-10-16). */
+export type DebtBoardResult = {
+  rows: DebtBoardItem[]
+  pagination: DebtBoardPagination
 }
 
 export type DebtRemindInput = {
@@ -86,14 +103,28 @@ function toQuery(params: DebtBoardParams): string {
   search.set('bucket', params.bucket)
   if (params.roundId) search.set('roundId', params.roundId)
   if (params.paymentMethod) search.set('paymentMethod', params.paymentMethod)
+  if (params.page) search.set('page', String(params.page))
+  if (params.pageSize) search.set('pageSize', String(params.pageSize))
   return `?${search.toString()}`
 }
 
 export const debtApi = {
   kpis: (signal?: AbortSignal) => api<DebtKpis>('/debt/kpis', { signal }),
 
-  board: (params: DebtBoardParams, signal?: AbortSignal) =>
-    api<DebtBoardItem[]>(`/debt/board${toQuery(params)}`, { signal }),
+  // Returns { rows, pagination }. An un-migrated backend still returns a bare array — wrap it
+  // as one page so the frontend can ship before or after the backend change.
+  board: async (params: DebtBoardParams, signal?: AbortSignal): Promise<DebtBoardResult> => {
+    const body = await api<DebtBoardResult | DebtBoardItem[]>(`/debt/board${toQuery(params)}`, {
+      signal,
+    })
+    if (Array.isArray(body)) {
+      return {
+        rows: body,
+        pagination: { page: 1, pageSize: body.length, total: body.length, totalPages: 1 },
+      }
+    }
+    return body
+  },
 
   remind: (invoiceId: string, input: DebtRemindInput) =>
     api<DebtMessageResult>(

@@ -63,6 +63,25 @@ export const settingsContent = {
     heading: 'Service Areas',
     subheading: 'Define your service areas and postcode',
     linkedRounds: 'Linked Rounds:',
+    addArea: 'Add Area',
+    addForm: {
+      title: 'Add New Area',
+      fields: {
+        areaName: { label: 'Area Name', placeholder: 'e.g. Alnwick' },
+        postcodeSectors: {
+          label: 'Postcode Sectors',
+          placeholder: 'e.g. NE66, NE67',
+          hint: 'Separate multiple sectors with commas.',
+        },
+      },
+      actions: { confirm: 'Add Area', cancel: 'Cancel' },
+      validation: {
+        nameRequired: 'Area name is required.',
+        postcodeRequired: 'At least one postcode sector is required.',
+        postcodeInvalid: 'Enter valid UK postcode sectors, comma-separated (e.g. NE66, NE67).',
+      },
+    },
+    actions: { delete: 'Delete area' },
   },
   serviceCatalogue: {
     heading: 'Service Catalogue',

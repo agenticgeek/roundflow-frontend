@@ -3,11 +3,47 @@ import type { PropertyDraft } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
 import { Field, FieldError, Input, MultiSelect, Select, Textarea } from '@/components/ui'
+import { Spinner } from '@/components/ui/spinner'
+import { ApiError } from '@/lib/errors'
 import { parsePropertyCsv, parsePropertyXlsx, type PropertyCsvResult } from '@/lib/property-csv'
 
 /** Sum the catalogue prices of the given services (missing prices count as 0). */
 function sumServicePrices(ids: readonly string[], prices: Readonly<Record<string, number>>): number {
   return ids.reduce((total, id) => total + (prices[id] ?? 0), 0)
+}
+
+/** Rows per bulk request — small enough that the backend's transaction finishes in time. */
+const BULK_CHUNK_SIZE = 25
+
+interface BulkRowError {
+  row: number
+  field?: string
+  message: string
+}
+
+/**
+ * The bulk endpoint reports validation failures as one string:
+ * `Validation failed: [{"row":2,"field":"roundId","message":"roundId is required"}]`.
+ * Pull the JSON array out so each row's problem can be listed. Returns null if it isn't that shape.
+ */
+function parseBulkValidationErrors(message: string): BulkRowError[] | null {
+  const start = message.indexOf('[')
+  if (start === -1) return null
+  try {
+    const parsed: unknown = JSON.parse(message.slice(start))
+    if (!Array.isArray(parsed)) return null
+    return parsed
+      .filter((item): item is { row?: unknown; field?: unknown; message: string } =>
+        Boolean(item) && typeof (item as { message?: unknown }).message === 'string',
+      )
+      .map((item) => ({
+        row: Number(item.row),
+        field: typeof item.field === 'string' && item.field !== 'unknown' ? item.field : undefined,
+        message: item.message,
+      }))
+  } catch {
+    return null
+  }
 }
 
 interface ImportPropertiesPanelProps {
@@ -18,8 +54,13 @@ interface ImportPropertiesPanelProps {
   /** Catalogue default price per service id — prefills a row's price when its service is picked. */
   servicePrices: Readonly<Record<string, number>>
   draftDefaults: PropertyDraft
-  /** Saves one property via the real endpoint (reused per row until a bulk endpoint exists). */
+  /** Saves one property. Used row-by-row when no bulk saver is provided. */
   onSaveProperty: (draft: PropertyDraft) => Promise<void> | void
+  /**
+   * Saves every row in one request (e.g. POST /setup/step/9/bulk). When provided it replaces
+   * the row-by-row loop. Should resolve with the number created and throw the ApiError as-is.
+   */
+  onSaveProperties?: (drafts: PropertyDraft[]) => Promise<{ created: number }>
   onClose: () => void
 }
 
@@ -43,6 +84,7 @@ export function ImportPropertiesPanel({
   servicePrices,
   draftDefaults,
   onSaveProperty,
+  onSaveProperties,
   onClose,
 }: ImportPropertiesPanelProps) {
   const { importCsv } = setupWizardContent.addProperty
@@ -61,6 +103,8 @@ export function ImportPropertiesPanel({
 
   const [importing, setImporting] = useState(false)
   const [progress, setProgress] = useState(0)
+  /** Rows in the current import — fixed for the run, since saved rows leave the list on failure. */
+  const [importTotal, setImportTotal] = useState(0)
   const [failed, setFailed] = useState<FailedRow[]>([])
   const [summary, setSummary] = useState<string | null>(null)
 
@@ -246,31 +290,128 @@ export function ImportPropertiesPanel({
     }
 
     setFormError(null)
+    setFailed([])
+    setSummary(null)
     setImporting(true)
     setProgress(0)
-    const failures: FailedRow[] = []
+    setImportTotal(activeProperties.length)
 
-    for (const [index, property] of activeProperties.entries()) {
+    // The final per-row drafts, in preview order (the bulk endpoint reports errors by row).
+    const drafts: PropertyDraft[] = activeProperties.map((property) => {
       const edit = rowEdits[property.rowNumber] ?? { serviceIds: [], price: '', priceEdited: false }
+      return {
+        ...property.draft,
+        round,
+        serviceArea,
+        serviceIds: edit.serviceIds,
+        serviceId: edit.serviceIds[0] ?? '',
+        pricePerVisit: String(rowPriceValue(property.rowNumber)),
+      }
+    })
+
+    if (onSaveProperties) {
+      await importInBulk(drafts, activeProperties.map((property) => property.rowNumber))
+      return
+    }
+
+    const failures: FailedRow[] = []
+    for (const [index, draft] of drafts.entries()) {
       try {
-        await onSaveProperty({
-          ...property.draft,
-          round,
-          serviceArea,
-          serviceIds: edit.serviceIds,
-          serviceId: edit.serviceIds[0] ?? '',
-          pricePerVisit: String(rowPriceValue(property.rowNumber)),
-        })
+        await onSaveProperty(draft)
       } catch (error) {
         failures.push({
-          label: property.draft.customerName || `Row ${property.rowNumber}`,
+          label: draft.customerName || `Row ${index + 1}`,
           error: error instanceof Error ? error.message : 'Save failed',
         })
       }
       setProgress(index + 1)
     }
+    finishImport(activeCount - failures.length, failures)
+  }
 
-    const added = activeCount - failures.length
+  /**
+   * POST /setup/step/9/bulk in chunks of BULK_CHUNK_SIZE rows. The backend saves each request
+   * in one database transaction, and a large request outlives Prisma's transaction timeout
+   * ("Transaction not found"), so smaller requests keep each one well inside it. Chunks before
+   * a failure are already saved — those rows are taken out of the list so a retry can't
+   * create duplicates.
+   */
+  async function importInBulk(drafts: PropertyDraft[], rowNumbers: number[]) {
+    let created = 0
+    let saved = 0
+    for (let start = 0; start < drafts.length; start += BULK_CHUNK_SIZE) {
+      const chunk = drafts.slice(start, start + BULK_CHUNK_SIZE)
+      try {
+        const result = await onSaveProperties!(chunk)
+        created += result.created
+        saved += chunk.length
+        setProgress(saved)
+      } catch (error) {
+        setImporting(false)
+        removeSavedRows(rowNumbers.slice(0, saved))
+        reportBulkFailure(error, chunk, rowNumbers.slice(start, start + chunk.length), created)
+        return
+      }
+    }
+
+    // created should equal the row count; anything less means rows were dropped server-side.
+    const missing = Math.max(0, drafts.length - created)
+    finishImport(
+      created,
+      missing > 0
+        ? [{ label: `${missing} row${missing === 1 ? '' : 's'}`, error: 'Not created by the server' }]
+        : [],
+    )
+  }
+
+  function removeSavedRows(savedRowNumbers: number[]) {
+    if (savedRowNumbers.length === 0) return
+    setRemovedRows((prev) => new Set([...prev, ...savedRowNumbers]))
+  }
+
+  function reportBulkFailure(
+    error: unknown,
+    chunk: PropertyDraft[],
+    chunkRowNumbers: number[],
+    alreadyCreated: number,
+  ) {
+    const message = error instanceof Error ? error.message : 'Import failed'
+    const status = error instanceof ApiError ? error.status : undefined
+    const savedNote = alreadyCreated > 0 ? `${importCsv.done.replace('{added}', String(alreadyCreated))} ` : ''
+
+    if (status === 400) {
+      // Validation is all-or-nothing per request: this chunk saved nothing. The server's row
+      // numbers count from 1 within the chunk — map them back to the preview's "#" column.
+      const rowErrors = parseBulkValidationErrors(message)
+      setFailed(
+        rowErrors && rowErrors.length > 0
+          ? rowErrors.map((rowError) => {
+              const draft = chunk[rowError.row - 1]
+              const rowNumber = chunkRowNumbers[rowError.row - 1] ?? rowError.row
+              return {
+                label: `${importCsv.rowError.replace('{row}', String(rowNumber))}${
+                  draft?.customerName ? ` · ${draft.customerName}` : ''
+                }`,
+                error: rowError.field ? `${rowError.field}: ${rowError.message}` : rowError.message,
+              }
+            })
+          : [{ label: 'Import', error: message }],
+      )
+      setSummary(savedNote + importCsv.bulkValidationFailed)
+      return
+    }
+
+    if (status != null && status >= 500) {
+      setFailed([])
+      setSummary(savedNote + importCsv.bulkPartialFailure.replace('{message}', message))
+      return
+    }
+
+    setFailed([{ label: 'Import', error: message }])
+    setSummary(savedNote + importCsv.bulkValidationFailed)
+  }
+
+  function finishImport(added: number, failures: FailedRow[]) {
     setFailed(failures)
     setImporting(false)
     setSummary(
@@ -432,6 +573,7 @@ export function ImportPropertiesPanel({
                 <table className="w-full text-left text-xs">
                   <thead className="sticky top-0 bg-surface text-muted">
                     <tr>
+                      <th className="w-8 px-3 py-1.5 font-medium">#</th>
                       <th className="px-3 py-1.5 font-medium">{importCsv.columns.name}</th>
                       <th className="px-3 py-1.5 font-medium">{importCsv.columns.address}</th>
                       <th className="px-3 py-1.5 font-medium">{importCsv.columns.postcode}</th>
@@ -443,12 +585,16 @@ export function ImportPropertiesPanel({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {activeProperties.map((property) => {
+                    {activeProperties.map((property, position) => {
                       const edit =
                         rowEdits[property.rowNumber] ??
                         ({ serviceIds: [], price: '', priceEdited: false } as RowEdit)
                       return (
                         <tr key={property.rowNumber}>
+                          {/* 1-based position in the import — the row the bulk endpoint reports errors against. */}
+                          <td className="px-3 py-1.5 align-top text-muted tabular-nums">
+                            {position + 1}
+                          </td>
                           <td className="px-3 py-1.5 align-top text-foreground">
                             {property.draft.customerName}
                           </td>
@@ -575,6 +721,10 @@ export function ImportPropertiesPanel({
           </details>
         ) : null}
 
+        {importing ? (
+          <ImportProgress done={progress} total={importTotal} copy={importCsv.progress} />
+        ) : null}
+
         {summary ? <p className="text-sm font-medium text-foreground">{summary}</p> : null}
 
         {parsedTotal > 0 ? (
@@ -582,16 +732,57 @@ export function ImportPropertiesPanel({
             type="button"
             onClick={() => void handleImport()}
             disabled={importing || activeCount === 0}
-            className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
           >
+            {importing ? <Spinner className="h-4 w-4" /> : null}
             {importing
               ? importCsv.importing
                   .replace('{done}', String(progress))
-                  .replace('{total}', String(activeCount))
+                  .replace('{total}', String(importTotal))
               : importCsv.importButton.replace('{count}', String(activeCount))}
           </button>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/** Shown while an import runs — saves can take a while for big files. */
+function ImportProgress({
+  done,
+  total,
+  copy,
+}: {
+  done: number
+  total: number
+  copy: { title: string; detail: string; hint: string }
+}) {
+  const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
+  return (
+    <div role="status" aria-live="polite" className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2.5 text-sm font-semibold text-foreground">
+          <Spinner className="h-4 w-4 text-primary" />
+          {copy.title}
+        </span>
+        <span className="text-sm text-muted tabular-nums">
+          {copy.detail.replace('{done}', String(done)).replace('{total}', String(total))}
+        </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={done}
+        className="mt-3 h-2 overflow-hidden rounded-full bg-primary/15"
+      >
+        {/* Saves land in chunks, so keep a minimum width and pulse to show work in between. */}
+        <div
+          className="h-full animate-pulse rounded-full bg-primary transition-[width] duration-500 ease-out"
+          style={{ width: `${Math.max(percent, 4)}%` }}
+        />
+      </div>
+      <p className="mt-2 text-xs text-muted">{copy.hint}</p>
     </div>
   )
 }

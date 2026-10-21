@@ -15,6 +15,8 @@ export type SetupStepId =
 
 export interface SetupStepDefinition {
   id: SetupStepId
+  /** Backend step number (`/setup/step/{step}`) — independent of the display order. */
+  step: number
   label: string
 }
 
@@ -31,8 +33,11 @@ export interface BusinessProfileData {
   businessPhone: string
   businessEmail: string
   companyNumber: string
+  businessAddress: string
+  postcode: string
   vatNumber: string
   vatRegistered: boolean | null
+  vatRate: string
   workingDays: string[]
   timezone: string
   currency: string
@@ -44,6 +49,21 @@ export interface PaymentSetupData {
   stripeConnected: boolean
   defaultPaymentRule: string
   vatApplicable: boolean
+  debtHoldEnabled: boolean
+}
+
+/** Wizard Payments step — Settings → Payment still uses PaymentSetupData. */
+export type PaymentTimingOption = 'after-visit' | 'daily'
+export type NoDirectDebitAction = 'invoice' | 'card-link'
+
+export interface WizardPaymentData {
+  goCardlessConnected: boolean
+  stripeConnected: boolean
+  /** PaymentMethod enum value (GOCARDLESS, STRIPE, BACS, CASH, CHEQUE). */
+  defaultPaymentMethod: string
+  paymentTiming: PaymentTimingOption
+  invoiceDueDays: string
+  noDirectDebitAction: NoDirectDebitAction
   debtHoldEnabled: boolean
 }
 
@@ -63,14 +83,20 @@ export interface ServiceCatalogueData {
 
 export type RecurringCycle = '4-week' | '6-week' | '8-week' | '12-week'
 
-export type CleanMethod = 'traditional' | 'water-fed-pole'
+export type CleanMethod = 'traditional' | 'water-fed-pole' | 'both'
+
+/** When the pre-clean reminder goes out — visits have no time slots, so it's a fixed time. */
+export type ReminderSchedule = 'evening-before' | 'morning-of' | 'none'
 
 export interface RoundSettingsData {
   recurringCycle: RecurringCycle
-  cleanMethods: CleanMethod[]
+  cleanMethod: CleanMethod
+  reminderSchedule: ReminderSchedule
+  /** `HH:mm` — used when reminderSchedule is `evening-before`. */
+  eveningReminderTime: string
+  /** `HH:mm` — used when reminderSchedule is `morning-of`. */
+  morningReminderTime: string
   autoGenerateVisits: boolean
-  reminderTiming: string[]
-  reminderTimeOfDay: string[]
 }
 
 export type MessageChannel = 'sms' | 'whatsapp' | 'email'
@@ -82,6 +108,23 @@ export interface MessageTemplate {
   body: string
   /** Email channel only. */
   subject?: string | null
+}
+
+export type MessageGroup = 'visits' | 'payments' | 'other'
+
+/** One customer message in the wizard — saved as one template row per channel. */
+export interface WizardMessage {
+  /** Catalogue key, or `custom-…` for a saved template the catalogue doesn't know. */
+  key: string
+  name: string
+  group: MessageGroup
+  description: string
+  channels: MessageChannel[]
+  body: string
+}
+
+export interface WizardMessagesData {
+  messages: WizardMessage[]
 }
 
 export interface SmsTemplatesData {
@@ -109,6 +152,8 @@ export interface ServiceArea {
   name: string
   postcodeSectors: string[]
   notes: string
+  /** Rounds linked server-side — read-only, 0 for areas not saved yet. */
+  roundCount: number
 }
 
 export interface ServiceAreaData {

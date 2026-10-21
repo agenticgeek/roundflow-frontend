@@ -55,6 +55,15 @@ export type PlannerOccurrence = {
   issueCount: number
 }
 
+/** One round's slice of GET /rounds/planner/occurrences (CONTRACT-DIFF: not in OpenAPI). */
+export type PlannerOccurrencesBatchItem = {
+  roundId: string
+  occurrences: PlannerOccurrence[]
+}
+
+/** The batch endpoint accepts at most this many round ids per request. */
+export const PLANNER_BATCH_MAX_ROUNDS = 50
+
 export type PlannerStop = {
   visitId: string
   propertyId: string
@@ -174,6 +183,26 @@ export const roundsApi = {
     if (params.to) search.set('to', params.to)
     return api<PlannerOccurrence[]>(
       `/rounds/${id}/planner/occurrences?${search.toString()}`,
+      { signal },
+    )
+  },
+
+  /**
+   * Occurrence summaries for many rounds in one call (performance handoff 2026-10-16).
+   * Max 50 round ids per request. Returns one entry per requested round, in request
+   * order, with `occurrences: []` for rounds that have no visits in range.
+   */
+  getOccurrencesBatch: (
+    roundIds: string[],
+    params: { from?: string; to?: string },
+    signal?: AbortSignal,
+  ) => {
+    const search = new URLSearchParams()
+    search.set('roundIds', roundIds.join(','))
+    if (params.from) search.set('from', params.from)
+    if (params.to) search.set('to', params.to)
+    return api<PlannerOccurrencesBatchItem[]>(
+      `/rounds/planner/occurrences?${search.toString()}`,
       { signal },
     )
   },

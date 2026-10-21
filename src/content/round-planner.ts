@@ -300,3 +300,52 @@ export const roundPlannerContent = {
     search: '',
   },
 } as const
+
+/** Round Planner → Assign technicians (opened from "You're live" after setup). */
+export const assignTechniciansContent = {
+  pageTitle: 'Round Planner',
+  breadcrumb: { root: 'Round Planner', current: 'Assign technicians' },
+  heading: 'Assign technicians',
+  subheading: 'Upcoming visits with no technician. Assign per round — several technicians can share one.',
+  info: 'Assignments apply to these visits only. Each new cycle starts unassigned and appears in the Round Planner’s “Upcoming recurrences” alert.',
+  filters: {
+    area: 'Service area',
+    allAreas: 'All areas',
+    areaOption: '{area} ({rounds} rounds · {unassigned} unassigned)',
+    areaOptionNoRounds: '{area} (no rounds)',
+    range: 'Visits in',
+    onlyUnassigned: 'Only rounds needing a technician',
+    hint: 'Choosing an area shows only its rounds.',
+  },
+  ranges: [
+    { value: '7', label: 'Next 7 days' },
+    { value: '14', label: 'Next 14 days' },
+    { value: '28', label: 'Next 4 weeks' },
+  ],
+  round: {
+    meta: '{date} · {visits} visits · {area}',
+    noVisits: 'No visits in this period',
+    assigned: 'Assigned · {count}/{count}',
+    unassigned: 'Unassigned · 0/{count}',
+    technicians: 'Technicians',
+    suggested: 'Technicians (suggested: cover {area})',
+    noTechnicians: 'No technicians yet — add them in Settings.',
+    oneDoesAll: 'One technician does all jobs',
+    split: { label: 'Split jobs between them', description: 'Each technician takes a share of the streets' },
+    splitSummary: '{count} jobs · {streets}',
+    splitNote: 'The split is a guide — every chosen technician sees the round’s visits in the app.',
+    warning: 'Pick at least one technician before {date}, or these visits won’t appear in anyone’s app.',
+    reviewSplit: 'Review job split →',
+  },
+  empty: 'No rounds match these filters.',
+  footer: {
+    back: 'Back',
+    progress: '{assigned} of {total} rounds assigned',
+    skip: 'Skip — assign later',
+    save: 'Save assignments',
+    saving: 'Saving…',
+  },
+  toasts: { saved: 'Assignments saved', failed: 'Some assignments couldn’t be saved' },
+  loadError: 'Could not load rounds.',
+  retry: 'Retry',
+} as const

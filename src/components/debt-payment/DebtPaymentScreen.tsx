@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { DebtBoardPagination } from '@/api/debt.api'
 import type { DebtCustomerRecord, DebtStatusTab } from '@/content/debt-payment'
 import { debtPaymentContent } from '@/content/debt-payment'
 import { DebtCustomerDetailPanel } from '@/components/debt-payment/DebtCustomerDetailPanel'
@@ -61,12 +62,19 @@ export function DebtPaymentScreen() {
   const apiRoundId = roundId === 'all' ? undefined : roundId
   const apiMethod = UI_METHOD_TO_API[methodId]
 
+  // Paging restarts at 1 whenever the bucket or a filter changes.
+  const filterKey = `${bucket}|${apiRoundId ?? ''}|${apiMethod ?? ''}`
+  const [pageState, setPageState] = useState({ key: filterKey, page: 1 })
+  const page = pageState.key === filterKey ? pageState.page : 1
+
   const kpisQuery = useDebtKpis()
   const boardQuery = useDebtBoard({
     bucket,
     roundId: apiRoundId,
     paymentMethod: apiMethod,
+    page,
   })
+  const pagination = boardQuery.data?.pagination
   const countQueries = useDebtBoardCounts({
     roundId: apiRoundId,
     paymentMethod: apiMethod,
@@ -77,8 +85,8 @@ export function DebtPaymentScreen() {
 
   const metrics = useMemo(() => kpisToMetrics(kpisQuery.data), [kpisQuery.data])
   const records = useMemo(
-    () => boardToRecords(boardQuery.data, bucket),
-    [boardQuery.data, bucket],
+    () => boardToRecords(boardQuery.data?.rows, bucket),
+    [boardQuery.data?.rows, bucket],
   )
 
   const tabCounts = useMemo(() => {
@@ -120,9 +128,20 @@ export function DebtPaymentScreen() {
   const activeTabLabel =
     debtPaymentContent.statusTabs.find((tab) => tab.id === activeTab)?.label ?? ''
 
-  const resultsLabel = debtPaymentContent.resultsLabel
+  const searching = search.trim().length > 0
+  const resultsLabel = (
+    searching ? debtPaymentContent.resultsLabelSearching : debtPaymentContent.resultsLabel
+  )
     .replace('{label}', activeTabLabel)
-    .replace('{count}', String(filteredRecords.length))
+    .replace(
+      '{count}',
+      String(searching ? filteredRecords.length : (pagination?.total ?? filteredRecords.length)),
+    )
+
+  function goToPage(next: number) {
+    setPageState({ key: filterKey, page: next })
+    setDetailId(null)
+  }
 
   const detailRecord = filteredRecords.find((record) => record.id === detailId) ?? null
 
@@ -366,6 +385,13 @@ export function DebtPaymentScreen() {
             ))}
           </div>
         )}
+        {pagination && pagination.totalPages > 1 ? (
+          <DebtBoardPager
+            pagination={pagination}
+            loading={boardQuery.isFetching}
+            onPage={goToPage}
+          />
+        ) : null}
       </div>
 
       <DebtCustomerDetailPanel
@@ -563,5 +589,50 @@ function DebtCustomerCard({
         )}
       </div>
     </article>
+  )
+}
+
+
+function DebtBoardPager({
+  pagination,
+  loading,
+  onPage,
+}: {
+  pagination: DebtBoardPagination
+  loading: boolean
+  onPage: (page: number) => void
+}) {
+  const { page, pageSize, total, totalPages } = pagination
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const to = Math.min(page * pageSize, total)
+  const copy = debtPaymentContent.pagination
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <p className="text-sm text-muted">
+        {copy.showing
+          .replace('{from}', String(from))
+          .replace('{to}', String(to))
+          .replace('{total}', String(total))}
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={page <= 1 || loading}
+          onClick={() => onPage(page - 1)}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-50"
+        >
+          {copy.previous}
+        </button>
+        <button
+          type="button"
+          disabled={page >= totalPages || loading}
+          onClick={() => onPage(page + 1)}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-50"
+        >
+          {copy.next}
+        </button>
+      </div>
+    </div>
   )
 }

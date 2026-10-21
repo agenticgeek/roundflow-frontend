@@ -122,6 +122,13 @@ export const debtPaymentContent = {
     { id: 'bad-debt', label: 'Bad Debt', count: 2, hasAlert: true },
   ] satisfies { id: DebtStatusTab; label: string; count: number; hasAlert: boolean }[],
   resultsLabel: '{label} — {count} results',
+  // Search only filters the page that's loaded (the board endpoint has no search param).
+  resultsLabelSearching: '{label} — {count} matching on this page',
+  pagination: {
+    showing: 'Showing {from}–{to} of {total}',
+    previous: 'Previous',
+    next: 'Next',
+  },
   selectAll: 'Select all',
   actions: {
     sendReminder: 'Send Reminder',
