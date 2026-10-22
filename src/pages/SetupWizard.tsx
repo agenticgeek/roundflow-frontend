@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { SETUP_STEPS, SETUP_STEP_COUNT, setupStepPosition } from '@/config/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
@@ -91,8 +91,13 @@ import type {
   ServiceCatalogueData,
 } from '@/types/setup-wizard'
 import type { RoundCreateInput } from '@/api/rounds.api'
+import type { BulkSaveResult } from '@/components/setup-wizard/ImportPropertiesPanel'
 import type { TechnicianCreateInput } from '@/api/technicians.api'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
+import { useDisconnectPayment } from '@/features/settings/hooks/useSettings'
+import { settingsApi } from '@/api/settings.api'
+import { settingsContent } from '@/content/settings'
+import { useToast } from '@/components/ui/toast'
 
 const FORM_STEP_NUMBERS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9])
 
@@ -127,6 +132,7 @@ function StepError({ message, onRetry }: { message: string; onRetry: () => void 
 export default function SetupWizard() {
   const navigate = useNavigate()
   const { setupStatus, canMutate } = useAppBootstrap()
+  const { showToast } = useToast()
   const {
     step,
     stepIndex,
@@ -169,6 +175,7 @@ export default function SetupWizard() {
   const saveStep9Bulk = useSaveStep9Bulk()
   const saveStep11 = useSaveStep11()
   const completeSetup = useCompleteSetup()
+  const disconnectPayment = useDisconnectPayment()
 
   const [formError, setFormError] = useState<string | null>(null)
   const [pendingBulkReplace, setPendingBulkReplace] = useState<PendingBulkReplace | null>(null)
@@ -384,6 +391,32 @@ export default function SetupWizard() {
     goToStep(target)
   }
 
+  /**
+   * Stripe connects through a full-page OAuth redirect. Save this step first so nothing is
+   * lost; Stripe sends the admin back to /settings/integrations, which returns them here.
+   */
+  async function handleConnectStripe(values: WizardPaymentData) {
+    if (!canMutate) return
+    try {
+      await saveStep2.mutateAsync(wizardPaymentFromForm(values, Boolean(step1Initial.vatRegistered)))
+    } catch (error) {
+      throw new Error(errorMessage(error))
+    }
+    window.location.assign(settingsApi.stripeAuthorizeUrl())
+  }
+
+  // Back from Stripe (?stripe=connected, via /settings/integrations) — confirm and refresh.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('stripe') !== 'connected') return
+    showToast(settingsContent.paymentSetup.stripeConnected)
+    void step2.refetch()
+    params.delete('stripe')
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
+    // Run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   /** Technicians save one at a time through /technicians — errors become plain messages. */
   async function handleCreateTechnician(input: TechnicianCreateInput): Promise<string | undefined> {
     if (!canMutate) return undefined
@@ -443,16 +476,20 @@ export default function SetupWizard() {
   }
 
   /**
-   * CSV import: every row in one POST /setup/step/9/bulk. The ApiError is rethrown untouched
-   * so the import panel can read its status (400 = per-row validation, nothing saved;
-   * 5xx = a later batch failed after earlier batches were saved).
+   * CSV import: one POST /setup/step/9/bulk per chunk the import panel sends. Good rows are
+   * saved even when others fail (their errors come back in `errors`). The ApiError is
+   * rethrown untouched so the panel can read its status and body (400 = every row failed).
    */
-  async function handleAddProperties(drafts: PropertyDraft[]): Promise<{ created: number }> {
-    if (!canMutate) return { created: 0 }
+  async function handleAddProperties(
+    drafts: PropertyDraft[],
+    idempotencyKey: string,
+  ): Promise<BulkSaveResult> {
+    if (!canMutate) return { created: 0, errors: [] }
     const result = await saveStep9Bulk.mutateAsync({
       properties: drafts.map(propertyDraftToStep9BulkItem),
+      idempotencyKey,
     })
-    return { created: result.created }
+    return { created: result.created, errors: result.errors ?? [] }
   }
 
   async function handleConfirmBulkReplace() {
@@ -567,10 +604,23 @@ export default function SetupWizard() {
         return (
           <PaymentSetupStep
             initialValues={step2Initial}
-            businessName={step1Initial.businessName}
+            connections={{
+              gocardless: step2Initial.goCardlessConnected,
+              stripe: step2Initial.stripeConnected,
+            }}
+            canConnect={Boolean(setupStatus?.setupCompleted)}
             vat={{ registered: Boolean(step1Initial.vatRegistered), rate: step1Initial.vatRate }}
             businessStepNumber={setupStepPosition(1) + 1}
             onChangeVat={() => navigateToStep(1)}
+            onConnectStripe={handleConnectStripe}
+            onDisconnect={async (provider) => {
+              if (!canMutate) return
+              try {
+                await disconnectPayment.mutateAsync(provider)
+              } catch (error) {
+                throw new Error(errorMessage(error))
+              }
+            }}
             onSubmit={handleStepSubmit}
           />
         )

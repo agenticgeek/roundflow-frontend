@@ -3,7 +3,13 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
-import { GuestRoute, ProtectedRoute, SetupRoute, TechnicianAppRoute } from '@/providers/RouteGuards'
+import {
+  GuestRoute,
+  IntegrationsReturnRoute,
+  ProtectedRoute,
+  SetupRoute,
+  TechnicianAppRoute,
+} from '@/providers/RouteGuards'
 import { FullScreenLoader } from '@/components/FullScreenLoader'
 
 // Auth / entry pages stay eager — they're the first paint for a logged-out user,
@@ -94,6 +100,12 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.settings,
     element: <ProtectedRoute>{page(<Settings />)}</ProtectedRoute>,
+  },
+  {
+    // Stripe's OAuth return lands here — Settings opens on the Payment section, or the setup
+    // wizard's Payments step when setup isn't finished yet.
+    path: ROUTES.settingsIntegrations,
+    element: <IntegrationsReturnRoute>{page(<Settings />)}</IntegrationsReturnRoute>,
   },
   {
     path: ROUTES.debtPayment,

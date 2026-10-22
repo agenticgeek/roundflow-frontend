@@ -6,6 +6,8 @@ import { dashboardCtaShadowClass } from '@/components/dashboard/dashboard-styles
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
+import type { PaymentMethod } from '@/api/types'
+import { PAYMENT_METHOD_LABELS } from '@/features/customers/lib/mappers'
 import { useInvoice, useInvoicePdf, useSendInvoice } from '@/features/invoices/hooks/useInvoices'
 import {
   formatInvoiceDate,
@@ -225,6 +227,23 @@ function InvoiceDocument({
 }) {
   const { invoicePreviewModal } = propertyDetailContent
   const amount = formatInvoiceMoney(invoice.amount)
+  // The invoice's own data wins; the props (from the property page) fill in for an older
+  // backend whose GET /invoices/:id doesn't carry them yet.
+  const billTo = invoice.customer
+  const billName = billTo?.name || customerName
+  const billAddress =
+    [billTo?.addressLine, billTo?.postcode].filter(Boolean).join(', ') || address
+  const billEmail = billTo?.email || email
+  const billPhone = billTo?.phone || phone
+  const invoiceVisitDate = invoice.visitDate ?? visitDate
+  const invoiceTechnician = invoice.technicianName ?? technician
+  const invoicePayment = invoice.paymentMethod
+    ? (PAYMENT_METHOD_LABELS[invoice.paymentMethod as PaymentMethod] ?? invoice.paymentMethod)
+    : paymentMethod
+  const lineItems = invoice.lineItems?.length
+    ? invoice.lineItems
+    : [{ description: invoicePreviewModal.serviceTitle, technicianName: invoiceTechnician ?? null, amount: invoice.amount }]
+  const hasBreakdown = invoice.subtotal != null && invoice.vatAmount != null
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -244,10 +263,10 @@ function InvoiceDocument({
         <div>
           <p className={invoiceCapsClass}>{invoicePreviewModal.billTo}</p>
           <div className="mt-3 space-y-0.5">
-            <p className={invoiceStrongClass}>{customerName}</p>
-            {address ? <p className={invoiceMetaClass}>{address}</p> : null}
-            {email ? <p className={invoiceMetaClass}>{email}</p> : null}
-            {phone ? <p className={invoiceMetaClass}>{phone}</p> : null}
+            <p className={invoiceStrongClass}>{billName}</p>
+            {billAddress ? <p className={invoiceMetaClass}>{billAddress}</p> : null}
+            {billEmail ? <p className={invoiceMetaClass}>{billEmail}</p> : null}
+            {billPhone ? <p className={invoiceMetaClass}>{billPhone}</p> : null}
           </div>
         </div>
         <div className="sm:text-right">
@@ -259,7 +278,7 @@ function InvoiceDocument({
             />
             <DetailRow
               label={invoicePreviewModal.fields.visitDate}
-              value={visitDate ? formatInvoiceDate(visitDate) : '—'}
+              value={invoiceVisitDate ? formatInvoiceDate(invoiceVisitDate) : '—'}
             />
             <DetailRow
               label={invoicePreviewModal.fields.dueDate}
@@ -267,7 +286,7 @@ function InvoiceDocument({
             />
             <DetailRow
               label={invoicePreviewModal.fields.payment}
-              value={paymentMethod || '—'}
+              value={invoicePayment || '—'}
             />
           </dl>
         </div>
@@ -289,21 +308,37 @@ function InvoiceDocument({
             </tr>
           </thead>
           <tbody>
-            <tr className={cn('border-b', invoiceRuleClass)}>
-              <td className="py-4 pr-4 align-top">
-                <p className={invoiceStrongClass}>{invoicePreviewModal.serviceTitle}</p>
-                <p className={cn('mt-1 text-xs', invoiceMetaClass)}>
-                  {invoice.status} · {formatInvoiceDate(invoice.createdAt)}
-                </p>
-              </td>
-              <td className={cn('py-4 pr-4 align-top', invoiceValueClass)}>{technician || '—'}</td>
-              <td className={cn('py-4 text-right align-top', invoiceStrongClass)}>{amount}</td>
-            </tr>
+            {lineItems.map((item, index) => (
+              <tr key={`${item.description}-${index}`} className={cn('border-b', invoiceRuleClass)}>
+                <td className="py-4 pr-4 align-top">
+                  <p className={invoiceStrongClass}>{item.description}</p>
+                  <p className={cn('mt-1 text-xs', invoiceMetaClass)}>
+                    {invoice.status} · {formatInvoiceDate(invoice.createdAt)}
+                  </p>
+                </td>
+                <td className={cn('py-4 pr-4 align-top', invoiceValueClass)}>{item.technicianName || '—'}</td>
+                <td className={cn('py-4 text-right align-top', invoiceStrongClass)}>
+                  {formatInvoiceMoney(item.amount)}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
 
         <div className="mt-4 flex justify-end">
           <dl className="w-full max-w-[220px] space-y-2">
+            {hasBreakdown ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <dt className={invoiceMetaClass}>{invoicePreviewModal.totals.subtotal}</dt>
+                  <dd className={invoiceValueClass}>{formatInvoiceMoney(invoice.subtotal!)}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt className={invoiceMetaClass}>{invoicePreviewModal.totals.vatLabel}</dt>
+                  <dd className={invoiceValueClass}>{formatInvoiceMoney(invoice.vatAmount!)}</dd>
+                </div>
+              </>
+            ) : null}
             <div className={cn('flex items-center justify-between border-t pt-3', invoiceRuleClass)}>
               <dt className="text-sm font-bold text-foreground">{invoicePreviewModal.totals.totalDue}</dt>
               <dd className="text-base font-bold text-foreground">{amount}</dd>

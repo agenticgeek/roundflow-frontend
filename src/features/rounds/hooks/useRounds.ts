@@ -5,6 +5,7 @@ import {
   type PlannerDayResult,
   type PlannerOccurrence,
   type PlannerOccurrencesBatchItem,
+  type PlannerStop,
   type RoundCreateInput,
   type RoundDetail,
   type RoundStatus,
@@ -69,6 +70,18 @@ export function useSetRoundTechnicians() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.rounds.detail(id) })
       // Every property assigned to this round shows its technician on Customers / Property Detail.
       void invalidateCustomers(queryClient)
+    },
+  })
+}
+
+/** POST /rounds/:id/generate-visits — create due visits now instead of on the nightly run. */
+export function useGenerateRoundVisits() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => roundsApi.generateVisits(id),
+    onSuccess: () => {
+      void invalidateRounds(queryClient)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today.all })
     },
   })
 }
@@ -184,22 +197,75 @@ export function useRoundsOccurrences(
   }
 }
 
-/** Day view (List/Map) across one or many rounds for a single date. */
+/** The per-round day summary, worked out from the stops (the batch endpoint doesn't send it). */
+function summariseStops(stops: PlannerStop[]): PlannerDayResult['summary'] {
+  const completedCount = stops.filter((stop) => stop.status === 'COMPLETED').length
+  return {
+    stopCount: stops.length,
+    totalValue: stops.reduce((sum, stop) => sum + (Number(stop.price) || 0), 0),
+    completedCount,
+    completionPct: stops.length ? Math.round((completedCount / stops.length) * 100) : 0,
+    holdCount: stops.filter((stop) => stop.paymentHold).length,
+    issueCount: stops.filter((stop) => stop.issues.length > 0).length,
+  }
+}
+
+/**
+ * One batched request for a chunk of rounds' stops on a date. A backend without the batch
+ * route (404) falls back to the per-round endpoint.
+ */
+async function fetchDayChunk(
+  roundIds: string[],
+  date: string,
+  signal?: AbortSignal,
+): Promise<PlannerDayResult[]> {
+  try {
+    const items = await roundsApi.getOccurrenceDayBatch(roundIds, date, signal)
+    return items.map((item) => ({
+      roundId: item.roundId,
+      roundName: '',
+      date,
+      stops: item.stops,
+      summary: summariseStops(item.stops),
+    }))
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 404)) throw error
+    return Promise.all(roundIds.map((id) => roundsApi.getOccurrenceDay(id, date, signal)))
+  }
+}
+
+/**
+ * Day view (List/Map) across one or many rounds for a single date — one request per 50 rounds
+ * via GET /rounds/planner/occurrences/:date instead of one per round. `roundName` may be
+ * empty: callers fall back to the round's own name.
+ */
 export function useRoundsOccurrenceDay(
   roundIds: string[],
   date: string,
   enabled = true,
 ): FanOutResult<PlannerDayResult> {
+  const chunks = chunk(roundIds, PLANNER_BATCH_MAX_ROUNDS)
   const results = useQueries({
-    queries: roundIds.map((id) => ({
-      queryKey: queryKeys.rounds.occurrenceDay(id, date),
-      queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        roundsApi.getOccurrenceDay(id, date, signal),
-      enabled: enabled && Boolean(id) && Boolean(date),
+    queries: chunks.map((ids) => ({
+      queryKey: queryKeys.rounds.occurrenceDayBatch(ids, date),
+      queryFn: ({ signal }: { signal?: AbortSignal }) => fetchDayChunk(ids, date, signal),
+      enabled: enabled && ids.length > 0 && Boolean(date),
       staleTime: FAN_OUT_STALE_TIME,
     })),
   })
-  return collect(roundIds, results)
+
+  const byRoundId = new Map<string, PlannerDayResult>()
+  results.forEach((result) => {
+    result.data?.forEach((item) => byRoundId.set(item.roundId, item))
+  })
+  return {
+    byRoundId,
+    isLoading: results.some((result) => result.isLoading),
+    isFetching: results.some((result) => result.isFetching),
+    isError: results.some((result) => result.isError),
+    error: results.find((result) => result.isError)?.error,
+    refetch: () => results.forEach((result) => void result.refetch()),
+  }
 }
 
 /** Round detail per round — the occurrence summary carries no technician data (handoff §6.3). */

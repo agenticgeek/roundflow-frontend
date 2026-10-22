@@ -411,7 +411,9 @@ export interface SetupWizardContent {
     subheading: string
     info: string
     status: { connected: string; notConnected: string }
-    details: { account: string; connected: string; mode: string; testMode: string; liveMode: string }
+    details: { mode: string; sandbox: string; live: string }
+    stripeRedirecting: string
+    connectAfterSetup: string
     providers: {
       gocardless: { name: string; description: string; connect: string; disconnect: string }
       stripe: { name: string; description: string; connect: string; disconnect: string; explainer: string }
@@ -604,7 +606,6 @@ export interface SetupWizardContent {
       serviceAreaRequired: string
       priceRequired: string
       allPricesRequired: string
-      bulkValidationFailed: string
       bulkPartialFailure: string
       rowError: string
       emptyPaste: string
@@ -1117,58 +1118,10 @@ export const setupWizardContent = {
         priceInvalid: 'Enter a price between £0.01 and £100,000.00.',
       },
     },
+    // New tenants get real default services seeded by the backend (audit follow-up
+    // 2026-10-22), so there are no client-side samples here.
     defaults: {
-      services: [
-        {
-          id: 'windows-only',
-          name: 'Windows Only',
-          description: 'Standard window clean inside and out',
-          categoryId: 'window-cleaning',
-          price: 12,
-          active: true,
-          isDefault: true,
-        },
-        {
-          id: 'full-house',
-          name: 'Full House',
-          description: 'Complete exterior window service for the whole property',
-          categoryId: 'window-cleaning',
-          price: 25,
-          active: true,
-        },
-        {
-          id: 'conservatory',
-          name: 'Conservatory',
-          description: 'Conservatory roof and frame cleaning',
-          categoryId: 'specialist',
-          price: 35,
-          active: true,
-        },
-        {
-          id: 'gutters-fascia',
-          name: 'Gutters & Fascia',
-          description: 'Gutter clearing and fascia wash',
-          categoryId: 'gutter-fascia',
-          price: 45,
-          active: true,
-        },
-        {
-          id: 'solar-panels',
-          name: 'Solar Panels',
-          description: 'Professional solar panel cleaning',
-          categoryId: 'specialist',
-          price: 60,
-          active: false,
-        },
-        {
-          id: 'pressure-wash',
-          name: 'Pressure Wash',
-          description: 'Driveway and patio pressure washing',
-          categoryId: 'exterior-cleaning',
-          price: 80,
-          active: false,
-        },
-      ] satisfies CatalogueService[],
+      services: [] satisfies CatalogueService[],
     },
   },
   roundSettings: {
@@ -1336,11 +1289,13 @@ export const setupWizardContent = {
       inactive: 'Inactive',
       pending: 'Pending',
     },
+    // Values the API accepts (TRAINEE / STANDARD / SENIOR / LEAD) — see lib/technician-roles.
     roleOptions: [
       { value: '', label: 'Select role' },
-      { value: 'lead-technician', label: 'Lead Technician' },
-      { value: 'technician', label: 'Technician' },
-      { value: 'apprentice', label: 'Apprentice' },
+      { value: 'STANDARD', label: 'Technician' },
+      { value: 'SENIOR', label: 'Senior technician' },
+      { value: 'LEAD', label: 'Lead technician' },
+      { value: 'TRAINEE', label: 'Trainee' },
     ],
     actions: {
       viewDetails: 'View technician details',
@@ -1567,10 +1522,14 @@ export const setupWizardContent = {
       new_date: 'Tue 20 Oct',
       amount_owed: '18.00',
     },
+    // Older wizard names, and the templates the backend seeds for new tenants.
     aliases: {
-      'pre-clean-reminder': ['pre-clean reminder'],
+      'pre-clean-reminder': ['pre-clean reminder', 'appointment reminder'],
       'visit-completed': ['job completed'],
-      'access-issue': ['access issue follow-up'],
+      'access-issue': ['access issue follow-up', 'missed visit notice'],
+      'invoice-link': ['invoice ready'],
+      'payment-reminder': ['payment overdue reminder'],
+      'complaint-received': ['complaint acknowledgement'],
     },
     catalogue: [
       {
@@ -1652,7 +1611,10 @@ export const setupWizardContent = {
     subheading: 'Connect the accounts your customers will pay into — optional, you can do this later',
     info: 'Money goes straight into your own GoCardless and Stripe accounts. RoundFlow never holds your money or sees bank or card details.',
     status: { connected: 'Connected', notConnected: 'Not connected' },
-    details: { account: 'Account', connected: 'Connected', mode: 'Mode', testMode: 'Test mode', liveMode: 'Live' },
+    details: { mode: 'Mode', sandbox: 'Test mode (sandbox)', live: 'Live' },
+    stripeRedirecting: 'Opening Stripe…',
+    connectAfterSetup:
+      'Connect {provider} from Settings → Payment once setup is finished — the payment accounts open up then.',
     providers: {
       gocardless: {
         name: 'GoCardless',
@@ -1737,7 +1699,7 @@ export const setupWizardContent = {
           placeholder: 'e.g. sarah@example.co.uk',
           hint: 'The app invite is sent here',
         },
-        role: { label: 'Role', hint: 'Technician · Lead technician · Sub-contractor' },
+        role: { label: 'Role', hint: 'Technician · Senior · Lead · Trainee' },
         areas: {
           label: 'Areas covered',
           hint: 'Choose one or more. Used to suggest technicians when assigning visits.',
@@ -1775,9 +1737,10 @@ export const setupWizardContent = {
     actions: { edit: 'Edit', resend: 'Resend', sendInvite: 'Send invite', sending: 'Sending…' },
     toasts: { inviteSent: 'Invite sent to {email}.', addEmailFirst: 'Add an email before sending an invite.' },
     roles: [
-      { value: 'Technician', label: 'Technician' },
-      { value: 'Lead Technician', label: 'Lead technician' },
-      { value: 'Sub-contractor', label: 'Sub-contractor' },
+      { value: 'STANDARD', label: 'Technician' },
+      { value: 'SENIOR', label: 'Senior technician' },
+      { value: 'LEAD', label: 'Lead technician' },
+      { value: 'TRAINEE', label: 'Trainee' },
     ],
   },
   rounds: {
@@ -1960,7 +1923,7 @@ export const setupWizardContent = {
         hint: 'Keep this page open until it finishes.',
       },
       done: 'Imported {added} properties.',
-      partial: 'Imported {added} of {total}. {failed} failed.',
+      partial: 'Imported {added} of {total}. {failed} failed — they’re still listed below; fix them and import again.',
       failedTitle: 'Failed to save',
       unrecognized:
         "Couldn't recognise the columns. Make sure the first pasted line is the header row (e.g. First name, Last name, Service postcode).",
@@ -1968,7 +1931,6 @@ export const setupWizardContent = {
       serviceAreaRequired: 'Choose a service area for the imported properties.',
       priceRequired: 'Enter a default price per visit.',
       allPricesRequired: 'Enter a price for every property before importing.',
-      bulkValidationFailed: 'The rows below weren’t imported — fix them and try again.',
       bulkPartialFailure:
         'The import stopped partway ({message}). Rows that were saved have been taken off this list, so importing again only sends the rest.',
       rowError: 'Row {row}',

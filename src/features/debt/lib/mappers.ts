@@ -1,6 +1,7 @@
 import type {
   DebtBoardItem,
   DebtBucket,
+  DebtInvoiceDetail,
   DebtKpis,
   DebtPaymentMethodParam,
   DebtRemindChannel,
@@ -8,8 +9,10 @@ import type {
 import type {
   DebtCustomerRecord,
   DebtPaymentMethod,
+  DebtRecentVisitTone,
   DebtStatusTab,
 } from '@/content/debt-payment'
+import { debtPaymentContent } from '@/content/debt-payment'
 
 export const DEBT_BUCKETS: DebtBucket[] = [
   'INVOICE_SENT',
@@ -190,4 +193,40 @@ export function boardToRecords(
   bucket: DebtBucket,
 ): DebtCustomerRecord[] {
   return (items ?? []).map((item) => boardItemToRecord(item, bucket))
+}
+
+const VISIT_STATUS_TONE: Record<string, DebtRecentVisitTone> = {
+  COMPLETED: 'success',
+  SCHEDULED: 'neutral',
+  IN_PROGRESS: 'warning',
+  SKIPPED: 'danger',
+  CANCELLED: 'neutral',
+}
+
+/**
+ * Fills in what the board row doesn't carry (phone, email, round, next visit, mandate,
+ * recent visits) from GET /debt/:id. The row's own fields stay as they are.
+ */
+export function withInvoiceDetail(
+  record: DebtCustomerRecord,
+  detail: DebtInvoiceDetail | undefined,
+): DebtCustomerRecord {
+  if (!detail) return record
+  const statusLabels = debtPaymentContent.detailPanel.visitStatus
+  return {
+    ...record,
+    phone: detail.phone || '—',
+    email: detail.email || '—',
+    round: detail.roundName ?? '—',
+    nextVisit: detail.nextVisitDate ? formatInvoiceDate(detail.nextVisitDate) : '—',
+    gocardlessId: detail.mandateId ?? undefined,
+    mandateStatus: detail.mandateStatus ?? undefined,
+    recentVisits: detail.recentVisits.map((visit) => ({
+      id: visit.visitId,
+      date: formatInvoiceDate(visit.date),
+      amount: formatMoney(visit.amount),
+      status: statusLabels[visit.status] ?? visit.status,
+      tone: VISIT_STATUS_TONE[visit.status] ?? 'neutral',
+    })),
+  }
 }

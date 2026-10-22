@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/toast'
 import type { CleaningFrequency, PaymentMethod, PropertyType } from '@/api/types'
 import { useUpdateCustomer } from '@/features/customers/hooks/useCustomers'
 import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
+import { useUpdateServicePlan } from '@/features/service-plans/hooks/useServicePlans'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError, errorMessage } from '@/lib/errors'
 import { isValidEmail, isValidPhone } from '@/lib/contact'
@@ -165,6 +166,7 @@ export function EditCustomerRecordModal({
   const { canMutate } = useAppBootstrap()
   const updateCustomer = useUpdateCustomer(customerId)
   const updateProperty = useUpdateProperty()
+  const updatePlan = useUpdateServicePlan()
   const [form, setForm] = useState<EditCustomerForm | null>(null)
   const [initialFrequency, setInitialFrequency] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -185,7 +187,7 @@ export function EditCustomerRecordModal({
       .replace('{street}', street)
   }, [editCustomerModal.subtitle, property])
 
-  const saving = updateCustomer.isPending || updateProperty.isPending
+  const saving = updateCustomer.isPending || updateProperty.isPending || updatePlan.isPending
 
   if (!property || !form) return null
 
@@ -216,6 +218,17 @@ export function EditCustomerRecordModal({
     const price = Number(form.price)
     if (!validate(price)) return
 
+    // Price, clean method, payment method and frequency belong to a service plan. With a plan
+    // id they go to PATCH /service-plans/:id (the plan the summary shows); otherwise to the
+    // customer/property endpoints, which pick the backend's primary plan themselves.
+    const planId = property.primaryPlanId ?? null
+    const planFields = {
+      price,
+      cleanMethod: toApiCleanMethod(form.cleanMethod),
+      paymentMethod: toApiPaymentMethod(form.paymentMethod),
+    }
+    const frequencyChanged = form.frequency !== initialFrequency
+
     try {
       await updateCustomer.mutateAsync({
         name: form.fullName.trim(),
@@ -227,12 +240,18 @@ export function EditCustomerRecordModal({
         propertyType: toApiPropertyType(form.propertyType),
         accessNotes: form.accessNotes.trim() || null,
         riskNotes: form.riskNotes.trim() || null,
-        price,
-        cleanMethod: toApiCleanMethod(form.cleanMethod),
-        paymentMethod: toApiPaymentMethod(form.paymentMethod),
+        ...(planId ? {} : planFields),
       })
 
-      if (form.frequency !== initialFrequency) {
+      if (planId) {
+        await updatePlan.mutateAsync({
+          id: planId,
+          input: {
+            ...planFields,
+            ...(frequencyChanged ? { cleaningFrequency: toApiFrequency(form.frequency) } : {}),
+          },
+        })
+      } else if (frequencyChanged) {
         await updateProperty.mutateAsync({
           id: property.id,
           input: { cleaningFrequency: toApiFrequency(form.frequency) },

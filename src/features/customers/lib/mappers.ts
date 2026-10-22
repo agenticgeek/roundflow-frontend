@@ -148,9 +148,17 @@ export function customerServicePlans(detail: CustomerDetail): ServicePlanView[] 
   return legacy ? [legacy] : []
 }
 
-/** The plan standingInfo is based on: first ACTIVE, else the first, else null. */
+/**
+ * The plan standingInfo is based on. The backend now flags it (`isPrimary`); older responses
+ * fall back to its old rule — first ACTIVE, else the first.
+ */
 export function primaryServicePlan(plans: readonly ServicePlanView[]): ServicePlanView | null {
-  return plans.find((plan) => plan.status === 'ACTIVE') ?? plans[0] ?? null
+  return (
+    plans.find((plan) => plan.isPrimary) ??
+    plans.find((plan) => plan.status === 'ACTIVE') ??
+    plans[0] ??
+    null
+  )
 }
 
 function mapServicePlanStatus(status: LifecycleStatus | undefined): PropertyServicePlanStatus {
@@ -178,6 +186,12 @@ function servicePlanToRecord(
     paymentMethod: plan.paymentMethod ? PAYMENT_METHOD_LABELS[plan.paymentMethod] : '—',
     pauseWindow,
     isPrimary: primary != null && plan.id === primary.id,
+    values: {
+      price: plan.price ?? null,
+      cleaningFrequency: plan.cleaningFrequency ?? null,
+      paymentMethod: plan.paymentMethod ?? null,
+      cleanMethod: plan.cleanMethod ?? null,
+    },
   }
 }
 
@@ -238,6 +252,7 @@ export function customerDetailToPropertyRecord(
     planStatus: mapPlanStatus(plan?.status, hasRound, onHold),
     needsAssignment: !hasRound,
     customerRecordId: customer.id,
+    primaryPlanId: plan?.id ?? null,
     servicePlans: plans.map((item) => servicePlanToRecord(item, plan)),
   }
 }

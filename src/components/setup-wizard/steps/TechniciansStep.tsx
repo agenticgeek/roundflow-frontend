@@ -6,6 +6,7 @@ import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, FieldError, Input, PhoneInput, Select } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
 import { isValidEmail, isValidPhone } from '@/lib/contact'
+import { technicianRoleLabel, toTechnicianRole } from '@/lib/technician-roles'
 import { cn } from '@/lib/utils'
 
 interface TechniciansStepProps {
@@ -36,7 +37,7 @@ const emptyForm = (): TechnicianForm => ({
   fullName: '',
   mobile: '',
   email: '',
-  role: 'Technician',
+  role: 'STANDARD',
   areaIds: [],
   sendInvite: true,
 })
@@ -129,8 +130,7 @@ export function TechniciansStep({
     [areas],
   )
   const areaName = (id: string) => savedAreas.find((area) => area.id === id)?.name ?? ''
-  const roleLabel = (role: string | null) =>
-    content.roles.find((option) => option.value === role)?.label ?? role ?? '—'
+  const roleLabel = (role: string | null) => (role ? technicianRoleLabel(role) : '—')
 
   function technicianAreaIds(technician: TechnicianListItem): string[] {
     const ids = technician.serviceAreas.map((assignment) => assignment.serviceAreaId)
@@ -169,7 +169,7 @@ export function TechniciansStep({
       fullName: technician.name ?? '',
       mobile: technician.phone ?? '',
       email: technician.email ?? '',
-      role: technician.role ?? 'Technician',
+      role: toTechnicianRole(technician.role) ?? 'STANDARD',
       areaIds: technicianAreaIds(technician),
       sendInvite: false,
     })

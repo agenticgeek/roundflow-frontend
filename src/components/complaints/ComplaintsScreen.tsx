@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Complaint, ComplaintMessage, ComplaintStatus } from '@/api/complaints.api'
+import type {
+  Complaint,
+  ComplaintDetail as ComplaintDetailType,
+  ComplaintMessage,
+  ComplaintStatus,
+} from '@/api/complaints.api'
 import {
   complaintSeverityLabels,
   complaintStatusLabels,
@@ -15,11 +20,14 @@ import { AssignTechnicianModal } from '@/components/complaints/AssignTechnicianM
 import { ResolveComplaintModal } from '@/components/complaints/ResolveComplaintModal'
 import { Input } from '@/components/ui'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Pager } from '@/components/ui/pager'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useToast } from '@/components/ui/toast'
 import {
   useAddComplaintMessage,
   useAssignComplaintTechnician,
   useComplaintMessages,
+  useComplaint,
   useComplaints,
   useCreateComplaint,
   useMarkComplaintInReview,
@@ -76,7 +84,7 @@ function formatDateTime(iso: string) {
 /** Complaints workspace — list, split-panel detail, and all status-transition actions. */
 export function ComplaintsScreen() {
   const { showToast } = useToast()
-  const { canMutate, me } = useAppBootstrap()
+  const { canMutate } = useAppBootstrap()
 
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<ComplaintFilter>('all')
@@ -86,17 +94,25 @@ export function ComplaintsScreen() {
   const [resolveModalOpen, setResolveModalOpen] = useState(false)
   const [detailTab, setDetailTab] = useState<DetailTab>('messages')
   const [reply, setReply] = useState('')
-  /** Resolution notes are rendered client-side only — the API has no message for them. */
-  const [resolutionNotes, setResolutionNotes] = useState<Record<string, string>>({})
 
   const debouncedSearch = useDebouncedValue(search, 300)
+  // Page resets whenever the search or filter changes.
+  const listKey = `${filter}|${debouncedSearch.trim()}`
+  const [pageState, setPageState] = useState({ key: listKey, page: 1 })
+  const page = pageState.key === listKey ? pageState.page : 1
 
   const complaintsQuery = useComplaints({
     search: debouncedSearch.trim() || undefined,
     assignedTo: filter === 'my-work' ? 'me' : undefined,
+    page,
   })
-  const records = complaintsQuery.data ?? []
-  const selected = records.find((record) => record.id === selectedId) ?? null
+  const records = complaintsQuery.data?.rows ?? []
+  const pagination = complaintsQuery.data?.pagination
+  // GET /complaints/:id adds address, technician and resolution details — and keeps the
+  // panel open when the selected complaint isn't on the current page.
+  const detailQuery = useComplaint(selectedId ?? '', Boolean(selectedId))
+  const selected: ComplaintDetailRecord | null =
+    detailQuery.data ?? records.find((record) => record.id === selectedId) ?? null
 
   const techniciansQuery = useTechniciansList()
   const technicianNameById = useMemo(() => {
@@ -107,6 +123,7 @@ export function ComplaintsScreen() {
     return map
   }, [techniciansQuery.data])
 
+  // Phone and email still come from the customer record.
   const customerQuery = useCustomer(selected?.customerId ?? '', Boolean(selected))
   const messagesQuery = useComplaintMessages(selected?.id ?? '', Boolean(selected))
 
@@ -166,16 +183,10 @@ export function ComplaintsScreen() {
     }
   }
 
-  async function handleResolve() {
+  async function handleResolve(notes: string) {
     if (!selected || !canMutate) return
     try {
-      await resolveComplaint.mutateAsync(selected.id)
-      setResolutionNotes((current) => ({
-        ...current,
-        [selected.id]: complaintsContent.resolutionMessage(
-          `${me?.name ?? 'You'} · ${formatDateTime(new Date().toISOString())}`,
-        ),
-      }))
+      await resolveComplaint.mutateAsync({ id: selected.id, notes: notes || undefined })
       setResolveModalOpen(false)
       showToast(complaintsContent.toasts.resolved)
     } catch (error) {
@@ -297,6 +308,13 @@ export function ComplaintsScreen() {
                 <p className="py-12 text-center text-sm text-muted">{complaintsContent.empty}</p>
               )}
             </div>
+            {pagination && pagination.totalPages > 1 ? (
+              <Pager
+                pagination={pagination}
+                loading={complaintsQuery.isFetching}
+                onPage={(next) => setPageState({ key: listKey, page: next })}
+              />
+            ) : null}
           </section>
 
           {selected ? (
@@ -305,14 +323,27 @@ export function ComplaintsScreen() {
               record={selected}
               canMutate={canMutate}
               technicianName={
-                selected.technicianId ? technicianNameById.get(selected.technicianId) : undefined
+                selected.technicianName ??
+                (selected.technicianId ? technicianNameById.get(selected.technicianId) : undefined)
               }
               customerDetail={customerQuery.data}
               customerLoading={customerQuery.isPending}
               messages={messagesQuery.data ?? []}
               messagesLoading={messagesQuery.isPending}
               messagesError={messagesQuery.isError}
-              resolutionNote={resolutionNotes[selected.id]}
+              resolutionNote={
+                selected.status === 'RESOLVED' && selected.resolvedAt
+                  ? [
+                      complaintsContent.resolvedSummary(
+                        selected.resolvedBy ?? '—',
+                        formatDateTime(selected.resolvedAt),
+                      ),
+                      selected.notes,
+                    ]
+                      .filter(Boolean)
+                      .join(' — ')
+                  : undefined
+              }
               tab={detailTab}
               reply={reply}
               sendingReply={addMessage.isPending}
@@ -347,20 +378,11 @@ export function ComplaintsScreen() {
       <ResolveComplaintModal
         open={resolveModalOpen}
         onClose={() => setResolveModalOpen(false)}
-        onConfirm={() => void handleResolve()}
+        onConfirm={(notes) => void handleResolve(notes)}
         resolving={resolveComplaint.isPending}
       />
     </>
   )
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs)
-    return () => window.clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
 }
 
 function ComplaintListHeader({
@@ -477,8 +499,10 @@ function ComplaintCard({
   )
 }
 
+type ComplaintDetailRecord = Complaint & Partial<Omit<ComplaintDetailType, keyof Complaint>>
+
 interface ComplaintDetailProps {
-  record: Complaint
+  record: ComplaintDetailRecord
   canMutate: boolean
   technicianName?: string
   customerDetail?: {
@@ -534,7 +558,7 @@ function ComplaintDetail({
   const [revisitDate, setRevisitDate] = useState('')
 
   const isResolved = record.status === 'RESOLVED'
-  const address = customerDetail?.property?.addressLine
+  const address = record.propertyAddress ?? customerDetail?.property?.addressLine
 
   return (
     <section className="animate-slide-in-right rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
@@ -574,7 +598,7 @@ function ComplaintDetail({
         <div>
           <h2 className="text-2xl font-semibold text-foreground">{record.customerName}</h2>
           <p className="mt-1 text-sm text-muted">
-            {customerLoading ? '…' : address ?? '—'} · Technician: {technicianName ?? detail.unassigned}
+            {address ?? (customerLoading ? '…' : '—')} · Technician: {technicianName ?? detail.unassigned}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold', statusBadge[record.status])}>
@@ -782,7 +806,7 @@ function ComplaintDetails({
   customerDetail,
   customerLoading,
 }: {
-  record: Complaint
+  record: ComplaintDetailRecord
   technicianName?: string
   customerDetail?: ComplaintDetailProps['customerDetail']
   customerLoading: boolean
@@ -799,9 +823,16 @@ function ComplaintDetails({
     { label: detail.fields.customerEmail, value: customerDetail?.customer?.email || loadingValue },
     {
       label: detail.fields.propertyAddress,
-      value: customerDetail?.property?.addressLine || loadingValue,
+      value: record.propertyAddress || customerDetail?.property?.addressLine || loadingValue,
       className: 'sm:col-start-1',
     },
+    ...(record.resolvedAt
+      ? [
+          { label: detail.fields.resolvedBy, value: record.resolvedBy ?? '—' },
+          { label: detail.fields.resolvedAt, value: formatDate(record.resolvedAt) },
+        ]
+      : []),
+    ...(record.notes ? [{ label: detail.fields.notes, value: record.notes, className: 'sm:col-span-2' }] : []),
   ]
 
   return (

@@ -1,8 +1,14 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { WizardPaymentData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
-import { Field, Input, Select, Toggle } from '@/components/ui'
+import { settingsContent } from '@/content/settings'
+import { Field, FieldError, Input, Select, Toggle } from '@/components/ui'
+import {
+  GoCardlessTokenForm,
+  GoCardlessWebhookSetup,
+  type GoCardlessEnvironment,
+} from '@/components/payments/GoCardlessConnect'
 import {
   InfoNote,
   StatusPill,
@@ -12,18 +18,26 @@ import {
 import { fillCopy } from '@/lib/utils'
 import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 
+type Provider = 'gocardless' | 'stripe'
+
 interface PaymentSetupStepProps {
   initialValues: WizardPaymentData
-  /** Shown as the connected account until the providers report their own name. */
-  businessName: string
+  /** What the server says is connected — connecting and disconnecting go through the real APIs. */
+  connections: Record<Provider, boolean>
+  /**
+   * The connect/disconnect endpoints only work once setup is complete (they 403 before). While
+   * setup is in progress the cards show status and point to Settings → Payment instead.
+   */
+  canConnect: boolean
   vat: { registered: boolean; rate: string }
   /** Stepper position of Business Profile, for the VAT row. */
   businessStepNumber: number
   onChangeVat: () => void
+  /** Saves this step, then leaves for Stripe's OAuth (it comes back to the wizard). */
+  onConnectStripe: (values: WizardPaymentData) => Promise<void>
+  onDisconnect: (provider: Provider) => Promise<void>
   onSubmit: (values: WizardPaymentData) => void
 }
-
-type Provider = 'gocardless' | 'stripe'
 
 function CardIcon() {
   return (
@@ -52,10 +66,13 @@ function CheckIcon() {
 
 export function PaymentSetupStep({
   initialValues,
-  businessName,
+  connections,
+  canConnect,
   vat,
   businessStepNumber,
   onChangeVat,
+  onConnectStripe,
+  onDisconnect,
   onSubmit,
 }: PaymentSetupStepProps) {
   const content = setupWizardContent.payments
@@ -70,22 +87,60 @@ export function PaymentSetupStep({
     setValues((prev) => ({ ...prev, [key]: value }))
   }
 
-  /** Connect is a Phase-1 stub (no OAuth yet) — it flips the flag, saved on Continue. */
-  function setConnected(provider: Provider, connected: boolean) {
+  const [gcFormOpen, setGcFormOpen] = useState(false)
+  /** Webhook step after connecting GoCardless — the URL only comes back from the connect call. */
+  const [gcWebhook, setGcWebhook] = useState<{ url: string | null } | null>(null)
+  const [gcEnvironment, setGcEnvironment] = useState<GoCardlessEnvironment | null>(null)
+  const [gcSecretSaved, setGcSecretSaved] = useState(false)
+  const [busy, setBusy] = useState<Provider | null>(null)
+  const [providerError, setProviderError] = useState<{ provider: Provider; message: string } | null>(null)
+
+  // A default that needs a provider stops being valid once that provider is disconnected.
+  useEffect(() => {
     setValues((prev) => {
       const next = { ...prev }
-      if (provider === 'gocardless') {
-        next.goCardlessConnected = connected
-        if (connected && prev.defaultPaymentMethod === 'BACS') next.defaultPaymentMethod = 'GOCARDLESS'
-        if (!connected && prev.defaultPaymentMethod === 'GOCARDLESS') next.defaultPaymentMethod = 'BACS'
-      } else {
-        next.stripeConnected = connected
-        // Card links only work once Stripe is connected.
-        next.noDirectDebitAction = connected ? 'card-link' : 'invoice'
-        if (!connected && prev.defaultPaymentMethod === 'STRIPE') next.defaultPaymentMethod = 'BACS'
+      if (!connections.stripe && prev.noDirectDebitAction === 'card-link') next.noDirectDebitAction = 'invoice'
+      if (
+        (!connections.stripe && prev.defaultPaymentMethod === 'STRIPE') ||
+        (!connections.gocardless && prev.defaultPaymentMethod === 'GOCARDLESS')
+      ) {
+        next.defaultPaymentMethod = 'BACS'
       }
-      return next
+      return next.noDirectDebitAction === prev.noDirectDebitAction &&
+        next.defaultPaymentMethod === prev.defaultPaymentMethod
+        ? prev
+        : next
     })
+  }, [connections.stripe, connections.gocardless])
+
+  async function connectStripe() {
+    setBusy('stripe')
+    setProviderError(null)
+    try {
+      await onConnectStripe(values)
+      // The page navigates away to Stripe from here.
+    } catch (err) {
+      setBusy(null)
+      setProviderError({ provider: 'stripe', message: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function disconnect(provider: Provider) {
+    setBusy(provider)
+    setProviderError(null)
+    try {
+      await onDisconnect(provider)
+      if (provider === 'gocardless') {
+        // The server clears the webhook secret too — reconnecting needs it again.
+        setGcWebhook(null)
+        setGcSecretSaved(false)
+        setGcEnvironment(null)
+      }
+    } catch (err) {
+      setProviderError({ provider, message: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setBusy(null)
+    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -98,10 +153,7 @@ export function PaymentSetupStep({
     onSubmit(values)
   }
 
-  const connected: Record<Provider, boolean> = {
-    gocardless: values.goCardlessConnected,
-    stripe: values.stripeConnected,
-  }
+  const connected = connections
 
   const methodOptions = content.methods.map((method) => ({
     value: method.value,
@@ -112,7 +164,7 @@ export function PaymentSetupStep({
   const noDirectDebitOptions = content.noDirectDebitActions.map((action) => ({
     value: action.value,
     label: action.label,
-    disabled: action.requiresStripe ? !values.stripeConnected : false,
+    disabled: action.requiresStripe ? !connections.stripe : false,
   }))
 
   function connectionBadge(provider: Provider) {
@@ -127,43 +179,56 @@ export function PaymentSetupStep({
   }
 
   function connectedDetails(provider: Provider) {
+    const disconnectCopy = settingsContent.paymentSetup
     return (
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <dl className="flex flex-wrap gap-x-10 gap-y-3">
-          <div>
-            <dt className="text-sm text-muted">{details.account}</dt>
-            <dd className="mt-0.5 text-[15px] text-foreground">{businessName || '—'}</dd>
-          </div>
-          <div>
+        {provider === 'gocardless' && gcEnvironment ? (
+          <dl>
             <dt className="text-sm text-muted">{details.mode}</dt>
             <dd className="mt-0.5">
-              {/* Phase 1: connections are stubs, so every account is in test mode. */}
-              <StatusPill tone="warning">{details.testMode}</StatusPill>
+              <StatusPill tone={gcEnvironment === 'sandbox' ? 'warning' : 'success'}>
+                {gcEnvironment === 'sandbox' ? details.sandbox : details.live}
+              </StatusPill>
             </dd>
-          </div>
-        </dl>
+          </dl>
+        ) : (
+          <span />
+        )}
         <button
           type="button"
-          onClick={() => setConnected(provider, false)}
-          className="rounded-xl border border-danger/40 bg-card px-5 py-2.5 text-sm font-semibold text-danger transition-colors hover:bg-danger/5 sm:text-[15px]"
+          onClick={() => void disconnect(provider)}
+          disabled={busy !== null || !canConnect}
+          className="rounded-xl border border-danger/40 bg-card px-5 py-2.5 text-sm font-semibold text-danger transition-colors hover:bg-danger/5 disabled:opacity-60 sm:text-[15px]"
         >
-          {providers[provider].disconnect}
+          {busy === provider ? disconnectCopy.disconnecting : providers[provider].disconnect}
         </button>
       </div>
     )
   }
 
   function connectButton(provider: Provider) {
+    if (!canConnect) {
+      return (
+        <p className="rounded-xl border border-dashed border-border bg-foreground/[0.02] px-4 py-3 text-sm text-muted">
+          {content.connectAfterSetup.replace('{provider}', providers[provider].name)}
+        </p>
+      )
+    }
     return (
       <button
         type="button"
-        onClick={() => setConnected(provider, true)}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3 text-[15px] font-semibold text-background transition-opacity hover:opacity-90 active:scale-[0.99]"
+        onClick={() => (provider === 'stripe' ? void connectStripe() : setGcFormOpen(true))}
+        disabled={busy !== null}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3 text-[15px] font-semibold text-background transition-opacity hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
       >
         <ExternalLinkIcon />
-        {providers[provider].connect}
+        {provider === 'stripe' && busy === 'stripe' ? content.stripeRedirecting : providers[provider].connect}
       </button>
     )
+  }
+
+  function providerErrorFor(provider: Provider) {
+    return providerError?.provider === provider ? <FieldError message={providerError.message} /> : null
   }
 
   return (
@@ -173,25 +238,63 @@ export function PaymentSetupStep({
       <InfoNote>{content.info}</InfoNote>
 
       <WizardCard
-        tone={values.goCardlessConnected ? 'accent' : 'default'}
+        tone={connections.gocardless ? 'accent' : 'default'}
         heading={providers.gocardless.name}
         description={providers.gocardless.description}
         action={connectionBadge('gocardless')}
       >
-        {values.goCardlessConnected ? (
-          connectedDetails('gocardless')
+        {connections.gocardless ? (
+          <>
+            {connectedDetails('gocardless')}
+            {!canConnect ? null : gcWebhook ? (
+              <GoCardlessWebhookSetup
+                webhookUrl={gcWebhook.url}
+                onSaved={() => {
+                  setGcSecretSaved(true)
+                  setGcWebhook(null)
+                }}
+                onLater={() => setGcWebhook(null)}
+              />
+            ) : (
+              <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+                {gcSecretSaved ? (
+                  <span className="text-success">{settingsContent.paymentSetup.goCardlessWebhook.savedNote}</span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setGcWebhook({ url: null })}
+                  className="font-semibold text-primary hover:underline"
+                >
+                  {settingsContent.paymentSetup.goCardlessWebhook.reopen}
+                </button>
+              </div>
+            )}
+          </>
+        ) : gcFormOpen ? (
+          <GoCardlessTokenForm
+            onConnected={({ webhookUrl, environment }) => {
+              setGcFormOpen(false)
+              setGcEnvironment(environment)
+              setGcSecretSaved(false)
+              // Connected, but not finished: the webhook still needs adding in GoCardless.
+              setGcWebhook({ url: webhookUrl })
+              if (values.defaultPaymentMethod === 'BACS') updateField('defaultPaymentMethod', 'GOCARDLESS')
+            }}
+            onCancel={() => setGcFormOpen(false)}
+          />
         ) : (
           connectButton('gocardless')
         )}
+        {providerErrorFor('gocardless')}
       </WizardCard>
 
       <WizardCard
-        tone={values.stripeConnected ? 'accent' : 'default'}
+        tone={connections.stripe ? 'accent' : 'default'}
         heading={providers.stripe.name}
         description={providers.stripe.description}
         action={connectionBadge('stripe')}
       >
-        {values.stripeConnected ? (
+        {connections.stripe ? (
           connectedDetails('stripe')
         ) : (
           <div className="space-y-4">
@@ -199,6 +302,7 @@ export function PaymentSetupStep({
             {connectButton('stripe')}
           </div>
         )}
+        {providerErrorFor('stripe')}
       </WizardCard>
 
       <WizardCard heading={defaults.heading} description={defaults.description}>
@@ -209,7 +313,7 @@ export function PaymentSetupStep({
               onChange={(event) => updateField('defaultPaymentMethod', event.target.value)}
               options={methodOptions}
             />
-            {values.stripeConnected ? null : (
+            {connections.stripe ? null : (
               <p className="mt-2 text-sm text-muted">{fields.method.stripeDisabledHint}</p>
             )}
           </Field>
@@ -251,7 +355,7 @@ export function PaymentSetupStep({
               }
               options={noDirectDebitOptions}
             />
-            {values.stripeConnected ? null : (
+            {connections.stripe ? null : (
               <p className="mt-2 text-sm text-muted">{fields.noDirectDebit.hint}</p>
             )}
           </Field>

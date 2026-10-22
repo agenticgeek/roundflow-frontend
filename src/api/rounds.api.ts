@@ -207,6 +207,19 @@ export const roundsApi = {
     )
   },
 
+  /**
+   * Day stops for up to 50 rounds in one call (audit follow-up 2026-10-22). One entry per
+   * requested round, in request order — just `{ roundId, stops }`, no name or summary.
+   */
+  getOccurrenceDayBatch: (roundIds: string[], date: string, signal?: AbortSignal) =>
+    api<{ roundId: string; stops: PlannerStop[] }[]>(
+      `/rounds/planner/occurrences/${date}?roundIds=${encodeURIComponent(roundIds.join(','))}`,
+      { signal },
+    ),
+
+  generateVisits: (id: string) =>
+    api<{ visitsGenerated: number }>(`/rounds/${id}/generate-visits`, jsonRequest('POST')),
+
   getOccurrenceDay: (id: string, date: string, signal?: AbortSignal) =>
     api<PlannerDayResult>(`/rounds/${id}/planner/occurrences/${date}`, { signal }),
 

@@ -57,9 +57,9 @@ export const invitesApi = {
   create: (input: InviteCreateInput) =>
     api<InviteRecord>('/invites', jsonRequest('POST', input)),
 
-  /** Public — no auth required (Bearer may be empty). */
+  /** Public — works signed out (the invitee usually has no session yet). */
   getByToken: (token: string, signal?: AbortSignal) =>
-    api<InvitePreview>(`/invites/${encodeURIComponent(token)}`, { signal }),
+    api<InvitePreview>(`/invites/${encodeURIComponent(token)}`, { signal, public: true }),
 
   accept: (token: string, input: InviteAcceptInput, accessToken?: string) =>
     api<InviteAcceptResult>(`/invites/${encodeURIComponent(token)}/accept`, {

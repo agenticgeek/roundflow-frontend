@@ -14,7 +14,8 @@ export const queryKeys = {
     alerts: ['dashboard', 'alerts'] as const,
     rounds: ['dashboard', 'rounds'] as const,
     technicianKpis: (period: string) => ['dashboard', 'technician-kpis', period] as const,
-    charts: (range: string) => ['dashboard', 'charts', range] as const,
+    charts: (range: string, technicianIds: readonly string[] = []) =>
+      ['dashboard', 'charts', range, [...technicianIds].sort().join(',')] as const,
   },
   emergencies: {
     all: ['emergencies'] as const,
@@ -47,6 +48,9 @@ export const queryKeys = {
       ['rounds', 'occurrences-batch', roundIds.join(','), from ?? '', to ?? ''] as const,
     occurrences: (id: string, from?: string, to?: string) =>
       ['rounds', 'occurrences', id, from ?? '', to ?? ''] as const,
+    /** Day stops for many rounds in one call (GET /rounds/planner/occurrences/:date). */
+    occurrenceDayBatch: (roundIds: readonly string[], date: string) =>
+      ['rounds', 'occurrence-day-batch', date, [...roundIds].sort().join(',')] as const,
     occurrenceDay: (id: string, date: string) =>
       ['rounds', 'occurrence-day', id, date] as const,
   },
@@ -71,9 +75,9 @@ export const queryKeys = {
     summary: (period: string) => ['reports', 'summary', period] as const,
     revenue: (period: string, granularity: string) =>
       ['reports', 'revenue', period, granularity] as const,
-    technicians: (period: string) => ['reports', 'technicians', period] as const,
-    visits: (period: string, status?: string) =>
-      ['reports', 'visits', period, status ?? 'ALL'] as const,
+    technicians: (period: string, page = 1) => ['reports', 'technicians', period, page] as const,
+    visits: (period: string, status?: string, page = 1) =>
+      ['reports', 'visits', period, status ?? 'ALL', page] as const,
     activity: (type?: string) => ['reports', 'activity', type ?? 'ALL'] as const,
   },
   invites: {
@@ -89,11 +93,13 @@ export const queryKeys = {
       paymentMethod?: string,
       page = 1,
       pageSize = DEBT_BOARD_PAGE_SIZE,
+      search = '',
     ) =>
-      ['debt', 'board', bucket, roundId ?? 'ALL', paymentMethod ?? 'ALL', page, pageSize] as const,
-    /** Bucket totals only (pageSize=1) — kept apart from the paged board rows. */
-    boardCount: (bucket: string, roundId?: string, paymentMethod?: string) =>
-      ['debt', 'board-count', bucket, roundId ?? 'ALL', paymentMethod ?? 'ALL'] as const,
+      ['debt', 'board', bucket, roundId ?? 'ALL', paymentMethod ?? 'ALL', page, pageSize, search] as const,
+    /** Every tab's total (GET /debt/board/counts). */
+    boardCounts: (roundId?: string, paymentMethod?: string, search = '') =>
+      ['debt', 'board-counts', roundId ?? 'ALL', paymentMethod ?? 'ALL', search] as const,
+    detail: (invoiceId: string) => ['debt', 'detail', invoiceId] as const,
   },
   invoices: {
     all: ['invoices'] as const,

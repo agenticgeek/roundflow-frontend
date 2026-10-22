@@ -53,12 +53,29 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
     }
 
     try {
-      await paymentLink.mutateAsync({
+      const result = await paymentLink.mutateAsync({
         invoiceId: record.invoiceId ?? record.id,
         input: { message: message.trim() },
       })
       onClose()
-      showToast(paymentLinkModal.successToast.replace('{customer}', record.customer))
+      // Stripe connected → a real Checkout link with an expiry; otherwise the static pay link.
+      const description =
+        result.provider === 'stripe'
+          ? result.expiresAt
+            ? paymentLinkModal.stripeLinkNote.replace(
+                '{when}',
+                new Date(result.expiresAt).toLocaleString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+              )
+            : undefined
+          : result.provider === 'static'
+            ? paymentLinkModal.staticLinkNote
+            : undefined
+      showToast(paymentLinkModal.successToast.replace('{customer}', record.customer), { description })
     } catch (error) {
       if (error instanceof ApiError && (error.status === 400 || error.status === 404)) {
         showToast(error.message)

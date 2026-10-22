@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
 import { isSetupDeferred } from '@/lib/setup-deferred'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
@@ -20,6 +20,28 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   if (isTechnician) return <Navigate to={ROUTES.technicianApp} replace />
   if (!canAccessApp(setupCompleted, gateBypassed)) {
     return <Navigate to={ROUTES.setupWizard} replace />
+  }
+
+  return <>{children}</>
+}
+
+/**
+ * Stripe's OAuth return (/settings/integrations?stripe=connected). Admins who connected from
+ * the setup wizard haven't finished setup, so send them back to its Payments step (backend
+ * step 2) with the flag kept — instead of ProtectedRoute's plain redirect, which drops it.
+ */
+export function IntegrationsReturnRoute({ children }: { children: ReactNode }) {
+  const { session, loading: authLoading } = useAuth()
+  const { ready, setupCompleted, gateBypassed, isTechnician } = useAppBootstrap()
+  const location = useLocation()
+
+  if (authLoading || (session && !ready)) return null
+  if (!session) return <Navigate to={ROUTES.login} replace />
+  if (isTechnician) return <Navigate to={ROUTES.technicianApp} replace />
+  if (!canAccessApp(setupCompleted, gateBypassed)) {
+    const params = new URLSearchParams(location.search)
+    params.set('step', '2')
+    return <Navigate to={`${ROUTES.setupWizard}?${params.toString()}`} replace />
   }
 
   return <>{children}</>

@@ -6,6 +6,8 @@ import { Field, Input } from '@/components/ui'
 import { Modal, ModalButton, modalInputClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { useDebtSetHold } from '@/features/debt/hooks/useDebt'
+import { useSendMessage } from '@/features/messages/hooks/useMessages'
+import { todayIsoDate } from '@/features/rounds/lib/planner'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
@@ -16,20 +18,25 @@ interface DebtResumeServiceModalProps {
   onClose: () => void
 }
 
-/** Resume service / clear hold — PATCH /debt/:invoiceId/hold { flag: false }. */
+/**
+ * Resume service / clear hold — PATCH /debt/:invoiceId/hold { flag: false }. The hold
+ * endpoint only texts the customer when a hold is set, so the "back on" SMS is sent through
+ * POST /messages afterwards (best-effort — a failed SMS doesn't undo the resume).
+ */
 export function DebtResumeServiceModal({ open, record, onClose }: DebtResumeServiceModalProps) {
   const { resumeModal } = debtPaymentContent
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const setHold = useDebtSetHold()
-  const [resumeFrom, setResumeFrom] = useState<string>(resumeModal.defaultResumeFrom)
+  const sendMessage = useSendMessage()
+  const [resumeFrom, setResumeFrom] = useState<string>(todayIsoDate)
   const [notify, setNotify] = useState(true)
 
   useEffect(() => {
     if (!open) return
-    setResumeFrom(resumeModal.defaultResumeFrom)
+    setResumeFrom(todayIsoDate())
     setNotify(true)
-  }, [open, resumeModal.defaultResumeFrom])
+  }, [open])
 
   if (!record) return null
 
@@ -40,14 +47,27 @@ export function DebtResumeServiceModal({ open, record, onClose }: DebtResumeServ
         invoiceId: record.invoiceId ?? record.id,
         flag: false,
       })
-      onClose()
-      showToast(resumeModal.successToast.replace('{customer}', record.customer))
     } catch (error) {
       if (error instanceof ApiError && (error.status === 400 || error.status === 404)) {
         showToast(error.message)
         return
       }
       showToast(error instanceof Error ? error.message : 'Could not resume service')
+      return
+    }
+
+    onClose()
+    showToast(resumeModal.successToast.replace('{customer}', record.customer))
+    if (notify && record.customerId) {
+      try {
+        await sendMessage.mutateAsync({
+          customerId: record.customerId,
+          channel: 'sms',
+          body: resumeModal.defaultMessage.replace('{firstName}', record.customer.trim().split(/\s+/)[0] ?? record.customer),
+        })
+      } catch (error) {
+        showToast(resumeModal.notifyFailed.replace('{reason}', error instanceof Error ? error.message : 'not sent'))
+      }
     }
   }
 

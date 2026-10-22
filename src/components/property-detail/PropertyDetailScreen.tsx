@@ -11,6 +11,7 @@ import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
 import { ChangeFrequencyModal } from '@/components/property-detail/ChangeFrequencyModal'
 import { EditCustomerRecordModal } from '@/components/property-detail/EditCustomerRecordModal'
 import { PauseServiceModal } from '@/components/property-detail/PauseServiceModal'
+import { EditServicePlanModal } from '@/components/property-detail/EditServicePlanModal'
 import { SendPropertyMessageModal } from '@/components/property-detail/SendPropertyMessageModal'
 import {
   NotesRiskTab,
@@ -22,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { useResumeProperty } from '@/features/properties/hooks/useProperties'
+import { useResumeServicePlan } from '@/features/service-plans/hooks/useServicePlans'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
@@ -81,7 +83,12 @@ export function PropertyDetailScreen({
   const [messageOpen, setMessageOpen] = useState(false)
   const { actions, assignment, statusLabels, paymentStatusLabels, summary, summaryCards, tabs } =
     propertyDetailContent
-  const resumeProperty = useResumeProperty()
+  const resumePropertyMutation = useResumeProperty()
+  const resumePlan = useResumeServicePlan()
+  const resumeProperty = property.primaryPlanId ? resumePlan : resumePropertyMutation
+  /** One plan of a multi-plan property being edited or paused from its card. */
+  const [editingPlan, setEditingPlan] = useState<PropertyServicePlan | null>(null)
+  const [pausingPlan, setPausingPlan] = useState<PropertyServicePlan | null>(null)
   const { canMutate } = useAppBootstrap()
   const { showToast } = useToast()
 
@@ -106,8 +113,26 @@ export function PropertyDetailScreen({
   async function handleResume() {
     if (!canMutate || resumeProperty.isPending) return
     try {
-      await resumeProperty.mutateAsync(property.id)
+      // The header acts on the primary plan — by id when known, so a multi-plan property
+      // resumes the plan the summary shows.
+      if (property.primaryPlanId) await resumePlan.mutateAsync(property.primaryPlanId)
+      else await resumePropertyMutation.mutateAsync(property.id)
       showToast('Service resumed')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not resume service')
+    }
+  }
+
+  async function handleResumePlan(plan: PropertyServicePlan) {
+    if (!canMutate || resumePlan.isPending) return
+    try {
+      await resumePlan.mutateAsync(plan.id)
+      showToast(
+        propertyDetailContent.servicePlan.planActions.resumed.replace(
+          '{service}',
+          plan.serviceName || propertyDetailContent.servicePlan.unnamedService,
+        ),
+      )
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not resume service')
     }
@@ -265,6 +290,16 @@ export function PropertyDetailScreen({
               property={property}
               isUnassigned={isUnassigned}
               onAssign={() => setAssignOpen(true)}
+              planActions={
+                canMutate
+                  ? {
+                      onEdit: setEditingPlan,
+                      onPause: setPausingPlan,
+                      onResume: (plan) => void handleResumePlan(plan),
+                      resumingId: resumePlan.isPending ? (resumePlan.variables ?? null) : null,
+                    }
+                  : undefined
+              }
             />
           ) : activeTab === 'visit-history' ? (
             <VisitHistoryTab property={property} visits={tabData?.visits} />
@@ -302,7 +337,25 @@ export function PropertyDetailScreen({
         customerId={customerId}
         onClose={() => setEditOpen(false)}
       />
-      <PauseServiceModal open={pauseOpen} property={property} onClose={() => setPauseOpen(false)} />
+      <PauseServiceModal
+        open={pauseOpen}
+        property={property}
+        planId={property.primaryPlanId}
+        onClose={() => setPauseOpen(false)}
+      />
+      <PauseServiceModal
+        open={pausingPlan != null}
+        property={property}
+        planId={pausingPlan?.id}
+        planName={pausingPlan?.serviceName}
+        onClose={() => setPausingPlan(null)}
+      />
+      <EditServicePlanModal
+        open={editingPlan != null}
+        plan={editingPlan}
+        customerName={property.customerName}
+        onClose={() => setEditingPlan(null)}
+      />
       <SendPropertyMessageModal open={messageOpen} property={property} onClose={() => setMessageOpen(false)} />
     </div>
   )
@@ -459,14 +512,24 @@ const planStatusClass: Record<PropertyPlanStatus, string> = {
   hold: 'bg-danger/10 text-danger',
 }
 
+interface PlanActions {
+  onEdit: (plan: PropertyServicePlan) => void
+  onPause: (plan: PropertyServicePlan) => void
+  onResume: (plan: PropertyServicePlan) => void
+  /** Plan id currently being resumed. */
+  resumingId: string | null
+}
+
 function ServicePlanTab({
   property,
   isUnassigned,
   onAssign,
+  planActions,
 }: {
   property: PropertyDetailRecord
   isUnassigned: boolean
   onAssign: () => void
+  planActions?: PlanActions
 }) {
   const { servicePlan, planStatusLabels, assignment } = propertyDetailContent
   const planStatus = property.planStatus ?? (isUnassigned ? 'pending' : 'active')
@@ -507,7 +570,7 @@ function ServicePlanTab({
         </div>
       </dl>
 
-      <ServicePlanList plans={property.servicePlans ?? []} />
+      <ServicePlanList plans={property.servicePlans ?? []} actions={planActions} />
     </>
   )
 }
@@ -518,9 +581,20 @@ const servicePlanStatusClass: Record<PropertyServicePlan['status'], string> = {
   cancelled: 'bg-danger/10 text-danger',
 }
 
-/** Every service plan on the property (multi-plan) — each with its own service, price and cadence. */
-function ServicePlanList({ plans }: { plans: readonly PropertyServicePlan[] }) {
+/**
+ * Every service plan on the property (multi-plan) — each with its own service, price and
+ * cadence. With 2+ plans each card gets its own Edit / Pause / Resume (PATCH, POST
+ * /service-plans/:id…); a single plan is changed from the header actions.
+ */
+function ServicePlanList({
+  plans,
+  actions,
+}: {
+  plans: readonly PropertyServicePlan[]
+  actions?: PlanActions
+}) {
   const { servicePlan } = propertyDetailContent
+  const showActions = Boolean(actions) && plans.length > 1
 
   return (
     <section className="mt-8 border-t border-border pt-6">
@@ -570,6 +644,27 @@ function ServicePlanList({ plans }: { plans: readonly PropertyServicePlan[] }) {
                 <p className="mt-3 text-xs text-muted">
                   {servicePlan.pausedWindow.replace('{window}', plan.pauseWindow)}
                 </p>
+              ) : null}
+              {showActions && actions && plan.status !== 'cancelled' ? (
+                <div className="mt-3 flex gap-4 border-t border-border pt-3 text-xs font-semibold">
+                  <button type="button" onClick={() => actions.onEdit(plan)} className="text-primary hover:underline">
+                    {servicePlan.planActions.edit}
+                  </button>
+                  {plan.status === 'paused' ? (
+                    <button
+                      type="button"
+                      onClick={() => actions.onResume(plan)}
+                      disabled={actions.resumingId === plan.id}
+                      className="text-primary hover:underline disabled:opacity-60"
+                    >
+                      {actions.resumingId === plan.id ? servicePlan.planActions.resuming : servicePlan.planActions.resume}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => actions.onPause(plan)} className="text-warning hover:underline">
+                      {servicePlan.planActions.pause}
+                    </button>
+                  )}
+                </div>
               ) : null}
             </li>
           ))}

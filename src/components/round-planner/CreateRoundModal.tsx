@@ -4,7 +4,7 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Field, Input, Textarea } from '@/components/ui'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCreateServiceArea, useServiceAreas, useTechnicians } from '@/features/settings/hooks/useSettings'
-import { useCreateRound, useSetRoundTechnicians } from '@/features/rounds/hooks/useRounds'
+import { useCreateRound, useSetRoundTechnicians, useGenerateRoundVisits } from '@/features/rounds/hooks/useRounds'
 import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
 import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { settingsServiceAreasToRows, settingsTechniciansToRows } from '@/features/settings/lib/mappers'
@@ -408,6 +408,7 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
 
   const createRound = useCreateRound()
   const setTechnicians = useSetRoundTechnicians()
+  const generateVisits = useGenerateRoundVisits()
   const createServiceArea = useCreateServiceArea()
   const updateProperty = useUpdateProperty()
 
@@ -481,7 +482,8 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
         ? Boolean(selectedAreaId)
         : true)
 
-  const saving = createRound.isPending || setTechnicians.isPending || updateProperty.isPending
+  const saving =
+    createRound.isPending || setTechnicians.isPending || updateProperty.isPending || generateVisits.isPending
 
   async function addServiceArea() {
     if (!newAreaName.trim()) return
@@ -549,11 +551,24 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
         )
       }
 
+      // Create the round's due visits now rather than waiting for the nightly run. Best-effort:
+      // the round and its properties are saved either way, and the nightly job catches up.
+      let visitsGenerated: number | null = null
+      if (propertyIds.length > 0 && created.id) {
+        try {
+          visitsGenerated = (await generateVisits.mutateAsync(created.id)).visitsGenerated
+        } catch {
+          visitsGenerated = null
+        }
+      }
+
       showToast('Round created', {
         description:
-          propertyIds.length > 0
-            ? `${roundName} is ready with ${propertyIds.length} ${propertyIds.length === 1 ? 'property' : 'properties'} attached. Visits are generated from Setup or as one-off jobs.`
-            : `${roundName} is ready. Add properties and generate visits from Setup or the planner.`,
+          propertyIds.length === 0
+            ? `${roundName} is ready. Add properties and its visits will be generated.`
+            : visitsGenerated != null
+              ? `${roundName} is ready with ${propertyIds.length} ${propertyIds.length === 1 ? 'property' : 'properties'} — ${visitsGenerated} ${visitsGenerated === 1 ? 'visit' : 'visits'} added to the planner.`
+              : `${roundName} is ready with ${propertyIds.length} ${propertyIds.length === 1 ? 'property' : 'properties'}. Its visits will appear after tonight's update.`,
       })
       onClose()
     } catch (error) {

@@ -16,18 +16,23 @@ async function parseBody(response: Response): Promise<unknown> {
 type ApiInit = RequestInit & {
   /** Prefer this token when provisioning immediately after SIGNED_IN. */
   accessToken?: string
+  /**
+   * Endpoint works without auth (e.g. GET /invites/:token): when signed out, send the
+   * request without a bearer token instead of failing with "Not signed in".
+   */
+  public?: boolean
 }
 
 async function requestWithAuth(path: string, init: ApiInit = {}): Promise<Response> {
   const baseUrl = apiBaseUrl()
 
-  const { accessToken, headers, ...requestInit } = init
+  const { accessToken, headers, public: isPublic = false, ...requestInit } = init
 
   // Hot path: read the in-memory token so concurrent requests don't serialize on
   // the Supabase navigator lock. Cold start (cache not seeded yet) falls back to a
   // real session read.
   let token = accessToken ?? getCachedAccessToken() ?? (await refreshAccessToken()) ?? ''
-  if (!token) {
+  if (!token && !isPublic) {
     throw new ApiError(401, 'Not signed in')
   }
 
@@ -39,7 +44,7 @@ async function requestWithAuth(path: string, init: ApiInit = {}): Promise<Respon
       ...requestInit,
       headers: {
         Accept: 'application/json',
-        Authorization: `Bearer ${bearer}`,
+        ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
         ...(headers ?? {}),
       },
@@ -74,6 +79,7 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
       errorBody.error ?? errorBody.message ?? 'Request failed',
       errorBody.code,
       errorBody.fields,
+      errorBody,
     )
   }
 
@@ -95,6 +101,7 @@ export async function apiBlob(path: string, init: ApiInit = {}): Promise<Blob> {
       errorBody.error ?? errorBody.message ?? 'Request failed',
       errorBody.code,
       errorBody.fields,
+      errorBody,
     )
   }
 

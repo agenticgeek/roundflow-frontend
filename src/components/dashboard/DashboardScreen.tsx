@@ -54,7 +54,11 @@ export function DashboardScreen({ interactions, onOpenAlert, onViewAllRounds }: 
   const alertsQuery = useDashboardAlerts()
   const roundsQuery = useDashboardRounds()
   const technicianKpisQuery = useDashboardTechnicianKpis(interactions.period)
-  const chartsQuery = useDashboardCharts(interactions.range)
+  const chartTechnicianIds = useMemo(
+    () => [...interactions.selectedTechnicianIds],
+    [interactions.selectedTechnicianIds],
+  )
+  const chartsQuery = useDashboardCharts(interactions.range, chartTechnicianIds)
   const refresh = useRefreshDashboard()
 
   const metrics = useMemo(() => kpisToMetrics(kpisQuery.data), [kpisQuery.data])

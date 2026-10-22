@@ -15,14 +15,51 @@ function sumServicePrices(ids: readonly string[], prices: Readonly<Record<string
 /** Rows per bulk request — small enough that the backend's transaction finishes in time. */
 const BULK_CHUNK_SIZE = 25
 
-interface BulkRowError {
+/** One row the bulk endpoint rejected. `row` is the 0-based index within the request. */
+export interface BulkRowError {
   row: number
   field?: string
   message: string
 }
 
+/** What a bulk save resolves with — rows in `errors` weren't created, the rest were. */
+export interface BulkSaveResult {
+  created: number
+  errors: BulkRowError[]
+}
+
+function newImportRunId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 /**
- * The bulk endpoint reports validation failures as one string:
+ * Row errors from a failed bulk request. Current backend: the 400 body has `errors`
+ * (0-based rows). Older backend: one string — `Validation failed: [{"row":2,…}]` with
+ * 1-based rows — so those are shifted to 0-based.
+ */
+function bulkErrorsFromFailure(error: unknown): BulkRowError[] | null {
+  if (error instanceof ApiError) {
+    const body = error.body as { errors?: unknown } | undefined
+    if (Array.isArray(body?.errors)) {
+      return body.errors
+        .filter((item): item is { row: unknown; field?: unknown; message: string } =>
+          Boolean(item) && typeof (item as { message?: unknown }).message === 'string',
+        )
+        .map((item) => ({
+          row: Number(item.row),
+          field: typeof item.field === 'string' && item.field !== 'unknown' ? item.field : undefined,
+          message: item.message,
+        }))
+    }
+  }
+  const legacy = parseBulkValidationErrors(error instanceof Error ? error.message : '')
+  return legacy ? legacy.map((item) => ({ ...item, row: item.row - 1 })) : null
+}
+
+/**
+ * The bulk endpoint used to report validation failures as one string:
  * `Validation failed: [{"row":2,"field":"roundId","message":"roundId is required"}]`.
  * Pull the JSON array out so each row's problem can be listed. Returns null if it isn't that shape.
  */
@@ -57,10 +94,12 @@ interface ImportPropertiesPanelProps {
   /** Saves one property. Used row-by-row when no bulk saver is provided. */
   onSaveProperty: (draft: PropertyDraft) => Promise<void> | void
   /**
-   * Saves every row in one request (e.g. POST /setup/step/9/bulk). When provided it replaces
-   * the row-by-row loop. Should resolve with the number created and throw the ApiError as-is.
+   * Saves many rows per request (POST /setup/step/9/bulk). When provided it replaces the
+   * row-by-row loop. Resolves with the number created and the rows that failed; throws the
+   * ApiError as-is (400 = every row in the request failed). Replaying the same
+   * `idempotencyKey` returns the original result instead of importing again.
    */
-  onSaveProperties?: (drafts: PropertyDraft[]) => Promise<{ created: number }>
+  onSaveProperties?: (drafts: PropertyDraft[], idempotencyKey: string) => Promise<BulkSaveResult>
   onClose: () => void
 }
 
@@ -315,9 +354,11 @@ export function ImportPropertiesPanel({
     }
 
     const failures: FailedRow[] = []
+    const savedRowNumbers: number[] = []
     for (const [index, draft] of drafts.entries()) {
       try {
         await onSaveProperty(draft)
+        savedRowNumbers.push(activeProperties[index]!.rowNumber)
       } catch (error) {
         failures.push({
           label: draft.customerName || `Row ${index + 1}`,
@@ -326,42 +367,80 @@ export function ImportPropertiesPanel({
       }
       setProgress(index + 1)
     }
-    finishImport(activeCount - failures.length, failures)
+    // Leave only the failed rows listed, so importing again doesn't duplicate the saved ones.
+    if (failures.length > 0) removeSavedRows(savedRowNumbers)
+    finishImport(drafts.length - failures.length, failures, drafts.length)
   }
 
   /**
-   * POST /setup/step/9/bulk in chunks of BULK_CHUNK_SIZE rows. The backend saves each request
-   * in one database transaction, and a large request outlives Prisma's transaction timeout
-   * ("Transaction not found"), so smaller requests keep each one well inside it. Chunks before
-   * a failure are already saved — those rows are taken out of the list so a retry can't
-   * create duplicates.
+   * POST /setup/step/9/bulk in chunks of BULK_CHUNK_SIZE rows — each request runs in one
+   * database transaction, and small chunks keep it inside the backend's time limit. Good rows
+   * save even when others in the chunk fail; a timeout or 5xx is retried once with the same
+   * idempotency key (a replay can't import twice). Saved rows leave the list afterwards, so
+   * only the failed ones remain to fix and import again.
    */
   async function importInBulk(drafts: PropertyDraft[], rowNumbers: number[]) {
+    const runId = newImportRunId()
     let created = 0
-    let saved = 0
-    for (let start = 0; start < drafts.length; start += BULK_CHUNK_SIZE) {
+    const failures: FailedRow[] = []
+    const savedRowNumbers: number[] = []
+
+    for (let start = 0, chunkIndex = 0; start < drafts.length; start += BULK_CHUNK_SIZE, chunkIndex += 1) {
       const chunk = drafts.slice(start, start + BULK_CHUNK_SIZE)
-      try {
-        const result = await onSaveProperties!(chunk)
-        created += result.created
-        saved += chunk.length
-        setProgress(saved)
-      } catch (error) {
-        setImporting(false)
-        removeSavedRows(rowNumbers.slice(0, saved))
-        reportBulkFailure(error, chunk, rowNumbers.slice(start, start + chunk.length), created)
-        return
+      const chunkRowNumbers = rowNumbers.slice(start, start + chunk.length)
+      const idempotencyKey = `${runId}-${chunkIndex}`
+
+      let outcome: BulkSaveResult | null = null
+      for (let attempt = 0; attempt < 2 && !outcome; attempt += 1) {
+        try {
+          outcome = await onSaveProperties!(chunk, idempotencyKey)
+        } catch (error) {
+          const status = error instanceof ApiError ? error.status : undefined
+          if (status === 400) {
+            // Every row in this chunk failed — nothing from it was saved.
+            const rowErrors = bulkErrorsFromFailure(error)
+            outcome = {
+              created: 0,
+              errors:
+                rowErrors && rowErrors.length > 0
+                  ? rowErrors
+                  : chunk.map((_, row) => ({ row, message: error instanceof Error ? error.message : 'Not saved' })),
+            }
+          } else if (attempt === 0 && (status == null || status >= 500)) {
+            continue
+          } else {
+            setImporting(false)
+            removeSavedRows(savedRowNumbers)
+            setFailed(failures)
+            const message = error instanceof Error ? error.message : 'Import failed'
+            const savedNote = created > 0 ? `${importCsv.done.replace('{added}', String(created))} ` : ''
+            setSummary(savedNote + importCsv.bulkPartialFailure.replace('{message}', message))
+            return
+          }
+        }
       }
+      if (!outcome) continue
+
+      created += outcome.created
+      const failedRows = new Set(outcome.errors.map((rowError) => rowError.row))
+      chunkRowNumbers.forEach((rowNumber, index) => {
+        if (!failedRows.has(index)) savedRowNumbers.push(rowNumber)
+      })
+      for (const rowError of outcome.errors) {
+        const draft = chunk[rowError.row]
+        failures.push({
+          // Position in the import, matching the preview's "#" column when it ran.
+          label: `${importCsv.rowError.replace('{row}', String(start + rowError.row + 1))}${
+            draft?.customerName ? ` · ${draft.customerName}` : ''
+          }`,
+          error: rowError.field ? `${rowError.field}: ${rowError.message}` : rowError.message,
+        })
+      }
+      setProgress(start + chunk.length)
     }
 
-    // created should equal the row count; anything less means rows were dropped server-side.
-    const missing = Math.max(0, drafts.length - created)
-    finishImport(
-      created,
-      missing > 0
-        ? [{ label: `${missing} row${missing === 1 ? '' : 's'}`, error: 'Not created by the server' }]
-        : [],
-    )
+    if (failures.length > 0) removeSavedRows(savedRowNumbers)
+    finishImport(created, failures, drafts.length)
   }
 
   function removeSavedRows(savedRowNumbers: number[]) {
@@ -369,49 +448,7 @@ export function ImportPropertiesPanel({
     setRemovedRows((prev) => new Set([...prev, ...savedRowNumbers]))
   }
 
-  function reportBulkFailure(
-    error: unknown,
-    chunk: PropertyDraft[],
-    chunkRowNumbers: number[],
-    alreadyCreated: number,
-  ) {
-    const message = error instanceof Error ? error.message : 'Import failed'
-    const status = error instanceof ApiError ? error.status : undefined
-    const savedNote = alreadyCreated > 0 ? `${importCsv.done.replace('{added}', String(alreadyCreated))} ` : ''
-
-    if (status === 400) {
-      // Validation is all-or-nothing per request: this chunk saved nothing. The server's row
-      // numbers count from 1 within the chunk — map them back to the preview's "#" column.
-      const rowErrors = parseBulkValidationErrors(message)
-      setFailed(
-        rowErrors && rowErrors.length > 0
-          ? rowErrors.map((rowError) => {
-              const draft = chunk[rowError.row - 1]
-              const rowNumber = chunkRowNumbers[rowError.row - 1] ?? rowError.row
-              return {
-                label: `${importCsv.rowError.replace('{row}', String(rowNumber))}${
-                  draft?.customerName ? ` · ${draft.customerName}` : ''
-                }`,
-                error: rowError.field ? `${rowError.field}: ${rowError.message}` : rowError.message,
-              }
-            })
-          : [{ label: 'Import', error: message }],
-      )
-      setSummary(savedNote + importCsv.bulkValidationFailed)
-      return
-    }
-
-    if (status != null && status >= 500) {
-      setFailed([])
-      setSummary(savedNote + importCsv.bulkPartialFailure.replace('{message}', message))
-      return
-    }
-
-    setFailed([{ label: 'Import', error: message }])
-    setSummary(savedNote + importCsv.bulkValidationFailed)
-  }
-
-  function finishImport(added: number, failures: FailedRow[]) {
+  function finishImport(added: number, failures: FailedRow[], total = activeCount) {
     setFailed(failures)
     setImporting(false)
     setSummary(
@@ -419,7 +456,7 @@ export function ImportPropertiesPanel({
         ? importCsv.done.replace('{added}', String(added))
         : importCsv.partial
             .replace('{added}', String(added))
-            .replace('{total}', String(activeCount))
+            .replace('{total}', String(total))
             .replace('{failed}', String(failures.length)),
     )
 

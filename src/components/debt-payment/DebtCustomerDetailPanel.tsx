@@ -118,6 +118,9 @@ export function DebtCustomerDetailPanel({
           />
           <DetailRow label={detailPanel.fields.daysOverdue} value={daysOverdueLabel} />
           <DetailRow label={detailPanel.fields.paymentMethod} value={record.paymentMethod} />
+          {record.mandateStatus ? (
+            <DetailRow label={detailPanel.fields.mandateStatus} value={record.mandateStatus} />
+          ) : null}
           {record.gocardlessId ? (
             <DetailRow label={detailPanel.fields.gocardlessId} value={record.gocardlessId} />
           ) : null}
@@ -175,26 +178,27 @@ export function DebtCustomerDetailPanel({
           {detailPanel.sections.recentVisits}
         </h3>
         <ul className="mt-2 space-y-1.5">
+          {record.recentVisits.length === 0 ? (
+            <li className="text-xs text-muted">{detailPanel.noRecentVisits}</li>
+          ) : null}
           {record.recentVisits.map((visit) => (
             <li
-              key={`${visit.date}-${visit.amount}-${visit.paymentStatus}`}
+              key={visit.id}
               className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-2.5 py-2 text-xs"
             >
-              <div>
-                <p className="font-medium text-foreground">{visit.date}</p>
-                <p className="text-[10px] text-muted">{detailPanel.completedVisit}</p>
-              </div>
+              <p className="font-medium text-foreground">{visit.date}</p>
               <div className="flex items-center gap-1.5">
                 <span className="font-semibold text-foreground">{visit.amount}</span>
                 <span
                   className={cn(
                     'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                    visit.paymentStatus === 'paid'
-                      ? 'bg-success/10 text-success'
-                      : 'bg-danger/10 text-danger',
+                    visit.tone === 'success' && 'bg-success/10 text-success',
+                    visit.tone === 'warning' && 'bg-warning-surface text-warning-foreground',
+                    visit.tone === 'danger' && 'bg-danger/10 text-danger',
+                    visit.tone === 'neutral' && 'bg-surface text-muted',
                   )}
                 >
-                  {detailPanel.visitPayment[visit.paymentStatus]}
+                  {visit.status}
                 </span>
               </div>
             </li>

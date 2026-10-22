@@ -64,7 +64,23 @@ export type InvoiceRecord = {
   sentAt: string | null
   createdAt: string
   customerId: string
-  visitId: string
+  visitId: string | null
+  // Audit follow-up 2026-10-22: GET /invoices/:id now carries what the PDF shows.
+  visitDate?: string | null
+  technicianName?: string | null
+  roundName?: string | null
+  paymentMethod?: string | null
+  customer?: {
+    name: string
+    email: string | null
+    phone: string | null
+    addressLine: string | null
+    postcode: string | null
+  }
+  lineItems?: { description: string; technicianName: string | null; amount: number }[]
+  /** `amount` minus VAT (VAT is 0 when the business isn't VAT registered). */
+  subtotal?: number
+  vatAmount?: number
 }
 
 export type CustomerInvoiceListItem = {

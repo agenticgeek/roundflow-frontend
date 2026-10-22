@@ -1,3 +1,5 @@
+import type { CleaningFrequency, PaymentMethod } from '@/api/types'
+
 export type PropertyDetailTabId =
   | 'overview'
   | 'service-plan'
@@ -42,6 +44,8 @@ export interface PropertyDetailRecord {
   planStatus?: PropertyPlanStatus
   needsAssignment?: boolean
   customerRecordId?: string
+  /** Plan the summary fields come from — header actions change this plan by id. */
+  primaryPlanId?: string | null
   /** Every service plan on the property (multi-plan). The summary fields above use the primary one. */
   servicePlans?: PropertyServicePlan[]
 }
@@ -59,8 +63,15 @@ export interface PropertyServicePlan {
   paymentMethod: string
   /** e.g. "12 Oct 2026 – 9 Nov 2026" when paused, otherwise null. */
   pauseWindow: string | null
-  /** The plan standingInfo and the header summary are based on (first ACTIVE, else first). */
+  /** The plan standingInfo and the header summary are based on (backend `isPrimary`). */
   isPrimary: boolean
+  /** Raw API values — prefill the per-plan edit form. */
+  values: {
+    price: number | null
+    cleaningFrequency: CleaningFrequency | null
+    paymentMethod: PaymentMethod | null
+    cleanMethod: string | null
+  }
 }
 
 export type VisitStatus = 'completed' | 'scheduled'
@@ -390,6 +401,45 @@ export const propertyDetailContent = {
       paused: 'Paused',
       cancelled: 'Cancelled',
     },
+    planActions: {
+      edit: 'Edit',
+      pause: 'Pause',
+      resume: 'Resume',
+      resuming: 'Resuming…',
+      resumed: '{service} resumed',
+    },
+    editPlanModal: {
+      title: 'Edit service',
+      subtitle: '{customer} · {service}',
+      fields: {
+        price: 'Price per visit (£)',
+        frequency: 'Frequency',
+        paymentMethod: 'Payment method',
+        cleanMethod: 'Clean method',
+      },
+      frequencyOptions: [
+        { value: 'FOUR_WEEKLY', label: 'Every 4 weeks' },
+        { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
+        { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
+        { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
+      ],
+      paymentMethodOptions: [
+        { value: 'GOCARDLESS', label: 'GoCardless' },
+        { value: 'STRIPE', label: 'Card (Stripe)' },
+        { value: 'BACS', label: 'Bank Transfer' },
+        { value: 'CASH', label: 'Cash' },
+        { value: 'CHEQUE', label: 'Cheque' },
+      ],
+      cleanMethodOptions: [
+        { value: 'Water Fed Pole', label: 'Water Fed Pole' },
+        { value: 'Traditional', label: 'Traditional' },
+      ],
+      priceInvalid: 'Enter a price above £0.',
+      cancel: 'Cancel',
+      save: 'Save changes',
+      saving: 'Saving…',
+      saved: 'Service updated',
+    },
   },
   visitHistory: {
     title: 'Visit History',
@@ -506,6 +556,7 @@ export const propertyDetailContent = {
     totals: {
       subtotal: 'Subtotal',
       vat: 'VAT (0%)',
+      vatLabel: 'VAT',
       totalDue: 'Total Due',
     },
     footer: 'Thank you for your business · RoundFlow · support@roundflow.co.uk',

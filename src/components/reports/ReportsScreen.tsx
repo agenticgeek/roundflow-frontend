@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type {
   ActivityLogItem,
   ReportsMetric,
@@ -24,6 +24,7 @@ import {
 } from '@/components/dashboard/ChartTooltip'
 import { Select } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
+import { Pager } from '@/components/ui/pager'
 import {
   useReportsActivity,
   useReportsExport,
@@ -75,11 +76,18 @@ export function ReportsScreen() {
 
   const apiPeriod = UI_PERIOD_TO_API[period]
   const visitStatus = uiStatusToApi(statusFilter)
+  // Paged lists — each resets to page 1 when its filters change.
+  const techniciansKey = apiPeriod
+  const visitsKey = `${apiPeriod}|${visitStatus ?? ''}`
+  const [technicianPageState, setTechnicianPageState] = useState({ key: techniciansKey, page: 1 })
+  const [visitPageState, setVisitPageState] = useState({ key: visitsKey, page: 1 })
+  const technicianPage = technicianPageState.key === techniciansKey ? technicianPageState.page : 1
+  const visitPage = visitPageState.key === visitsKey ? visitPageState.page : 1
 
   const summaryQuery = useReportsSummary({ period: apiPeriod })
   const revenueQuery = useReportsRevenue({ period: apiPeriod, granularity: 'daily' })
-  const techniciansQuery = useReportsTechnicians({ period: apiPeriod })
-  const visitsQuery = useReportsVisits({ period: apiPeriod, status: visitStatus })
+  const techniciansQuery = useReportsTechnicians({ period: apiPeriod, page: technicianPage })
+  const visitsQuery = useReportsVisits({ period: apiPeriod, status: visitStatus, page: visitPage })
   const activityQuery = useReportsActivity()
   const reportsExport = useReportsExport()
 
@@ -103,10 +111,19 @@ export function ReportsScreen() {
     [apiPeriod, revenueQuery.data],
   )
   const technicians = useMemo(
-    () => techniciansToRows(techniciansQuery.data),
+    () => techniciansToRows(techniciansQuery.data?.rows),
     [techniciansQuery.data],
   )
-  const visits = useMemo(() => visitsToRows(visitsQuery.data), [visitsQuery.data])
+  const visits = useMemo(() => visitsToRows(visitsQuery.data?.rows), [visitsQuery.data])
+  const technicianPagination = techniciansQuery.data?.pagination
+  const visitPagination = visitsQuery.data?.pagination
+
+  /** Back to the overview — which shows the first rows, so start each list at page 1 again. */
+  function showOverview() {
+    setFocusedReport(null)
+    setTechnicianPageState({ key: techniciansKey, page: 1 })
+    setVisitPageState({ key: visitsKey, page: 1 })
+  }
   const activity = useMemo(() => activityToItems(activityQuery.data), [activityQuery.data])
 
   if (!canMutate) {
@@ -157,7 +174,17 @@ export function ReportsScreen() {
             loading={techniciansQuery.isPending}
             error={techniciansQuery.isError}
             onRetry={() => void techniciansQuery.refetch()}
-            onBack={() => setFocusedReport(null)}
+            onBack={showOverview}
+            footer={
+              technicianPagination && technicianPagination.totalPages > 1 ? (
+                <Pager
+                  className="px-5 pb-4"
+                  pagination={technicianPagination}
+                  loading={techniciansQuery.isFetching}
+                  onPage={(page) => setTechnicianPageState({ key: techniciansKey, page })}
+                />
+              ) : null
+            }
           />
         ) : null}
 
@@ -167,7 +194,17 @@ export function ReportsScreen() {
             loading={visitsQuery.isPending}
             error={visitsQuery.isError}
             onRetry={() => void visitsQuery.refetch()}
-            onBack={() => setFocusedReport(null)}
+            onBack={showOverview}
+            footer={
+              visitPagination && visitPagination.totalPages > 1 ? (
+                <Pager
+                  className="px-5 pb-4"
+                  pagination={visitPagination}
+                  loading={visitsQuery.isFetching}
+                  onPage={(page) => setVisitPageState({ key: visitsKey, page })}
+                />
+              ) : null
+            }
           />
         ) : null}
 
@@ -177,7 +214,7 @@ export function ReportsScreen() {
             loading={activityQuery.isPending}
             error={activityQuery.isError}
             onRetry={() => void activityQuery.refetch()}
-            onBack={() => setFocusedReport(null)}
+            onBack={showOverview}
           />
         ) : null}
       </div>
@@ -519,6 +556,7 @@ function TechnicianPerformanceCard({
   onRetry,
   onViewAll,
   onBack,
+  footer,
 }: {
   rows: readonly TechnicianPerformanceRow[]
   loading?: boolean
@@ -526,6 +564,8 @@ function TechnicianPerformanceCard({
   onRetry?: () => void
   onViewAll?: () => void
   onBack?: () => void
+  /** E.g. a pager under the table on the full-page view. */
+  footer?: ReactNode
 }) {
   if (loading) {
     return <ReportsTableSkeleton titleClassName="w-48" rows={onViewAll ? 2 : 5} />
@@ -579,6 +619,7 @@ function TechnicianPerformanceCard({
           </table>
         </div>
       )}
+      {footer}
     </PanelCard>
   )
 }
@@ -590,6 +631,7 @@ function VisitHistoryCard({
   onRetry,
   onViewAll,
   onBack,
+  footer,
 }: {
   rows: readonly VisitHistoryRow[]
   loading?: boolean
@@ -597,6 +639,8 @@ function VisitHistoryCard({
   onRetry?: () => void
   onViewAll?: () => void
   onBack?: () => void
+  /** E.g. a pager under the table on the full-page view. */
+  footer?: ReactNode
 }) {
   if (loading) {
     return <ReportsTableSkeleton titleClassName="w-36" rows={onViewAll ? 3 : 6} cols={6} />
@@ -651,6 +695,7 @@ function VisitHistoryCard({
           </table>
         </div>
       )}
+      {footer}
     </PanelCard>
   )
 }

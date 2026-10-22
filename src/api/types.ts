@@ -83,6 +83,8 @@ export type PropertyNote = components['schemas']['PropertyNote']
 // CONTRACT-DIFF: each plan now carries its own cleaningFrequency (multi-plan handoff).
 export type ServicePlanView = components['schemas']['ServicePlanView'] & {
   cleaningFrequency?: CleaningFrequency | null
+  /** Which plan the backend treats as primary (audit follow-up 2026-10-22). */
+  isPrimary?: boolean
 }
 export type NoteType = components['schemas']['NoteType']
 export type DayOfWeek = components['schemas']['DayOfWeek']
@@ -137,9 +139,9 @@ export type SetupStep9Input = {
   riskNotes?: string
 }
 
-// CONTRACT-DIFF: POST /setup/step/9/bulk (bulk-import handoff). One row per property; the
-// accepted fields are a subset of SetupStep9Input — no landline and a single serviceId.
-// serviceAreaId is required here (optional on the single-property endpoint).
+// CONTRACT-DIFF: POST /setup/step/9/bulk (bulk-import handoff). One row per property;
+// serviceAreaId is required here (optional on the single-property endpoint). Landline and
+// `serviceIds` (plural) are accepted since the audit follow-up (2026-10-22).
 export type SetupStep9BulkItem = {
   customerName: string
   fullAddress: string
@@ -149,24 +151,40 @@ export type SetupStep9BulkItem = {
   price: number
   propertyName?: string
   phone?: string
+  landline?: string
   email?: string
   propertyType?: PropertyType
   cleaningFrequency?: CleaningFrequency
   paymentMethod?: PaymentMethod
   serviceId?: string
+  serviceIds?: string[]
   accessNotes?: string
   riskNotes?: string | null
 }
 
-export type SetupStep9BulkInput = { properties: SetupStep9BulkItem[] }
+export type SetupStep9BulkInput = {
+  properties: SetupStep9BulkItem[]
+  /** Replaying the same key returns the original result instead of importing again. */
+  idempotencyKey?: string
+}
 
+/** `row` is the 0-based index in the submitted `properties` array. */
+export type SetupStep9BulkRowError = { row: number; field: string; message: string }
+
+/**
+ * Audit follow-up 2026-10-22: partial success. 201 when anything was created (or on an
+ * idempotent replay); 400 only when every row failed — the 400 body carries `errors` too.
+ */
 export type SetupStep9BulkResult = {
   created: number
+  failed?: number
   results: {
     customer: { id: string }
     property: { id: string }
     servicePlan: { id: string }
   }[]
+  errors?: SetupStep9BulkRowError[]
+  idempotent?: true
 }
 
 export type SetupStep9Bundle = {

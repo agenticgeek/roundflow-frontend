@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useLocation } from 'react-router-dom'
+import { ROUTES } from '@/config/routes'
+import { technicianRoleLabel } from '@/lib/technician-roles'
 import type { SettingsSectionId } from '@/content/settings'
 import { settingsContent } from '@/content/settings'
 import { settingsApi } from '@/api/settings.api'
@@ -9,7 +12,7 @@ import { validateBankDetails } from '@/lib/bank-details'
 import { timezoneOptions } from '@/lib/timezones'
 import {
   useBusinessProfile,
-  useConnectGoCardless,
+  useDisconnectPayment,
   useCreateService,
   useCreateServiceArea,
   useCreateTechnician,
@@ -17,6 +20,7 @@ import {
   useDeleteServiceArea,
   useDeleteTechnician,
   useMessageTemplates,
+  useUpdateMessageTemplate,
   usePaymentSettings,
   useRoundSettings,
   useServiceAreas,
@@ -46,11 +50,12 @@ import {
   type SettingsTechnicianRow,
 } from '@/features/settings/lib/mappers'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
-import { ApiError } from '@/lib/errors'
+import { ApiError, errorMessage } from '@/lib/errors'
+import { GoCardlessTokenForm, GoCardlessWebhookSetup } from '@/components/payments/GoCardlessConnect'
 import { isValidPostcodeSector } from '@/lib/postcode'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
-import { Field, FieldError, Input, MultiSelect, PhoneInput, Select, Toggle } from '@/components/ui'
+import { Field, FieldError, Input, MultiSelect, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
 import { useToast } from '@/components/ui/toast'
@@ -101,7 +106,14 @@ function MutationGate({
 
 /** Settings module — sidebar navigation and section panels backed by the API. */
 export function SettingsScreen() {
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>('business-profile')
+  const location = useLocation()
+  // Stripe's OAuth return (/settings/integrations?stripe=connected) opens the Payment section,
+  // where the connection is confirmed.
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(() =>
+    location.pathname === ROUTES.settingsIntegrations || new URLSearchParams(location.search).has('stripe')
+      ? 'payment-setup'
+      : 'business-profile',
+  )
   const { canMutate } = useAppBootstrap()
 
   return (
@@ -132,7 +144,7 @@ export function SettingsScreen() {
           ) : activeSection === 'round-settings' ? (
             <RoundSettingsPanel canMutate={canMutate} />
           ) : activeSection === 'sms-templates' ? (
-            <SmsTemplatesPanel />
+            <SmsTemplatesPanel canMutate={canMutate} />
           ) : activeSection === 'technician-management' ? (
             <TechnicianManagementPanel canMutate={canMutate} />
           ) : activeSection === 'service-area' ? (
@@ -437,22 +449,27 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
 function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   const query = usePaymentSettings()
   const update = useUpdatePaymentSettings()
-  const connectGoCardless = useConnectGoCardless()
+  const disconnect = useDisconnectPayment()
   const { showToast } = useToast()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<SettingsPaymentForm | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   // GoCardless is token-based, so Connect opens an inline token form.
-  const [gcForm, setGcForm] = useState<{ token: string; environment: 'sandbox' | 'live' } | null>(
-    null,
-  )
-  const [gcError, setGcError] = useState<string | null>(null)
+  const [gcFormOpen, setGcFormOpen] = useState(false)
+  const [disconnectError, setDisconnectError] = useState<{ provider: string; message: string } | null>(null)
+  /**
+   * GoCardless webhook step — open after connecting (with the URL from the connect response),
+   * or reopened later without it. `secretSaved` is this session only: the API doesn't report it.
+   */
+  const [gcWebhook, setGcWebhook] = useState<{ url: string | null } | null>(null)
+  const [gcSecretSaved, setGcSecretSaved] = useState(false)
 
-  // Stripe sends the user back here with ?stripe=connected after its OAuth flow.
+  // Stripe sends the user back to /settings/integrations?stripe=connected after its OAuth flow.
+  // Webhooks are now set up platform-wide, so there's nothing else to show (no webhook URL).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('stripe') === 'connected') {
-      showToast('Stripe connected')
+      showToast(settingsContent.paymentSetup.stripeConnected)
       void query.refetch()
       params.delete('stripe')
       const next = params.toString()
@@ -518,37 +535,26 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   function handleConnect(providerId: 'gocardless' | 'stripe') {
     if (!canMutate) return
     if (providerId === 'stripe') {
-      // Full-page redirect into Stripe's OAuth; it returns to ?stripe=connected.
+      // Full-page redirect into Stripe's OAuth; it returns to /settings/integrations?stripe=connected.
       window.location.assign(settingsApi.stripeAuthorizeUrl())
       return
     }
-    // GoCardless: reveal the inline token form.
-    setGcError(null)
-    setGcForm({ token: '', environment: 'live' })
+    setGcFormOpen(true)
   }
 
-  async function submitGoCardless() {
-    if (!gcForm || connectGoCardless.isPending) return
-    if (!gcForm.token.trim()) {
-      setGcError('Paste your GoCardless access token.')
-      return
-    }
-    setGcError(null)
+  async function handleDisconnect(providerId: 'gocardless' | 'stripe', name: string) {
+    if (!canMutate || disconnect.isPending) return
+    setDisconnectError(null)
     try {
-      await connectGoCardless.mutateAsync({
-        accessToken: gcForm.token.trim(),
-        environment: gcForm.environment,
-      })
-      setGcForm(null)
-      showToast('GoCardless connected')
+      await disconnect.mutateAsync(providerId)
+      if (providerId === 'gocardless') {
+        // The server clears the webhook secret too — reconnecting needs it again.
+        setGcWebhook(null)
+        setGcSecretSaved(false)
+      }
+      showToast(settingsContent.paymentSetup.disconnected.replace('{provider}', name))
     } catch (error) {
-      setGcError(
-        error instanceof ApiError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : 'Could not connect GoCardless.',
-      )
+      setDisconnectError({ provider: providerId, message: errorMessage(error) })
     }
   }
 
@@ -588,71 +594,64 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
                 </span>
               </div>
               <MutationGate canMutate={canMutate}>
-                {provider.id === 'gocardless' && gcForm ? (
-                  <div className="mt-4 space-y-3 rounded-lg border border-border bg-surface p-3">
-                    <Field label="Access token" labelWeight="medium" size="sm">
-                      <Input
-                        inputSize="sm"
-                        value={gcForm.token}
-                        onChange={(e) =>
-                          setGcForm((prev) => (prev ? { ...prev, token: e.target.value } : prev))
-                        }
-                        placeholder="Paste your GoCardless access token"
-                        autoComplete="off"
-                      />
-                    </Field>
-                    <Field label="Environment" labelWeight="medium" size="sm">
-                      <Select
-                        inputSize="sm"
-                        value={gcForm.environment}
-                        onChange={(e) =>
-                          setGcForm((prev) =>
-                            prev
-                              ? { ...prev, environment: e.target.value as 'sandbox' | 'live' }
-                              : prev,
-                          )
-                        }
-                        options={[
-                          { value: 'live', label: 'Live' },
-                          { value: 'sandbox', label: 'Sandbox' },
-                        ]}
-                      />
-                    </Field>
-                    {gcError ? <FieldError message={gcError} size="sm" /> : null}
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void submitGoCardless()}
-                        disabled={connectGoCardless.isPending}
-                        className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-                      >
-                        {connectGoCardless.isPending ? 'Connecting…' : 'Connect'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGcForm(null)}
-                        disabled={connectGoCardless.isPending}
-                        className="rounded-xl border border-border px-3.5 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-card disabled:opacity-60"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                {provider.id === 'gocardless' && gcFormOpen && !connected ? (
+                  <GoCardlessTokenForm
+                    onConnected={({ webhookUrl }) => {
+                      setGcFormOpen(false)
+                      // Connected, but not finished: the admin still has to add our webhook in GoCardless.
+                      setGcSecretSaved(false)
+                      setGcWebhook({ url: webhookUrl })
+                    }}
+                    onCancel={() => setGcFormOpen(false)}
+                  />
+                ) : provider.id === 'gocardless' && connected && gcWebhook ? (
+                  <GoCardlessWebhookSetup
+                    webhookUrl={gcWebhook.url}
+                    onSaved={() => {
+                      setGcSecretSaved(true)
+                      setGcWebhook(null)
+                    }}
+                    onLater={() => setGcWebhook(null)}
+                  />
+                ) : connected ? (
+                  <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => void handleDisconnect(provider.id, provider.name)}
+                      disabled={disconnect.isPending}
+                      className="rounded-xl border border-danger/30 px-3.5 py-2 font-semibold text-danger transition-colors hover:bg-danger/5 disabled:opacity-60"
+                    >
+                      {disconnect.isPending && disconnect.variables === provider.id
+                        ? settingsContent.paymentSetup.disconnecting
+                        : settingsContent.paymentSetup.disconnect}
+                    </button>
+                    {provider.id === 'gocardless' ? (
+                      <>
+                        {gcSecretSaved ? (
+                          <span className="text-success">{settingsContent.paymentSetup.goCardlessWebhook.savedNote}</span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setGcWebhook({ url: null })}
+                          className="font-semibold text-primary hover:underline"
+                        >
+                          {settingsContent.paymentSetup.goCardlessWebhook.reopen}
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 ) : (
                   <button
                     type="button"
                     onClick={() => handleConnect(provider.id)}
-                    disabled={connected}
-                    className={cn(
-                      'mt-4 inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors',
-                      connected
-                        ? 'cursor-not-allowed border-border text-muted'
-                        : 'border-primary/30 text-primary hover:bg-accent-surface',
-                    )}
+                    className="mt-4 inline-flex items-center gap-2 rounded-xl border border-primary/30 px-3.5 py-2 text-sm font-semibold text-primary transition-colors hover:bg-accent-surface"
                   >
                     {provider.connectLabel}
                   </button>
                 )}
+                {disconnectError?.provider === provider.id ? (
+                  <FieldError message={disconnectError.message} size="sm" />
+                ) : null}
               </MutationGate>
             </div>
           )
@@ -835,11 +834,36 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
   )
 }
 
-function SmsTemplatesPanel() {
+/** Settings → Templates — the tenant's real templates (GET/PATCH /settings/message-templates). */
+function SmsTemplatesPanel({ canMutate }: { canMutate: boolean }) {
   const query = useMessageTemplates()
-  const templates = setupWizardContent.smsTemplates.defaults.templates
+  const update = useUpdateMessageTemplate()
+  const { showToast } = useToast()
+  const copy = settingsContent.smsTemplates
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftBody, setDraftBody] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
 
   if (query.isPending) return <SettingsSmsSkeleton />
+  if (query.isError) {
+    return <SectionError message={copy.loadError} onRetry={() => query.refetch()} />
+  }
+
+  const templates = query.data ?? []
+
+  async function save(id: string) {
+    if (!draftBody.trim()) {
+      setEditError(copy.bodyRequired)
+      return
+    }
+    try {
+      await update.mutateAsync({ id, body: draftBody.trim() })
+      setEditingId(null)
+      showToast(copy.saved)
+    } catch (error) {
+      setEditError(errorMessage(error))
+    }
+  }
 
   return (
     <article className={cn(cardClass, 'p-6')}>
@@ -848,32 +872,84 @@ function SmsTemplatesPanel() {
           <DashboardIcon name="message" className="h-5 w-5" />
         </span>
         <div>
-          <h2 className="text-base font-semibold text-foreground">
-            {settingsContent.smsTemplates.heading}
-          </h2>
-          <p className="mt-0.5 text-sm text-muted">
-            {settingsContent.smsTemplates.subheading}
-          </p>
+          <h2 className="text-base font-semibold text-foreground">{copy.heading}</h2>
+          <p className="mt-0.5 text-sm text-muted">{copy.subheading}</p>
         </div>
       </div>
 
       <div className="mt-6 rounded-xl border border-primary/20 bg-accent-surface px-4 py-3 text-sm text-foreground">
-        Message templates are managed in GoHighLevel for now.
-        {query.data?.reason ? ` ${query.data.reason}` : null}
-        {' '}Editing here is disabled until the messaging API ships.
+        {copy.sendingNote}
       </div>
 
-      <ul className="mt-5 space-y-2">
-        {templates.map((template) => (
-          <li
-            key={template.id}
-            className="rounded-xl border border-border bg-card px-4 py-3"
-          >
-            <p className="text-sm font-semibold text-foreground">{template.name}</p>
-            <p className="mt-1 text-sm text-muted line-clamp-2">{template.body}</p>
-          </li>
-        ))}
-      </ul>
+      {templates.length === 0 ? (
+        <p className="mt-5 text-sm text-muted">{copy.empty}</p>
+      ) : (
+        <ul className="mt-5 space-y-2">
+          {templates.map((template) => {
+            const editing = editingId === template.id
+            return (
+              <li key={template.id} className="rounded-xl border border-border bg-card px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{template.name}</p>
+                    {template.channel ? (
+                      <span className="shrink-0 rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-muted">
+                        {copy.channels[template.channel] ?? template.channel}
+                      </span>
+                    ) : null}
+                  </div>
+                  {canMutate && !editing ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(template.id)
+                        setDraftBody(template.body)
+                        setEditError(null)
+                      }}
+                      className="shrink-0 text-sm font-semibold text-primary hover:underline"
+                    >
+                      {copy.edit}
+                    </button>
+                  ) : null}
+                </div>
+                {editing ? (
+                  <div className="mt-3 space-y-2">
+                    <Textarea
+                      inputSize="sm"
+                      value={draftBody}
+                      onChange={(event) => {
+                        setDraftBody(event.target.value)
+                        setEditError(null)
+                      }}
+                    />
+                    {editError ? <FieldError message={editError} size="sm" /> : null}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void save(template.id)}
+                        disabled={update.isPending}
+                        className="rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+                      >
+                        {update.isPending ? copy.saving : copy.save}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        disabled={update.isPending}
+                        className="rounded-xl border border-border px-3.5 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-60"
+                      >
+                        {copy.cancel}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-1 line-clamp-2 text-sm text-muted">{template.body}</p>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </article>
   )
 }
@@ -1051,7 +1127,7 @@ function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
               >
                 <span className="font-semibold text-foreground">{technician.displayName}</span>
                 <span className="text-sm text-muted">{technician.phone || '—'}</span>
-                <span className="text-sm text-muted">{technician.role || '—'}</span>
+                <span className="text-sm text-muted">{technician.role ? technicianRoleLabel(technician.role) : '—'}</span>
                 <span className="text-sm text-muted">
                   {appStatusLabels[technician.appStatus]}
                 </span>

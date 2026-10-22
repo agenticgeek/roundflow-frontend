@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { useDebtSetHold } from '@/features/debt/hooks/useDebt'
+import { todayIsoDate } from '@/features/rounds/lib/planner'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
@@ -25,21 +26,24 @@ function firstName(fullName: string) {
   return fullName.trim().split(/\s+/)[0] ?? fullName
 }
 
-/** Pause / hold next clean — PATCH /debt/:invoiceId/hold { flag: true }. */
+/**
+ * Pause / hold next clean — PATCH /debt/:invoiceId/hold { flag: true, reason, date, notify,
+ * message }. With `notify` the backend sends the SMS itself.
+ */
 export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServiceModalProps) {
   const { pauseModal } = debtPaymentContent
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const setHold = useDebtSetHold()
   const [reason, setReason] = useState<string>(pauseModal.reasons[0]?.value ?? '')
-  const [pauseFrom, setPauseFrom] = useState<string>(pauseModal.defaultPauseFrom)
+  const [pauseFrom, setPauseFrom] = useState<string>(todayIsoDate)
   const [notifySms, setNotifySms] = useState(true)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
     if (!open || !record) return
     setReason(pauseModal.reasons[0]?.value ?? '')
-    setPauseFrom(pauseModal.defaultPauseFrom)
+    setPauseFrom(todayIsoDate())
     setNotifySms(true)
     setMessage(
       pauseModal.defaultMessage.replace('{firstName}', firstName(record.customer)),
@@ -51,9 +55,14 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
   async function handlePause() {
     if (!canMutate || !record || setHold.isPending) return
     try {
+      const reasonLabel = pauseModal.reasons.find((item) => item.value === reason)?.label ?? reason
       await setHold.mutateAsync({
         invoiceId: record.invoiceId ?? record.id,
         flag: true,
+        reason: reasonLabel,
+        ...(pauseFrom ? { date: pauseFrom } : {}),
+        notify: notifySms && Boolean(message.trim()),
+        ...(notifySms && message.trim() ? { message: message.trim() } : {}),
       })
       onClose()
       showToast(pauseModal.successToast.replace('{customer}', record.customer))

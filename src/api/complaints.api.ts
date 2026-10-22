@@ -1,4 +1,5 @@
 import { api } from '@/api/client'
+import { setPageParams, toPaginated, type PageParams, type Paginated } from '@/api/pagination'
 
 /** CONTRACT-DIFF: `/complaints` module not in generated OpenAPI yet — live per COMPLAINTS_HANDOFF. */
 
@@ -20,7 +21,17 @@ export type Complaint = {
   createdAt: string
 }
 
-export type ComplaintListParams = {
+/** GET /complaints/:id — the list row plus detail fields (audit follow-up 2026-10-22). */
+export type ComplaintDetail = Complaint & {
+  propertyAddress?: string | null
+  technicianName?: string | null
+  messageCount?: number
+  resolvedAt?: string | null
+  resolvedBy?: string | null
+  notes?: string | null
+}
+
+export type ComplaintListParams = PageParams & {
   status?: ComplaintStatus
   search?: string
   assignedTo?: 'me'
@@ -61,15 +72,17 @@ function toQuery(params: ComplaintListParams = {}): string {
   if (params.search) search.set('search', params.search)
   if (params.assignedTo) search.set('assignedTo', params.assignedTo)
   if (params.technicianId) search.set('technicianId', params.technicianId)
+  setPageParams(search, params)
   const qs = search.toString()
   return qs ? `?${qs}` : ''
 }
 
 export const complaintsApi = {
-  list: (params?: ComplaintListParams, signal?: AbortSignal) =>
-    api<Complaint[]>(`/complaints${toQuery(params)}`, { signal }),
+  /** Paginated `{ rows, pagination }` (audit follow-up 2026-10-22). */
+  list: async (params?: ComplaintListParams, signal?: AbortSignal): Promise<Paginated<Complaint>> =>
+    toPaginated(await api<Paginated<Complaint> | Complaint[]>(`/complaints${toQuery(params)}`, { signal })),
 
-  get: (id: string, signal?: AbortSignal) => api<Complaint>(`/complaints/${id}`, { signal }),
+  get: (id: string, signal?: AbortSignal) => api<ComplaintDetail>(`/complaints/${id}`, { signal }),
 
   create: (input: ComplaintCreateInput) =>
     api<Complaint>('/complaints', jsonRequest('POST', input)),
@@ -80,7 +93,11 @@ export const complaintsApi = {
   scheduleRevisit: (id: string, revisitDate: string) =>
     api<Complaint>(`/complaints/${id}/schedule-revisit`, jsonRequest('POST', { revisitDate })),
 
-  resolve: (id: string) => api<Complaint>(`/complaints/${id}/resolve`, jsonRequest('POST')),
+  resolve: (id: string, notes?: string) =>
+    api<ComplaintDetail>(
+      `/complaints/${id}/resolve`,
+      jsonRequest('POST', notes ? { notes } : undefined),
+    ),
 
   reopen: (id: string) => api<Complaint>(`/complaints/${id}/reopen`, jsonRequest('POST')),
 

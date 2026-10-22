@@ -24,6 +24,8 @@ export const ROUTES = {
   reportsHistory: '/reports-history',
   complaints: '/complaints',
   settings: '/settings',
+  /** Where the backend sends admins back after Stripe's OAuth (`?stripe=connected`). */
+  settingsIntegrations: '/settings/integrations',
   technicians: '/technicians',
   technicianNew: '/technicians/new',
   technicianDetail: '/technicians/:technicianId',

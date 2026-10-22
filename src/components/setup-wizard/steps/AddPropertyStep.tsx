@@ -5,7 +5,7 @@ import type { AddPropertyData, PropertyDraft, PropertyRecord } from '@/types/set
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
 import { SegmentCardGroup } from '@/components/setup-wizard/SegmentCardGroup'
-import { ImportPropertiesPanel } from '@/components/setup-wizard/ImportPropertiesPanel'
+import { ImportPropertiesPanel, type BulkSaveResult } from '@/components/setup-wizard/ImportPropertiesPanel'
 import {
   OptionCard,
   StatusPill,
@@ -50,7 +50,7 @@ interface AddPropertyStepProps {
   adding?: boolean
   onAddProperty: (draft: PropertyDraft) => Promise<void> | void
   /** Saves a whole CSV import in one request (POST /setup/step/9/bulk). */
-  onAddProperties?: (drafts: PropertyDraft[]) => Promise<{ created: number }>
+  onAddProperties?: (drafts: PropertyDraft[], idempotencyKey: string) => Promise<BulkSaveResult>
   onSubmit: () => void
 }
 

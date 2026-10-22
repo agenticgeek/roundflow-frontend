@@ -1,4 +1,5 @@
 import { api, apiBlob } from '@/api/client'
+import { toPaginated, type PageParams, type Paginated } from '@/api/pagination'
 
 /** CONTRACT-DIFF: `/reports/*` not in generated OpenAPI yet — live per REPORTS_HANDOFF. */
 
@@ -56,11 +57,11 @@ export type ReportsRevenueParams = {
   granularity?: 'daily'
 }
 
-export type ReportsTechniciansParams = {
+export type ReportsTechniciansParams = PageParams & {
   period?: ReportsPeriodParam
 }
 
-export type ReportsVisitsParams = {
+export type ReportsVisitsParams = PageParams & {
   period?: ReportsPeriodParam
   status?: ReportsVisitStatusParam
 }
@@ -104,19 +105,37 @@ export const reportsApi = {
       { signal },
     ),
 
-  technicians: (params: ReportsTechniciansParams = {}, signal?: AbortSignal) =>
-    api<ReportsTechnicianRow[]>(
-      `/reports/technicians${toQuery({ period: params.period })}`,
-      { signal },
+  /** Paginated `{ rows, pagination }` (audit follow-up 2026-10-22). */
+  technicians: async (
+    params: ReportsTechniciansParams = {},
+    signal?: AbortSignal,
+  ): Promise<Paginated<ReportsTechnicianRow>> =>
+    toPaginated(
+      await api<Paginated<ReportsTechnicianRow> | ReportsTechnicianRow[]>(
+        `/reports/technicians${toQuery({
+          period: params.period,
+          page: params.page ? String(params.page) : undefined,
+          pageSize: params.pageSize ? String(params.pageSize) : undefined,
+        })}`,
+        { signal },
+      ),
     ),
 
-  visits: (params: ReportsVisitsParams = {}, signal?: AbortSignal) =>
-    api<ReportsVisitRow[]>(
-      `/reports/visits${toQuery({
-        period: params.period,
-        status: params.status,
-      })}`,
-      { signal },
+  /** Paginated `{ rows, pagination }` (audit follow-up 2026-10-22). */
+  visits: async (
+    params: ReportsVisitsParams = {},
+    signal?: AbortSignal,
+  ): Promise<Paginated<ReportsVisitRow>> =>
+    toPaginated(
+      await api<Paginated<ReportsVisitRow> | ReportsVisitRow[]>(
+        `/reports/visits${toQuery({
+          period: params.period,
+          status: params.status,
+          page: params.page ? String(params.page) : undefined,
+          pageSize: params.pageSize ? String(params.pageSize) : undefined,
+        })}`,
+        { signal },
+      ),
     ),
 
   activity: (params: ReportsActivityParams = {}, signal?: AbortSignal) =>
@@ -125,7 +144,7 @@ export const reportsApi = {
       { signal },
     ),
 
-  /** Streams a CSV download. `type` defaults to `visits` server-side. */
+  /** Streams a CSV download — unpaginated on purpose. `type` defaults to `visits` server-side. */
   exportCsv: (params: ReportsExportParams = {}, signal?: AbortSignal) =>
     apiBlob(
       `/reports/export${toQuery({

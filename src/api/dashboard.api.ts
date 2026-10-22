@@ -71,6 +71,10 @@ export const dashboardApi = {
   technicianKpis: (period: DashboardPeriod, signal?: AbortSignal) =>
     api<DashboardTechnicianKpi[]>(`/dashboard/technician-kpis?period=${period}`, { signal }),
 
-  charts: (range: DashboardChartRange, signal?: AbortSignal) =>
-    api<DashboardCharts>(`/dashboard/charts?range=${range}`, { signal }),
+  /** `technicianIds` narrows the charts to those technicians; omit for everyone. */
+  charts: (range: DashboardChartRange, technicianIds: readonly string[] = [], signal?: AbortSignal) => {
+    const search = new URLSearchParams({ range })
+    if (technicianIds.length > 0) search.set('technicianIds', technicianIds.join(','))
+    return api<DashboardCharts>(`/dashboard/charts?${search.toString()}`, { signal })
+  },
 }

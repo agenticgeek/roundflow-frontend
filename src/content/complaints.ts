@@ -51,6 +51,9 @@ export const complaintsContent = {
       customerPhone: 'Customer phone',
       customerEmail: 'Customer email',
       propertyAddress: 'Property address',
+      resolvedBy: 'Resolved by',
+      resolvedAt: 'Resolved on',
+      notes: 'Resolution notes',
     },
     unassigned: 'Unassigned',
     notSupplied: 'Not supplied',
@@ -100,9 +103,10 @@ export const complaintsContent = {
       'Are you sure you want to mark this complaint as resolved? This will update the complaint status and notify the customer.',
     cancel: 'Cancel',
     confirm: 'Mark as Resolved',
+    notesLabel: 'Resolution notes (optional)',
+    notesPlaceholder: 'e.g. Revisited and re-cleaned the back windows',
   },
-  resolutionMessage: (resolvedBy: string) =>
-    `Issue resolved — revisit completed successfully. Resolved by ${resolvedBy}`,
+  resolvedSummary: (resolvedBy: string, when: string) => `Resolved by ${resolvedBy} · ${when}`,
   toasts: {
     logged: 'Complaint logged successfully',
     markedInReview: 'Marked for in-review!',

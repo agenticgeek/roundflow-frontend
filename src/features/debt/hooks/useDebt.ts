@@ -1,18 +1,14 @@
-import {
-  keepPreviousData,
-  useMutation,
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   debtApi,
   type DebtBoardParams,
   type DebtBucket,
+  type DebtHoldInput,
   type DebtPaymentLinkInput,
   type DebtPaymentMethodParam,
   type DebtRemindInput,
 } from '@/api/debt.api'
+import { ApiError } from '@/lib/errors'
 import { DEBT_BOARD_PAGE_SIZE, invalidateDebt, queryKeys } from '@/lib/query-keys'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { DEBT_BUCKETS } from '@/features/debt/lib/mappers'
@@ -40,6 +36,7 @@ export function useDebtBoard(params: DebtBoardParams, enabled = true) {
       params.paymentMethod,
       page,
       pageSize,
+      params.search ?? '',
     ),
     queryFn: ({ signal }) => debtApi.board({ ...params, page, pageSize }, signal),
     enabled: useDebtEnabled(enabled) && Boolean(params.bucket),
@@ -49,31 +46,51 @@ export function useDebtBoard(params: DebtBoardParams, enabled = true) {
 }
 
 /**
- * Bucket totals for the tab badges. Asks for one row per bucket and reads
- * pagination.total, instead of downloading every bucket in full just to count it.
+ * Every tab's total from GET /debt/board/counts in one request. A backend without that
+ * route yet (404) falls back to one `pageSize=1` board request per bucket.
  */
 export function useDebtBoardCounts(
-  filters: { roundId?: string; paymentMethod?: DebtPaymentMethodParam },
+  filters: { roundId?: string; paymentMethod?: DebtPaymentMethodParam; search?: string },
   enabled = true,
 ) {
-  const canLoad = useDebtEnabled(enabled)
-  return useQueries({
-    queries: DEBT_BUCKETS.map((bucket) => ({
-      queryKey: queryKeys.debt.boardCount(bucket, filters.roundId, filters.paymentMethod),
-      queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        debtApi.board(
-          {
+  return useQuery({
+    queryKey: queryKeys.debt.boardCounts(filters.roundId, filters.paymentMethod, filters.search ?? ''),
+    queryFn: async ({ signal }): Promise<Record<DebtBucket, number>> => {
+      try {
+        const counts = await debtApi.counts(filters, signal)
+        // The board's "Invoice sent" tab is the backend's catch-all `ALL` bucket.
+        return Object.fromEntries(
+          DEBT_BUCKETS.map((bucket) => [
             bucket,
-            roundId: filters.roundId,
-            paymentMethod: filters.paymentMethod,
-            page: 1,
-            pageSize: 1,
-          },
-          signal,
-        ),
-      enabled: canLoad,
-      select: (result: Awaited<ReturnType<typeof debtApi.board>>) => result.pagination.total,
-    })),
+            (bucket === 'INVOICE_SENT' ? counts.ALL : counts[bucket]) ?? 0,
+          ]),
+        ) as Record<DebtBucket, number>
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status === 404)) throw error
+        const totals = await Promise.all(
+          DEBT_BUCKETS.map((bucket) =>
+            debtApi
+              .board({ bucket, ...filters, page: 1, pageSize: 1 }, signal)
+              .then((result) => result.pagination.total),
+          ),
+        )
+        return Object.fromEntries(DEBT_BUCKETS.map((bucket, index) => [bucket, totals[index] ?? 0])) as Record<
+          DebtBucket,
+          number
+        >
+      }
+    },
+    enabled: useDebtEnabled(enabled),
+    placeholderData: keepPreviousData,
+  })
+}
+
+/** GET /debt/:id — phone, email, round, next visit, mandate and recent visits for the panel. */
+export function useDebtInvoiceDetail(invoiceId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.debt.detail(invoiceId ?? ''),
+    queryFn: ({ signal }) => debtApi.detail(invoiceId!, signal),
+    enabled: useDebtEnabled(enabled) && Boolean(invoiceId),
   })
 }
 
@@ -117,8 +134,8 @@ export function useDebtSetBadDebt() {
 export function useDebtSetHold() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ invoiceId, flag }: { invoiceId: string; flag: boolean }) =>
-      debtApi.setHold(invoiceId, flag),
+    mutationFn: ({ invoiceId, ...input }: { invoiceId: string } & DebtHoldInput) =>
+      debtApi.setHold(invoiceId, input),
     onSuccess: () => invalidateDebt(queryClient),
   })
 }

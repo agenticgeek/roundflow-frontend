@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { DebtBoardPagination } from '@/api/debt.api'
 import type { DebtCustomerRecord, DebtStatusTab } from '@/content/debt-payment'
 import { debtPaymentContent } from '@/content/debt-payment'
 import { DebtCustomerDetailPanel } from '@/components/debt-payment/DebtCustomerDetailPanel'
@@ -12,15 +11,19 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Input, Select } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
+import { Pager } from '@/components/ui/pager'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import {
   useDebtBoard,
   useDebtBoardCounts,
+  useDebtInvoiceDetail,
   useDebtKpis,
   useDebtSetBadDebt,
   useDebtSetHold,
 } from '@/features/debt/hooks/useDebt'
 import {
   boardToRecords,
+  withInvoiceDetail,
   DEBT_BUCKETS,
   kpisToMetrics,
   UI_METHOD_TO_API,
@@ -61,9 +64,12 @@ export function DebtPaymentScreen() {
   const bucket = UI_TAB_TO_BUCKET[activeTab]
   const apiRoundId = roundId === 'all' ? undefined : roundId
   const apiMethod = UI_METHOD_TO_API[methodId]
+  // Search runs server-side (name / address) across every page, not just the loaded rows.
+  const debouncedSearch = useDebouncedValue(search.trim(), 300)
+  const apiSearch = debouncedSearch || undefined
 
-  // Paging restarts at 1 whenever the bucket or a filter changes.
-  const filterKey = `${bucket}|${apiRoundId ?? ''}|${apiMethod ?? ''}`
+  // Paging restarts at 1 whenever the bucket, a filter or the search changes.
+  const filterKey = `${bucket}|${apiRoundId ?? ''}|${apiMethod ?? ''}|${debouncedSearch}`
   const [pageState, setPageState] = useState({ key: filterKey, page: 1 })
   const page = pageState.key === filterKey ? pageState.page : 1
 
@@ -72,12 +78,14 @@ export function DebtPaymentScreen() {
     bucket,
     roundId: apiRoundId,
     paymentMethod: apiMethod,
+    search: apiSearch,
     page,
   })
   const pagination = boardQuery.data?.pagination
-  const countQueries = useDebtBoardCounts({
+  const countsQuery = useDebtBoardCounts({
     roundId: apiRoundId,
     paymentMethod: apiMethod,
+    search: apiSearch,
   })
   const roundsQuery = useRounds('ACTIVE')
   const setBadDebt = useDebtSetBadDebt()
@@ -94,17 +102,16 @@ export function DebtPaymentScreen() {
       debtPaymentContent.statusTabs.map((tab) => [tab.id, 0]),
     ) as Record<DebtStatusTab, number>
 
-    DEBT_BUCKETS.forEach((key, index) => {
+    DEBT_BUCKETS.forEach((key) => {
       const tab = debtPaymentContent.statusTabs.find(
         (item) => UI_TAB_TO_BUCKET[item.id] === key,
       )
       if (!tab) return
-      const result = countQueries[index]
-      counts[tab.id] = typeof result?.data === 'number' ? result.data : 0
+      counts[tab.id] = countsQuery.data?.[key] ?? 0
     })
 
     return counts
-  }, [countQueries])
+  }, [countsQuery.data])
 
   const roundOptions = useMemo(() => {
     const live = (roundsQuery.data ?? []).map((round) => ({
@@ -114,36 +121,29 @@ export function DebtPaymentScreen() {
     return [{ value: 'all', label: 'All Rounds' }, ...live]
   }, [roundsQuery.data])
 
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return records
-    return records.filter((record) => {
-      const haystack = [record.customer, record.address, record.paymentMethod, record.invoiceNumber]
-        .join(' ')
-        .toLowerCase()
-      return haystack.includes(query)
-    })
-  }, [records, search])
+  const filteredRecords = records
 
   const activeTabLabel =
     debtPaymentContent.statusTabs.find((tab) => tab.id === activeTab)?.label ?? ''
 
-  const searching = search.trim().length > 0
+  const searching = debouncedSearch.length > 0
   const resultsLabel = (
     searching ? debtPaymentContent.resultsLabelSearching : debtPaymentContent.resultsLabel
   )
     .replace('{label}', activeTabLabel)
-    .replace(
-      '{count}',
-      String(searching ? filteredRecords.length : (pagination?.total ?? filteredRecords.length)),
-    )
+    .replace('{count}', String(pagination?.total ?? filteredRecords.length))
 
   function goToPage(next: number) {
     setPageState({ key: filterKey, page: next })
     setDetailId(null)
   }
 
-  const detailRecord = filteredRecords.find((record) => record.id === detailId) ?? null
+  const detailRow = filteredRecords.find((record) => record.id === detailId) ?? null
+  const detailQuery = useDebtInvoiceDetail(detailRow?.invoiceId ?? detailRow?.id)
+  const detailRecord = useMemo(
+    () => (detailRow ? withInvoiceDetail(detailRow, detailQuery.data) : null),
+    [detailRow, detailQuery.data],
+  )
 
   const allVisibleSelected =
     filteredRecords.length > 0 &&
@@ -386,7 +386,7 @@ export function DebtPaymentScreen() {
           </div>
         )}
         {pagination && pagination.totalPages > 1 ? (
-          <DebtBoardPager
+          <Pager
             pagination={pagination}
             loading={boardQuery.isFetching}
             onPage={goToPage}
@@ -589,50 +589,5 @@ function DebtCustomerCard({
         )}
       </div>
     </article>
-  )
-}
-
-
-function DebtBoardPager({
-  pagination,
-  loading,
-  onPage,
-}: {
-  pagination: DebtBoardPagination
-  loading: boolean
-  onPage: (page: number) => void
-}) {
-  const { page, pageSize, total, totalPages } = pagination
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, total)
-  const copy = debtPaymentContent.pagination
-
-  return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-muted">
-        {copy.showing
-          .replace('{from}', String(from))
-          .replace('{to}', String(to))
-          .replace('{total}', String(total))}
-      </p>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={page <= 1 || loading}
-          onClick={() => onPage(page - 1)}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-50"
-        >
-          {copy.previous}
-        </button>
-        <button
-          type="button"
-          disabled={page >= totalPages || loading}
-          onClick={() => onPage(page + 1)}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-50"
-        >
-          {copy.next}
-        </button>
-      </div>
-    </div>
   )
 }

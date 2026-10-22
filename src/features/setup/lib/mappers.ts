@@ -128,7 +128,11 @@ export function wizardPaymentToForm(data: BusinessSettings | null | undefined): 
   }
 }
 
-/** VAT lives in Business Profile — `vatRegistered` comes from step 1 so invoices follow it. */
+/**
+ * VAT lives in Business Profile — `vatRegistered` comes from step 1 so invoices follow it.
+ * The connect flags aren't sent: providers connect through the real Stripe / GoCardless
+ * flows, and echoing the flags back could overwrite a connection made since the step loaded.
+ */
 export function wizardPaymentFromForm(
   values: WizardPaymentData,
   vatRegistered: boolean,
@@ -137,8 +141,6 @@ export function wizardPaymentFromForm(
     paymentRule: values.paymentTiming === 'daily' ? 'COLLECT_ON_DATE' : 'COLLECT_AFTER_VISIT',
     debtHoldEnabled: values.debtHoldEnabled,
     vatInInvoices: vatRegistered,
-    gocardlessConnected: values.goCardlessConnected,
-    stripeConnected: values.stripeConnected,
   }
 }
 
@@ -372,8 +374,8 @@ export function propertyDraftToStep9Input(draft: PropertyDraft): SetupStep9Input
 
 /**
  * One row for POST /setup/step/9/bulk. Built from the single-property mapping so both paths
- * stay in sync, then narrowed to what the bulk contract accepts: no landline, one serviceId
- * (the primary of a multi-service selection), and serviceAreaId is required.
+ * stay in sync; serviceAreaId is required here. `serviceId` stays as the primary of a
+ * multi-service selection alongside `serviceIds`.
  */
 export function propertyDraftToStep9BulkItem(draft: PropertyDraft): SetupStep9BulkItem {
   const single = propertyDraftToStep9Input(draft)
@@ -386,11 +388,13 @@ export function propertyDraftToStep9BulkItem(draft: PropertyDraft): SetupStep9Bu
     price: single.price,
     ...(single.propertyName ? { propertyName: single.propertyName } : {}),
     ...(single.phone ? { phone: single.phone } : {}),
+    ...(single.landline ? { landline: single.landline } : {}),
     ...(single.email ? { email: single.email } : {}),
     ...(single.propertyType ? { propertyType: single.propertyType } : {}),
     ...(single.cleaningFrequency ? { cleaningFrequency: single.cleaningFrequency } : {}),
     ...(single.paymentMethod ? { paymentMethod: single.paymentMethod } : {}),
     ...(single.serviceId ? { serviceId: single.serviceId } : {}),
+    ...(single.serviceIds?.length ? { serviceIds: single.serviceIds } : {}),
     ...(single.accessNotes ? { accessNotes: single.accessNotes } : {}),
     ...(single.riskNotes ? { riskNotes: single.riskNotes } : {}),
   }
