@@ -43,6 +43,49 @@ export const settingsContent = {
   paymentSetup: {
     heading: 'Payment Setup',
     subheading: 'Connect your payment providers',
+    stripeConnected: 'Stripe connected',
+    disconnect: 'Disconnect',
+    disconnecting: 'Disconnecting…',
+    disconnected: '{provider} disconnected',
+    goCardlessConnect: {
+      tokenLabel: 'Access token',
+      tokenPlaceholder: 'Paste your GoCardless access token',
+      tokenRequired: 'Paste your GoCardless access token.',
+      environmentLabel: 'Environment',
+      environments: [
+        { value: 'live', label: 'Live' },
+        { value: 'sandbox', label: 'Sandbox' },
+      ],
+      connect: 'Connect',
+      connecting: 'Connecting…',
+      cancel: 'Cancel',
+      connected: 'GoCardless connected',
+      failed: 'Could not connect GoCardless.',
+    },
+    goCardlessWebhook: {
+      title: 'Finish connecting GoCardless',
+      intro:
+        'GoCardless needs a webhook so payments and mandates update automatically. Until you add the secret below, RoundFlow won’t hear about GoCardless payments.',
+      steps: [
+        'In your GoCardless dashboard, go to Developers → Webhooks → Add endpoint.',
+        'Paste the URL below and save it.',
+        'GoCardless then shows a webhook secret — copy it and paste it here.',
+      ],
+      urlLabel: 'Webhook URL',
+      urlMissing:
+        'The webhook URL is only shown straight after connecting. If you don’t have it, disconnect and connect GoCardless again.',
+      copy: 'Copy',
+      copied: 'Copied',
+      secretLabel: 'Webhook secret',
+      secretPlaceholder: 'Paste the secret GoCardless showed you',
+      secretRequired: 'Paste the webhook secret from GoCardless.',
+      save: 'Save secret',
+      saving: 'Saving…',
+      saved: 'GoCardless webhook secret saved',
+      later: 'Do this later',
+      reopen: 'Add webhook secret',
+      savedNote: 'Webhook secret saved',
+    },
   },
   roundSettings: {
     heading: 'Round Settings',
@@ -51,6 +94,17 @@ export const settingsContent = {
   smsTemplates: {
     heading: 'SMS / WhatsApp Templates',
     subheading: 'Configure your customer messaging templates',
+    empty: 'No message templates yet.',
+    loadError: 'Could not load message templates.',
+    channels: { SMS: 'SMS', WHATSAPP: 'WhatsApp', EMAIL: 'Email' } as Record<string, string>,
+    edit: 'Edit',
+    save: 'Save',
+    saving: 'Saving…',
+    cancel: 'Cancel',
+    saved: 'Template saved',
+    bodyRequired: 'The message can’t be empty.',
+    sendingNote:
+      'Messages are sent through your GHL account. Until it’s connected, they’re saved and shown to you instead of being sent.',
   },
   technicianManagement: {
     heading: 'Technician Management',
@@ -63,6 +117,25 @@ export const settingsContent = {
     heading: 'Service Areas',
     subheading: 'Define your service areas and postcode',
     linkedRounds: 'Linked Rounds:',
+    addArea: 'Add Area',
+    addForm: {
+      title: 'Add New Area',
+      fields: {
+        areaName: { label: 'Area Name', placeholder: 'e.g. Alnwick' },
+        postcodeSectors: {
+          label: 'Postcode Sectors',
+          placeholder: 'e.g. NE66, NE67',
+          hint: 'Separate multiple sectors with commas.',
+        },
+      },
+      actions: { confirm: 'Add Area', cancel: 'Cancel' },
+      validation: {
+        nameRequired: 'Area name is required.',
+        postcodeRequired: 'At least one postcode sector is required.',
+        postcodeInvalid: 'Enter valid UK postcode sectors, comma-separated (e.g. NE66, NE67).',
+      },
+    },
+    actions: { delete: 'Delete area' },
   },
   serviceCatalogue: {
     heading: 'Service Catalogue',

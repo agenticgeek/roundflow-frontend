@@ -21,6 +21,16 @@ export type TechnicianListItem = {
   appStatus: TechnicianAppStatus
   serviceAreas: TechnicianServiceAreaAssignment[]
   createdAt: string
+  /** Audit follow-up 2026-10-22: GET /technicians carries these — no per-row detail fetch. */
+  roundNames?: string[]
+  todayStats?: TechnicianTodayStats
+}
+
+export type TechnicianTodayStats = {
+  total: number
+  completed: number
+  skipped: number
+  remaining: number
 }
 
 export type TechnicianTodayWorkload = {

@@ -8,6 +8,7 @@ import type {
   TechnicianRound,
   TechnicianStatus,
 } from '@/content/technicians'
+import { technicianRoleLabel } from '@/lib/technician-roles'
 
 function initialOf(name: string) {
   const trimmed = name.trim()
@@ -33,9 +34,12 @@ function formatOverviewDate(date = new Date()) {
 function mapAppStatusToUi(
   appStatus: TechnicianListItem['appStatus'],
   workload: TechnicianTodayWorkload[] | undefined,
+  todayStats?: TechnicianListItem['todayStats'],
 ): TechnicianStatus {
   if (appStatus === 'INACTIVE') return 'off-duty'
-  const remaining = (workload ?? []).reduce((sum, row) => sum + row.remaining, 0)
+  const remaining = workload
+    ? workload.reduce((sum, row) => sum + row.remaining, 0)
+    : (todayStats?.remaining ?? 0)
   if (appStatus === 'ACTIVE' && remaining > 0) return 'in-progress'
   return 'available'
 }
@@ -67,19 +71,19 @@ export function roundsFromNames(roundNames: string[] | undefined): TechnicianRou
   }))
 }
 
-function toBaseRecord(item: TechnicianListItem, roundNames?: string[]): TechnicianRecord {
+function toBaseRecord(item: TechnicianListItem): TechnicianRecord {
   const name = item.name?.trim() || 'Unnamed technician'
   return {
     id: item.id,
     name,
     initials: initialOf(name),
-    role: item.role?.trim() || 'Technician',
+    role: technicianRoleLabel(item.role),
     phone: item.phone?.trim() || '—',
     email: item.email?.trim() || '—',
     areas: item.serviceAreas.map((area) => area.serviceAreaName),
     serviceAreaId: item.serviceAreas[0]?.serviceAreaId ?? null,
     notes: item.notes?.trim() || '',
-    status: mapAppStatusToUi(item.appStatus, undefined),
+    status: mapAppStatusToUi(item.appStatus, undefined, item.todayStats),
     appStatus: item.appStatus,
     appActive: item.active,
     memberSince: formatMemberSince(item.createdAt),
@@ -89,19 +93,13 @@ function toBaseRecord(item: TechnicianListItem, roundNames?: string[]): Technici
     timeOnJob: '—',
     complaints: 0,
     issues: 0,
-    rounds: roundsFromNames(roundNames),
+    rounds: roundsFromNames(item.roundNames),
   }
 }
 
-/**
- * `GET /technicians` carries no round data — pass a technicianId → round names
- * map (built from `GET /rounds` + per-round detail) to show real round counts.
- */
-export function technicianListToUi(
-  items: TechnicianListItem[] | undefined,
-  roundNamesByTechnicianId?: Map<string, string[]>,
-): TechnicianRecord[] {
-  return (items ?? []).map((item) => toBaseRecord(item, roundNamesByTechnicianId?.get(item.id)))
+/** `GET /technicians` now carries each technician's round names and today's stats. */
+export function technicianListToUi(items: TechnicianListItem[] | undefined): TechnicianRecord[] {
+  return (items ?? []).map((item) => toBaseRecord(item))
 }
 
 export function technicianDetailToUi(detail: TechnicianDetail | undefined): TechnicianRecord | null {

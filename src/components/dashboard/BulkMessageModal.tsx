@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { dashboardContent } from '@/content/dashboard'
 import { Field, Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton } from '@/components/ui/modal'
+import { useToast } from '@/components/ui/toast'
+import { useBulkMessage } from '@/features/messages/hooks/useMessages'
+import { useRounds } from '@/features/rounds/hooks/useRounds'
+import { ApiError } from '@/lib/errors'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
 
 interface BulkMessageModalProps {
@@ -11,51 +16,93 @@ interface BulkMessageModalProps {
 
 type SendOptionId = 'now' | 'schedule'
 
-function formatRoundLabel(label: string, customerCount: number) {
-  return `${label} (${customerCount} customers)`
+function formatRoundLabel(label: string, count: number) {
+  return `${label} (${count} ${count === 1 ? 'property' : 'properties'})`
 }
 
 function formatCurrency(amount: number) {
   return `£${amount.toFixed(2)}`
 }
 
-/** Bulk SMS/WhatsApp composer — opened from the sidebar quick action. */
+/** Bulk SMS composer — opened from the sidebar quick action. */
 export function BulkMessageModal({ open, onClose }: BulkMessageModalProps) {
   const { bulkMessageModal } = dashboardContent
-  const { fields, sendOptions, actions, rounds, templates, creditPricePerSms } = bulkMessageModal
+  const { fields, sendOptions, actions, templates, creditPricePerSms } = bulkMessageModal
+  const { showToast } = useToast()
+  const { canMutate } = useAppBootstrap()
+  const bulkMessage = useBulkMessage()
+  const roundsQuery = useRounds('ACTIVE', open)
 
-  const [roundId, setRoundId] = useState(rounds[0]?.id ?? '')
+  // Real rounds (the content rounds were placeholders with fake ids).
+  const rounds = useMemo(
+    () =>
+      (roundsQuery.data ?? []).map((round) => ({
+        id: round.id,
+        label: round.name,
+        propertyCount: round.propertyCount,
+      })),
+    [roundsQuery.data],
+  )
+
+  const [roundId, setRoundId] = useState('')
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? '')
   const [excludeOnHold, setExcludeOnHold] = useState(true)
   const [sendOption, setSendOption] = useState<SendOptionId>('now')
 
   useEffect(() => {
     if (!open) return
-    setRoundId(rounds[0]?.id ?? '')
     setTemplateId(templates[0]?.id ?? '')
     setExcludeOnHold(true)
     setSendOption('now')
-  }, [open, rounds, templates])
+  }, [open, templates])
+
+  // Default to the first real round once they load (or when the selection is gone).
+  useEffect(() => {
+    if (!open) return
+    if (!roundId || !rounds.some((round) => round.id === roundId)) {
+      setRoundId(rounds[0]?.id ?? '')
+    }
+  }, [open, rounds, roundId])
 
   const selectedRound = rounds.find((round) => round.id === roundId) ?? rounds[0]
   const selectedTemplate = templates.find((template) => template.id === templateId) ?? templates[0]
 
-  const recipientCount = useMemo(() => {
-    if (!selectedRound) return 0
-    return excludeOnHold
-      ? Math.max(0, selectedRound.customerCount - selectedRound.customersOnHold)
-      : selectedRound.customerCount
-  }, [excludeOnHold, selectedRound])
+  // Estimate only — the final, deduped, hold-filtered count comes back from the server.
+  const recipientCount = selectedRound?.propertyCount ?? 0
 
   const totalCredits = recipientCount * (selectedTemplate?.smsCreditsPerCustomer ?? 1)
   const totalCost = totalCredits * creditPricePerSms
   const characterCount = selectedTemplate?.body.length ?? 0
 
-  function handleSend() {
-    onClose()
+  async function handleSend() {
+    if (!selectedRound || !selectedTemplate || !canMutate || bulkMessage.isPending) return
+    if (sendOption === 'schedule') {
+      showToast('Scheduled sends aren’t available yet — choose “Send now”.')
+      return
+    }
+    try {
+      const result = await bulkMessage.mutateAsync({
+        roundId: selectedRound.id,
+        channel: 'sms',
+        body: selectedTemplate.body,
+        excludePaymentHold: excludeOnHold,
+      })
+      onClose()
+      showToast('Messages sent', {
+        description: `Sent to ${result.queued} recipient${result.queued === 1 ? '' : 's'}.`,
+      })
+    } catch (error) {
+      showToast(
+        error instanceof ApiError && error.status === 409
+          ? 'Messaging isn’t connected yet (GoHighLevel). Connect it in Settings first.'
+          : error instanceof Error
+            ? error.message
+            : 'Could not send the messages.',
+      )
+    }
   }
 
-  if (!selectedRound || !selectedTemplate) return null
+  if (!selectedTemplate) return null
 
   return (
     <Modal
@@ -72,8 +119,14 @@ export function BulkMessageModal({ open, onClose }: BulkMessageModalProps) {
           <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
             {actions.cancel}
           </ModalButton>
-          <ModalButton compact variant="primary" className="w-full" onClick={handleSend}>
-            {actions.send}
+          <ModalButton
+            compact
+            variant="primary"
+            className="w-full"
+            disabled={!canMutate || !selectedRound || bulkMessage.isPending}
+            onClick={() => void handleSend()}
+          >
+            {bulkMessage.isPending ? 'Sending…' : actions.send}
           </ModalButton>
         </div>
       }
@@ -84,10 +137,15 @@ export function BulkMessageModal({ open, onClose }: BulkMessageModalProps) {
             inputSize="sm"
             value={roundId}
             onChange={(event) => setRoundId(event.target.value)}
-            options={rounds.map((round) => ({
-              value: round.id,
-              label: formatRoundLabel(round.label, round.customerCount),
-            }))}
+            disabled={rounds.length === 0}
+            options={
+              rounds.length === 0
+                ? [{ value: '', label: roundsQuery.isPending ? 'Loading rounds…' : 'No active rounds' }]
+                : rounds.map((round) => ({
+                    value: round.id,
+                    label: formatRoundLabel(round.label, round.propertyCount),
+                  }))
+            }
           />
         </Field>
 

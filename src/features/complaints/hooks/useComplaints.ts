@@ -10,6 +10,8 @@ export function useComplaints(params: ComplaintListParams = {}, enabled = true) 
       search: params.search,
       assignedTo: params.assignedTo,
       technicianId: params.technicianId,
+      page: params.page ? String(params.page) : undefined,
+      pageSize: params.pageSize ? String(params.pageSize) : undefined,
     }),
     queryFn: ({ signal }) => complaintsApi.list(params, signal),
     enabled,
@@ -52,7 +54,7 @@ export function useScheduleComplaintRevisit() {
 export function useResolveComplaint() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => complaintsApi.resolve(id),
+    mutationFn: ({ id, notes }: { id: string; notes?: string }) => complaintsApi.resolve(id, notes),
     onSuccess: () => invalidateComplaints(queryClient),
   })
 }

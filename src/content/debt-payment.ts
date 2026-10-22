@@ -17,12 +17,15 @@ export type DebtPaymentMethod =
   | 'Cheque'
   | 'Stripe'
 
-export type DebtVisitPaymentStatus = 'paid' | 'unpaid'
+export type DebtRecentVisitTone = 'success' | 'warning' | 'danger' | 'neutral'
 
+/** One of the customer's last visits (GET /debt/:id). */
 export interface DebtRecentVisit {
+  id: string
   date: string
   amount: string
-  paymentStatus: DebtVisitPaymentStatus
+  status: string
+  tone: DebtRecentVisitTone
 }
 
 export interface DebtCustomerRecord {
@@ -47,6 +50,8 @@ export interface DebtCustomerRecord {
   invoiceDate: string
   daysOverdue: number
   gocardlessId?: string
+  /** GoCardless mandate status, e.g. ACTIVE / FAILED. */
+  mandateStatus?: string
   nextVisit: string
   nextCleanBlocked: boolean
   recentVisits: DebtRecentVisit[]
@@ -122,6 +127,8 @@ export const debtPaymentContent = {
     { id: 'bad-debt', label: 'Bad Debt', count: 2, hasAlert: true },
   ] satisfies { id: DebtStatusTab; label: string; count: number; hasAlert: boolean }[],
   resultsLabel: '{label} — {count} results',
+  // Search only filters the page that's loaded (the board endpoint has no search param).
+  resultsLabelSearching: '{label} — {count} matching on this page',
   selectAll: 'Select all',
   actions: {
     sendReminder: 'Send Reminder',
@@ -152,7 +159,8 @@ export const debtPaymentContent = {
       amountOwed: 'Amount Owed',
       daysOverdue: 'Days Overdue',
       paymentMethod: 'Payment Method',
-      gocardlessId: 'GoCardless ID',
+      gocardlessId: 'GoCardless mandate',
+      mandateStatus: 'Mandate status',
       round: 'Round',
       nextVisit: 'Next Visit',
       nextCleanBlocked: 'Next clean blocked?',
@@ -162,11 +170,14 @@ export const debtPaymentContent = {
     notYetOverdue: 'Not yet overdue',
     blockedYes: 'Yes',
     blockedNo: 'No',
-    completedVisit: 'Completed',
-    visitPayment: {
-      paid: 'Paid',
-      unpaid: 'Unpaid',
-    },
+    noRecentVisits: 'No visits yet',
+    visitStatus: {
+      COMPLETED: 'Completed',
+      SCHEDULED: 'Scheduled',
+      IN_PROGRESS: 'In progress',
+      SKIPPED: 'Skipped',
+      CANCELLED: 'Cancelled',
+    } as Record<string, string>,
     actions: {
       sendReminder: 'Send Reminder',
       paymentLink: 'Payment Link',
@@ -244,6 +255,8 @@ export const debtPaymentContent = {
       send: 'Generate & Send Link',
     },
     successToast: 'Payment link sent to {customer}',
+    stripeLinkNote: 'Secure Stripe checkout link — expires {when}',
+    staticLinkNote: 'Stripe isn’t connected, so the standard pay link was sent'
   },
   pauseModal: {
     title: 'Pause Service',
@@ -258,7 +271,6 @@ export const debtPaymentContent = {
       { value: 'failed-payment', label: 'Failed Payment' },
       { value: 'other', label: 'Other' },
     ],
-    defaultPauseFrom: '2025-05-22',
     notifyLabel: 'Notify customer by SMS',
     notifyHelper: 'Send a message explaining the pause',
     defaultMessage:
@@ -277,9 +289,10 @@ export const debtPaymentContent = {
       resumeFrom: 'Resume From',
       nextDue: 'Confirmed next due date',
     },
-    defaultResumeFrom: '2025-06-01',
     notifyLabel: 'Notify customer of resumption',
     notifyHelper: 'Let them know service is back on',
+    defaultMessage: 'Hi {firstName}, thanks — your window cleaning service is back on and your next clean will go ahead as planned.',
+    notifyFailed: 'Service resumed, but the SMS wasn’t sent: {reason}',
     info: 'Visits will be regenerated from the resume date onwards.',
     actions: {
       cancel: 'Cancel',

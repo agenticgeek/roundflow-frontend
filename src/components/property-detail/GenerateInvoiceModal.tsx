@@ -308,6 +308,7 @@ export function GenerateInvoiceModal({ open, property, visit, onClose }: Generat
       <InvoicePreviewModal
         open={open && previewOpen && Boolean(preview)}
         preview={preview}
+        visitId={visitId}
         dueDate={dueDate}
         notes={notes}
         onClose={handleCloseAll}

@@ -5,6 +5,9 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { useSendMessage } from '@/features/messages/hooks/useMessages'
+import { ApiError } from '@/lib/errors'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
 
 interface SendPropertyMessageModalProps {
@@ -32,6 +35,8 @@ function applyTemplate(body: string, property: PropertyDetailRecord) {
 export function SendPropertyMessageModal({ open, property, onClose }: SendPropertyMessageModalProps) {
   const { sendMessageModal } = propertyDetailContent
   const { showToast } = useToast()
+  const { canMutate } = useAppBootstrap()
+  const sendMessage = useSendMessage()
   const [channel, setChannel] = useState<MessageChannel>('sms')
   const [templateId, setTemplateId] = useState<string>(sendMessageModal.templates[0]?.value ?? '')
   const [message, setMessage] = useState('')
@@ -69,11 +74,31 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
     channel === 'sms' ? sendMessageModal.actions.sendSms : sendMessageModal.actions.sendEmail
   const contactLine = `${property.phone} · ${property.email}`
 
-  function handleSend() {
-    onClose()
-    showToast(
-      channel === 'sms' ? sendMessageModal.successSmsToast : sendMessageModal.successEmailToast,
-    )
+  async function handleSend() {
+    if (!property || !canMutate || sendMessage.isPending) return
+    if (!message.trim()) {
+      showToast('Write a message first.')
+      return
+    }
+    try {
+      await sendMessage.mutateAsync({
+        propertyId: property.id,
+        channel,
+        body: message.trim(),
+      })
+      onClose()
+      showToast(
+        channel === 'sms' ? sendMessageModal.successSmsToast : sendMessageModal.successEmailToast,
+      )
+    } catch (error) {
+      showToast(
+        error instanceof ApiError && error.status === 409
+          ? 'Messaging isn’t connected yet (GoHighLevel). Connect it in Settings first.'
+          : error instanceof Error
+            ? error.message
+            : 'Could not send the message.',
+      )
+    }
   }
 
   return (
@@ -93,9 +118,15 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
           <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
             {sendMessageModal.actions.cancel}
           </ModalButton>
-          <ModalButton compact variant="primary" className="w-full gap-2" onClick={handleSend}>
+          <ModalButton
+            compact
+            variant="primary"
+            className="w-full gap-2"
+            disabled={!canMutate || sendMessage.isPending}
+            onClick={() => void handleSend()}
+          >
             <DashboardIcon name="message" className="h-4 w-4" />
-            {sendLabel}
+            {sendMessage.isPending ? 'Sending…' : sendLabel}
           </ModalButton>
         </div>
       }

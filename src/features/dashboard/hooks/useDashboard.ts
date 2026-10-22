@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   dashboardApi,
   type DashboardChartRange,
@@ -51,11 +51,17 @@ export function useDashboardTechnicianKpis(period: DashboardPeriod, enabled = tr
   })
 }
 
-export function useDashboardCharts(range: DashboardChartRange, enabled = true) {
+/** Charts for the selected technicians (all of them when none are selected). */
+export function useDashboardCharts(
+  range: DashboardChartRange,
+  technicianIds: readonly string[] = [],
+  enabled = true,
+) {
   return useQuery({
-    queryKey: queryKeys.dashboard.charts(range),
-    queryFn: ({ signal }) => dashboardApi.charts(range, signal),
+    queryKey: queryKeys.dashboard.charts(range, technicianIds),
+    queryFn: ({ signal }) => dashboardApi.charts(range, technicianIds, signal),
     enabled: useDashboardEnabled(enabled),
+    placeholderData: keepPreviousData,
   })
 }
 

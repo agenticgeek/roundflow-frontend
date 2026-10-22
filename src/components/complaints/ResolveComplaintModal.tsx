@@ -1,10 +1,13 @@
+import { useEffect, useState } from 'react'
 import { complaintsContent } from '@/content/complaints'
+import { Textarea } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
 
 interface ResolveComplaintModalProps {
   open: boolean
   onClose: () => void
-  onConfirm: () => void
+  /** Notes are optional — sent with POST /complaints/:id/resolve when given. */
+  onConfirm: (notes: string) => void
   resolving?: boolean
 }
 
@@ -16,6 +19,11 @@ export function ResolveComplaintModal({
   resolving = false,
 }: ResolveComplaintModalProps) {
   const content = complaintsContent.resolve
+  const [notes, setNotes] = useState('')
+
+  useEffect(() => {
+    if (open) setNotes('')
+  }, [open])
 
   return (
     <Modal
@@ -30,6 +38,16 @@ export function ResolveComplaintModal({
       <h2 className="text-xl font-semibold text-foreground">{content.title}</h2>
       <p className="text-sm leading-relaxed text-muted">{content.description}</p>
 
+      <label className="block pt-1">
+        <span className="mb-1.5 block text-xs font-semibold text-foreground">{content.notesLabel}</span>
+        <Textarea
+          inputSize="sm"
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          placeholder={content.notesPlaceholder}
+        />
+      </label>
+
       <div className="flex items-center justify-end gap-3 pt-3">
         <button
           type="button"
@@ -40,7 +58,7 @@ export function ResolveComplaintModal({
         </button>
         <button
           type="button"
-          onClick={onConfirm}
+          onClick={() => onConfirm(notes.trim())}
           disabled={resolving}
           className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >

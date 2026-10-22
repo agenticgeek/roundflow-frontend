@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
 import {
   reportsApi,
   type ReportsActivityParams,
+  type ReportsExportParams,
   type ReportsPeriodParam,
   type ReportsRevenueParams,
   type ReportsSummaryParams,
@@ -41,9 +42,11 @@ export function useReportsTechnicians(
   enabled = true,
 ) {
   const period = params.period ?? 'last30'
+  const page = params.page ?? 1
   return useQuery({
-    queryKey: queryKeys.reports.technicians(period),
-    queryFn: ({ signal }) => reportsApi.technicians({ period }, signal),
+    queryKey: queryKeys.reports.technicians(period, page),
+    queryFn: ({ signal }) => reportsApi.technicians({ period, page }, signal),
+    placeholderData: keepPreviousData,
     enabled: useReportsEnabled(enabled),
   })
 }
@@ -51,9 +54,11 @@ export function useReportsTechnicians(
 export function useReportsVisits(params: ReportsVisitsParams = {}, enabled = true) {
   const period = params.period ?? 'last30'
   const status = params.status
+  const page = params.page ?? 1
   return useQuery({
-    queryKey: queryKeys.reports.visits(period, status),
-    queryFn: ({ signal }) => reportsApi.visits({ period, status }, signal),
+    queryKey: queryKeys.reports.visits(period, status, page),
+    queryFn: ({ signal }) => reportsApi.visits({ period, status, page }, signal),
+    placeholderData: keepPreviousData,
     enabled: useReportsEnabled(enabled),
   })
 }
@@ -64,6 +69,13 @@ export function useReportsActivity(params: ReportsActivityParams = {}, enabled =
     queryKey: queryKeys.reports.activity(type),
     queryFn: ({ signal }) => reportsApi.activity({ type }, signal),
     enabled: useReportsEnabled(enabled),
+  })
+}
+
+/** Streams a CSV export of a report (defaults to visits). The caller downloads the Blob. */
+export function useReportsExport() {
+  return useMutation({
+    mutationFn: (params: ReportsExportParams = {}) => reportsApi.exportCsv(params),
   })
 }
 

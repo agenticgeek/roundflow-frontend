@@ -1,41 +1,66 @@
-import type { FormEvent } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import type { FormEvent, ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Round, ServiceArea } from '@/api/types'
 import type { AddPropertyData, PropertyDraft, PropertyRecord } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
-import { PropertyClipboardIcon } from '@/components/setup-wizard/PropertyClipboardIcon'
 import { SegmentCardGroup } from '@/components/setup-wizard/SegmentCardGroup'
-import { SetupStepHeader } from '@/components/setup-wizard/SetupStepHeader'
-import { SubStepFooter } from '@/components/setup-wizard/SubStepFooter'
-import { VerticalSubStepper } from '@/components/setup-wizard/VerticalSubStepper'
-import { Field, FieldError, Input, PhoneInput, Select } from '@/components/ui'
+import { ImportPropertiesPanel, type BulkSaveResult } from '@/components/setup-wizard/ImportPropertiesPanel'
+import {
+  OptionCard,
+  StatusPill,
+  WizardCard,
+  WizardStepTitle,
+} from '@/components/setup-wizard/WizardParts'
+import { primaryButtonClass, secondaryButtonClass } from '@/components/setup-wizard/wizard-styles'
+import { Field, FieldError, Input, MultiSelect, PhoneInput, Select } from '@/components/ui'
 import { isValidEmail, isValidPhone } from '@/lib/contact'
 import { focusFirstInvalid, hasErrors } from '@/lib/form-errors'
-import { isValidUkPostcode } from '@/lib/postcode'
-import { cn } from '@/lib/utils'
+import { formatUkPostcode, isValidUkPostcode, matchAreaSector } from '@/lib/postcode'
+import { cn, fillCopy } from '@/lib/utils'
 
 export type PropertyDraftErrors = Partial<Record<keyof PropertyDraft, string>>
 
-/**
- * The wizard's POST /setup/step/9 has no scheduling, customer-notes or VAT fields,
- * so those inputs are left out here (the standalone Add Property modal keeps them,
- * where its API does save them). Visit timing in setup comes from the round's
- * default day + frequency (step 8) and the first-cycle start date (step 11).
- */
-const WIZARD_SUB_STEPS = ['details', 'plan', 'risk', 'assign'] as const
-type WizardSubStep = (typeof WIZARD_SUB_STEPS)[number]
-const CONTENT_SUB_STEP_INDEX: Record<WizardSubStep, number> = { details: 0, plan: 1, risk: 3, assign: 4 }
+/** Sum the catalogue prices of the selected services (missing prices count as 0). */
+function sumServicePrices(
+  ids: readonly string[],
+  prices: Readonly<Record<string, number>>,
+): number {
+  return ids.reduce((total, id) => total + (prices[id] ?? 0), 0)
+}
+
+/** Backend step number of Rounds — the copy points there by its stepper position. */
+const ROUNDS_STEP = 8
 
 interface AddPropertyStepProps {
   initialValues: AddPropertyData
+  /** Areas with their postcode sectors — the postcode picks the area. */
+  areas: ServiceArea[]
+  rounds: Round[]
+  /** Stepper position of the Rounds step, for the "no rounds" hint. */
+  roundsStepNumber?: number
   serviceAreaOptions: SelectOption[]
   roundOptions: SelectOption[]
   serviceOptions?: SelectOption[]
   /** Catalogue default price per service id — prefills "Price per visit". */
   servicePrices?: Readonly<Record<string, number>>
+  /** Payment method from Payment Setup, and which providers are connected. */
+  defaultPaymentMethod: string
+  connectedProviders: { gocardless: boolean; stripe: boolean }
   adding?: boolean
   onAddProperty: (draft: PropertyDraft) => Promise<void> | void
+  /** Saves a whole CSV import in one request (POST /setup/step/9/bulk). */
+  onAddProperties?: (drafts: PropertyDraft[], idempotencyKey: string) => Promise<BulkSaveResult>
   onSubmit: () => void
+}
+
+/**
+ * Inputs here that POST /setup/step/9 doesn't accept yet stay in this step only
+ * (CONTRACT-DIFF): last cleaned date, the Direct Debit link checkbox and internal notes.
+ */
+interface LocalExtras {
+  lastCleaned: string
+  sendDdLink: boolean
 }
 
 export function SectionHeading({ children }: { children: string }) {
@@ -64,37 +89,111 @@ export function LabelWithHint({
   )
 }
 
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1v-9.5Z" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/** Numbered section heading inside the add-property card. */
+function NumberedSection({ number, title, children }: { number: number; title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-4">
+      <h4 className="flex items-center gap-2.5 text-base font-semibold text-foreground">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+          {number}
+        </span>
+        {title}
+      </h4>
+      {children}
+    </div>
+  )
+}
+
 export function AddPropertyStep({
   initialValues,
+  areas,
+  rounds,
+  roundsStepNumber = ROUNDS_STEP,
   serviceAreaOptions,
   roundOptions,
   serviceOptions = [],
   servicePrices = {},
+  defaultPaymentMethod,
+  connectedProviders,
   adding = false,
   onAddProperty,
+  onAddProperties,
   onSubmit,
 }: AddPropertyStepProps) {
-  const { addProperty: addPropertyContent } = setupWizardContent
-  const { subSteps, sections, fields, validation, draftDefaults } = addPropertyContent
+  const { addProperty: legacyContent, properties: content, rounds: roundsContent, payments } = setupWizardContent
+  const { fields, sections, round: roundCopy } = content
+
+  const freshDraft = (): PropertyDraft => ({
+    ...legacyContent.draftDefaults,
+    paymentMethod: defaultPaymentMethod,
+  })
+  const freshExtras = (): LocalExtras => ({ lastCleaned: '', sendDdLink: true })
 
   const [properties, setProperties] = useState<PropertyRecord[]>(initialValues.properties)
-  const [draft, setDraft] = useState<PropertyDraft>({ ...draftDefaults })
-  const [subStepIndex, setSubStepIndex] = useState(0)
+  const [draft, setDraft] = useState<PropertyDraft>(freshDraft)
+  const [extras, setExtras] = useState<LocalExtras>(freshExtras)
+  /** False until the user picks a round themselves — until then the suggestion follows the postcode. */
+  const [roundTouched, setRoundTouched] = useState(false)
   const [errors, setErrors] = useState<PropertyDraftErrors>({})
   const [saveError, setSaveError] = useState<string | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
+  const [importing, setImporting] = useState(false)
+  const cardRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     setProperties(initialValues.properties)
   }, [initialValues.properties])
 
-  const subStep = WIZARD_SUB_STEPS[subStepIndex]!
-  const stepperSteps = WIZARD_SUB_STEPS.map((key, index) => ({
-    ...subSteps[CONTENT_SUB_STEP_INDEX[key]]!,
-    label: String(index + 1).padStart(2, '0'),
+  const areaSectors = useMemo(
+    () =>
+      areas
+        .filter((area): area is ServiceArea & { id: string } => Boolean(area.id))
+        .map((area) => ({
+          id: area.id,
+          name: area.name ?? '',
+          sectors: (area.postcodeSector ?? '').split(/[,;]/).map((sector) => sector.trim()).filter(Boolean),
+        })),
+    [areas],
+  )
+
+  const match = matchAreaSector(draft.postcode, areaSectors)
+  const postcodeComplete = isValidUkPostcode(draft.postcode)
+  const areaRounds = match ? rounds.filter((round) => round.serviceAreaId === match.area.id && round.id) : []
+  const suggestedRoundId = areaRounds[0]?.id ?? ''
+
+  // The postcode decides the area — keep the draft's area (and, until the user picks one,
+  // its round) in step with it.
+  const matchedAreaId = match?.area.id ?? ''
+  useEffect(() => {
+    setDraft((prev) =>
+      prev.serviceArea === matchedAreaId && prev.assignServiceArea === matchedAreaId
+        ? prev
+        : { ...prev, serviceArea: matchedAreaId, assignServiceArea: matchedAreaId },
+    )
+  }, [matchedAreaId])
+  useEffect(() => {
+    if (roundTouched) return
+    setDraft((prev) => (prev.round === suggestedRoundId ? prev : { ...prev, round: suggestedRoundId }))
+  }, [suggestedRoundId, roundTouched])
+
+  const notInRound = properties.filter((property) => !property.round).length
+
+  const dayLabel = (value: string | null | undefined) =>
+    roundsContent.days.find((day) => day.value === value)?.label ?? ''
+  const roundLabel = (id: string) => rounds.find((round) => round.id === id)?.name ?? roundOptions.find((option) => option.value === id)?.label ?? id
+
+  const paymentOptions = payments.methods.map((method) => ({
+    value: method.value,
+    label: method.label,
+    disabled: method.requires ? !connectedProviders[method.requires] : false,
   }))
-  const currentMeta = stepperSteps[subStepIndex]!
-  const isLastSubStep = subStepIndex === WIZARD_SUB_STEPS.length - 1
 
   function updateDraft<K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }))
@@ -102,59 +201,79 @@ export function AddPropertyStep({
     setSaveError(null)
   }
 
-  function resetDraft() {
-    setDraft({ ...draftDefaults })
-    setSubStepIndex(0)
-    setErrors({})
-    setSaveError(null)
+  function chooseRound(roundId: string) {
+    setRoundTouched(true)
+    updateDraft('round', roundId)
   }
 
-  function subStepErrors(): PropertyDraftErrors {
+  function changeServices(nextIds: string[]) {
+    // Price = sum of the selected services' catalogue prices — prefilled unless the user
+    // already typed their own total.
+    const previousSum = sumServicePrices(draft.serviceIds, servicePrices)
+    const nextSum = sumServicePrices(nextIds, servicePrices)
+    const untouched = !String(draft.pricePerVisit).trim() || Number(draft.pricePerVisit) === previousSum
+    setDraft((prev) => ({
+      ...prev,
+      serviceIds: nextIds,
+      serviceId: nextIds[0] ?? '',
+      pricePerVisit: untouched ? (nextIds.length > 0 ? nextSum.toFixed(2) : '') : prev.pricePerVisit,
+    }))
+    setErrors((prev) => ({ ...prev, pricePerVisit: undefined }))
+  }
+
+  function validate(): PropertyDraftErrors {
+    const v = legacyContent.validation
     const next: PropertyDraftErrors = {}
-    if (subStep === 'details') {
-      if (!draft.customerName.trim()) next.customerName = validation.customerNameRequired
-      if (!draft.phone.trim()) next.phone = validation.phoneRequired
-      else if (!isValidPhone(draft.phone)) next.phone = validation.phoneInvalid
-      if (draft.landline.trim() && !isValidPhone(draft.landline)) next.landline = validation.landlineInvalid
-      if (draft.email.trim() && !isValidEmail(draft.email)) next.email = validation.emailInvalid
-      if (!draft.fullAddress.trim()) next.fullAddress = validation.fullAddressRequired
-      if (!draft.postcode.trim()) next.postcode = validation.postcodeRequired
-      else if (!isValidUkPostcode(draft.postcode)) next.postcode = validation.postcodeInvalid
-    }
-    if (subStep === 'plan') {
-      const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, ''))
-      if (!Number.isFinite(price) || price <= 0) next.pricePerVisit = validation.priceRequired
-    }
-    if (subStep === 'assign' && !draft.round) next.round = validation.roundRequired
+    if (!draft.postcode.trim()) next.postcode = v.postcodeRequired
+    else if (!isValidUkPostcode(draft.postcode)) next.postcode = v.postcodeInvalid
+    if (!draft.fullAddress.trim()) next.fullAddress = v.fullAddressRequired
+    if (!draft.customerName.trim()) next.customerName = v.customerNameRequired
+    if (!draft.phone.trim()) next.phone = v.phoneRequired
+    else if (!isValidPhone(draft.phone)) next.phone = v.phoneInvalid
+    if (draft.email.trim() && !isValidEmail(draft.email)) next.email = v.emailInvalid
+    const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, ''))
+    if (!Number.isFinite(price) || price <= 0) next.pricePerVisit = v.priceRequired
     return next
   }
 
-  function validateSubStep(): boolean {
-    const next = subStepErrors()
+  /** `keepContext` (Save & add another) keeps the area, round, services and payment for the next door. */
+  async function saveProperty(keepContext: boolean) {
+    if (adding) return
+    const next = validate()
     setErrors(next)
     if (hasErrors(next)) {
-      focusFirstInvalid(panelRef.current)
-      return false
+      focusFirstInvalid(cardRef.current)
+      return
     }
-    return true
-  }
 
-  function handleSubContinue() {
-    if (!validateSubStep()) return
-    setSubStepIndex((index) => Math.min(index + 1, WIZARD_SUB_STEPS.length - 1))
-  }
-
-  function handleSubBack() {
-    setErrors({})
-    setSaveError(null)
-    setSubStepIndex((index) => Math.max(index - 1, 0))
-  }
-
-  async function saveProperty() {
-    if (!validateSubStep() || adding) return
+    const selectedRound = rounds.find((round) => round.id === draft.round)
     try {
-      await onAddProperty(draft)
-      resetDraft()
+      await onAddProperty({
+        ...draft,
+        postcode: formatUkPostcode(draft.postcode),
+        // The round decides the frequency — properties inherit it.
+        cleaningFrequency: selectedRound?.frequency ?? draft.cleaningFrequency,
+      })
+      if (keepContext) {
+        setDraft((prev) => ({
+          ...freshDraft(),
+          postcode: prev.postcode,
+          serviceArea: prev.serviceArea,
+          assignServiceArea: prev.assignServiceArea,
+          round: prev.round,
+          propertyType: prev.propertyType,
+          serviceIds: prev.serviceIds,
+          serviceId: prev.serviceId,
+          pricePerVisit: prev.pricePerVisit,
+          paymentMethod: prev.paymentMethod,
+        }))
+      } else {
+        setDraft(freshDraft())
+        setRoundTouched(false)
+        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      setExtras(freshExtras())
+      setErrors({})
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not add property.')
     }
@@ -165,104 +284,290 @@ export function AddPropertyStep({
     onSubmit()
   }
 
+  function roundDescription(round: Round) {
+    const phrases: Record<string, string> = content.frequencyPhrases
+    const frequency = phrases[round.frequency ?? ''] ?? ''
+    return [
+      fillCopy(roundCopy.summary, { day: dayLabel(round.defaultDay), frequency }),
+      roundCopy.afterActivation,
+    ].join(' · ')
+  }
+
   return (
-    <form id="setup-wizard-step-form" onSubmit={handleSubmit} noValidate className="space-y-5">
-      <div className="flex gap-6 lg:gap-8">
-        <VerticalSubStepper steps={stepperSteps} currentIndex={subStepIndex} />
+    <form id="setup-wizard-step-form" onSubmit={handleSubmit} noValidate className="space-y-6">
+      <WizardStepTitle icon={<HomeIcon />} title={content.heading} subtitle={content.subheading} />
 
-        <div ref={panelRef} className="min-w-0 flex-1">
-          <SetupStepHeader
-            icon={<PropertyClipboardIcon />}
-            title={currentMeta.title}
-            subtitle={currentMeta.subtitle}
-          />
-
-          <div className="space-y-5">
-            {subStep === 'details' ? (
-              <PropertyDetailsPanel
-                draft={draft}
-                sections={sections}
-                fields={fields}
-                serviceAreaOptions={serviceAreaOptions}
-                propertyTypes={addPropertyContent.propertyTypes}
-                errors={errors}
-                onChange={updateDraft}
-              />
-            ) : null}
-
-            {subStep === 'plan' ? (
-              <ServicePlanPanel
-                draft={draft}
-                fields={fields}
-                frequencies={addPropertyContent.cleaningFrequencies}
-                vatOptions={addPropertyContent.vatOptions}
-                paymentMethods={addPropertyContent.paymentMethods}
-                serviceOptions={serviceOptions}
-                servicePrices={servicePrices}
-                showVat={false}
-                errors={errors}
-                onChange={updateDraft}
-              />
-            ) : null}
-
-            {subStep === 'risk' ? (
-              <RiskNotesPanel draft={draft} fields={fields} showCustomerNotes={false} onChange={updateDraft} />
-            ) : null}
-
-            {subStep === 'assign' ? (
-              <AssignPropertyPanel
-                draft={draft}
-                fields={fields}
-                roundOptions={[{ value: '', label: fields.round.placeholder }, ...roundOptions]}
-                serviceAreaOptions={[
-                  { value: '', label: fields.assignServiceArea.placeholder },
-                  ...serviceAreaOptions,
-                ]}
-                errors={errors}
-                onChange={updateDraft}
-              />
-            ) : null}
-
-            {saveError ? <FieldError message={saveError} size="sm" /> : null}
-          </div>
-
-          <SubStepFooter
-            currentStep={subStepIndex + 1}
-            totalSteps={WIZARD_SUB_STEPS.length}
-            isFirstStep={subStepIndex === 0}
-            onBack={handleSubBack}
-            onContinue={isLastSubStep ? () => void saveProperty() : handleSubContinue}
-            continueLabel={
-              isLastSubStep ? (adding ? 'Saving…' : addPropertyContent.actions.addProperty) : undefined
-            }
-            loading={isLastSubStep && adding}
-          />
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-foreground sm:text-[15px]">
+          {fillCopy(content.summary, { count: properties.length })}
+          {notInRound > 0 ? ` · ${fillCopy(content.notInRound, { count: notInRound })}` : null}
+        </p>
+        {importing ? null : (
+          <button type="button" onClick={() => setImporting(true)} className={secondaryButtonClass}>
+            {content.importCsv}
+          </button>
+        )}
       </div>
 
+      {importing ? (
+        <WizardCard>
+          <ImportPropertiesPanel
+            roundOptions={roundOptions}
+            serviceAreaOptions={serviceAreaOptions}
+            serviceOptions={serviceOptions}
+            servicePrices={servicePrices}
+            draftDefaults={legacyContent.draftDefaults}
+            onSaveProperty={onAddProperty}
+            onSaveProperties={onAddProperties}
+            onClose={() => setImporting(false)}
+          />
+        </WizardCard>
+      ) : (
+        <section ref={cardRef} className="scroll-mt-6 space-y-7 rounded-2xl border border-border bg-card p-5 sm:p-6">
+          <h3 className="text-base font-semibold text-foreground sm:text-lg">{content.formTitle}</h3>
+
+          <NumberedSection number={1} title={sections.address}>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label={fields.postcode.label} required labelWeight="medium" error={errors.postcode}>
+                <div className="relative">
+                  <Input
+                    aria-invalid={Boolean(errors.postcode)}
+                    value={draft.postcode}
+                    onChange={(event) => updateDraft('postcode', event.target.value.toUpperCase().slice(0, 8))}
+                    onBlur={() => postcodeComplete && updateDraft('postcode', formatUkPostcode(draft.postcode))}
+                    placeholder={fields.postcode.placeholder}
+                    autoComplete="postal-code"
+                    className="pr-40"
+                  />
+                  {postcodeComplete ? (
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                      <StatusPill tone={match ? 'primary' : 'warning'}>
+                        {match ? fillCopy(fields.postcode.area, { area: match.area.name }) : fields.postcode.noArea}
+                      </StatusPill>
+                    </span>
+                  ) : null}
+                </div>
+              </Field>
+              <Field label={fields.propertyType.label} labelWeight="medium">
+                <Select
+                  value={draft.propertyType}
+                  onChange={(event) => updateDraft('propertyType', event.target.value)}
+                  options={legacyContent.propertyTypes}
+                />
+              </Field>
+              <Field label={fields.address.label} required labelWeight="medium" error={errors.fullAddress} className="sm:col-span-2">
+                <Input
+                  aria-invalid={Boolean(errors.fullAddress)}
+                  value={draft.fullAddress}
+                  onChange={(event) => updateDraft('fullAddress', event.target.value)}
+                  placeholder={fields.address.placeholder}
+                  autoComplete="street-address"
+                />
+              </Field>
+            </div>
+          </NumberedSection>
+
+          <NumberedSection number={2} title={sections.round}>
+            <div role="radiogroup" aria-label={sections.round} className="space-y-3">
+              {(match ? areaRounds : []).map((round) => (
+                <OptionCard
+                  key={round.id}
+                  selected={draft.round === round.id}
+                  onSelect={() => chooseRound(round.id ?? '')}
+                  title={round.name}
+                  description={roundDescription(round)}
+                  aside={
+                    round.id === suggestedRoundId && match ? (
+                      <StatusPill tone="neutral">{fillCopy(roundCopy.suggested, { sector: match.sector })}</StatusPill>
+                    ) : undefined
+                  }
+                />
+              ))}
+              <OptionCard
+                selected={!draft.round}
+                onSelect={() => chooseRound('')}
+                title={roundCopy.unassigned.label}
+                description={roundCopy.unassigned.description}
+              />
+            </div>
+            <p className="text-sm text-muted">
+              {!match
+                ? roundCopy.noAreaHint
+                : areaRounds.length === 0
+                  ? fillCopy(roundCopy.noRounds, { area: match.area.name, step: roundsStepNumber })
+                  : fillCopy(roundCopy.areaHint, { area: match.area.name })}
+            </p>
+          </NumberedSection>
+
+          <NumberedSection number={3} title={sections.customer}>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label={fields.customerName.label} required labelWeight="medium" error={errors.customerName}>
+                <Input
+                  aria-invalid={Boolean(errors.customerName)}
+                  value={draft.customerName}
+                  onChange={(event) => updateDraft('customerName', event.target.value)}
+                  placeholder={fields.customerName.placeholder}
+                  autoComplete="off"
+                />
+              </Field>
+              <Field label={fields.mobile.label} required labelWeight="medium" error={errors.phone}>
+                <PhoneInput
+                  aria-invalid={Boolean(errors.phone)}
+                  value={draft.phone}
+                  onValueChange={(value) => updateDraft('phone', value)}
+                  placeholder={fields.mobile.placeholder}
+                />
+              </Field>
+              <Field label={fields.email.label} labelWeight="medium" error={errors.email}>
+                <Input
+                  type="email"
+                  aria-invalid={Boolean(errors.email)}
+                  value={draft.email}
+                  onChange={(event) => updateDraft('email', event.target.value)}
+                  placeholder={fields.email.placeholder}
+                  autoComplete="off"
+                />
+                {errors.email ? null : <p className="mt-2 text-sm text-muted">{fields.email.hint}</p>}
+              </Field>
+              <Field label={fields.propertyName.label} labelWeight="medium">
+                <Input
+                  value={draft.propertyName}
+                  onChange={(event) => updateDraft('propertyName', event.target.value)}
+                  placeholder={fields.propertyName.placeholder}
+                />
+              </Field>
+            </div>
+          </NumberedSection>
+
+          <NumberedSection number={4} title={sections.service}>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label={fields.services.label} labelWeight="medium">
+                <MultiSelect
+                  label={fields.services.placeholder}
+                  placeholder={fields.services.placeholder}
+                  displayMode="values"
+                  showAllOption={false}
+                  value={draft.serviceIds}
+                  options={serviceOptions}
+                  onChange={changeServices}
+                />
+              </Field>
+              <Field label={fields.price.label} required labelWeight="medium" error={errors.pricePerVisit}>
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-[15px] text-foreground">£</span>
+                  <Input
+                    inputMode="decimal"
+                    aria-invalid={Boolean(errors.pricePerVisit)}
+                    value={draft.pricePerVisit}
+                    onChange={(event) => updateDraft('pricePerVisit', event.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="0.00"
+                    className="pl-8"
+                  />
+                </div>
+                {errors.pricePerVisit ? null : <p className="mt-2 text-sm text-muted">{fields.price.hint}</p>}
+              </Field>
+              <Field label={fields.paymentMethod.label} labelWeight="medium">
+                <Select
+                  value={draft.paymentMethod}
+                  onChange={(event) => updateDraft('paymentMethod', event.target.value)}
+                  options={paymentOptions}
+                />
+                <p className="mt-2 text-sm text-muted">{fields.paymentMethod.hint}</p>
+              </Field>
+              <Field label={fields.lastCleaned.label} labelWeight="medium">
+                <Input
+                  type="date"
+                  value={extras.lastCleaned}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(event) => setExtras((prev) => ({ ...prev, lastCleaned: event.target.value }))}
+                />
+                <p className="mt-2 text-sm text-muted">{fields.lastCleaned.hint}</p>
+              </Field>
+            </div>
+            {draft.paymentMethod === 'GOCARDLESS' ? (
+              <label className="flex cursor-pointer items-center gap-3 text-sm text-foreground sm:text-[15px]">
+                <input
+                  type="checkbox"
+                  checked={extras.sendDdLink}
+                  onChange={(event) => setExtras((prev) => ({ ...prev, sendDdLink: event.target.checked }))}
+                  className="h-5 w-5 rounded border-border accent-primary"
+                />
+                {fields.sendDdLink.label}
+              </label>
+            ) : null}
+          </NumberedSection>
+
+          <NumberedSection number={5} title={sections.notes}>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label={fields.accessNotes.label} labelWeight="medium">
+                <Input
+                  value={draft.accessNotes}
+                  onChange={(event) => updateDraft('accessNotes', event.target.value)}
+                  placeholder={fields.accessNotes.placeholder}
+                />
+              </Field>
+              <Field label={fields.riskNotes.label} labelWeight="medium">
+                <Input
+                  value={draft.riskNotes}
+                  onChange={(event) => updateDraft('riskNotes', event.target.value)}
+                  placeholder={fields.riskNotes.placeholder}
+                />
+              </Field>
+              <Field label={fields.internalNotes.label} labelWeight="medium" className="sm:col-span-2">
+                <Input
+                  value={draft.customerNotes}
+                  onChange={(event) => updateDraft('customerNotes', event.target.value)}
+                  placeholder={fields.internalNotes.placeholder}
+                />
+              </Field>
+            </div>
+          </NumberedSection>
+
+          {saveError ? <FieldError message={saveError} /> : null}
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <button type="button" onClick={() => void saveProperty(true)} disabled={adding} className={secondaryButtonClass}>
+              {content.actions.saveAndAdd}
+            </button>
+            <button type="button" onClick={() => void saveProperty(false)} disabled={adding} className={primaryButtonClass}>
+              {adding ? content.actions.saving : content.actions.save}
+            </button>
+          </div>
+        </section>
+      )}
+
       {properties.length > 0 ? (
-        <div className="border-t border-border pt-5">
-          <h3 className="mb-3 text-sm font-medium text-foreground">
-            {addPropertyContent.addedTitle} ({properties.length})
-          </h3>
-          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {properties.map((property) => (
-              <li
-                key={property.id}
-                className="rounded-lg border border-border bg-background p-3 shadow-sm"
-              >
-                <p className="text-sm font-medium text-foreground">{property.propertyName}</p>
-                <p className="mt-0.5 text-xs text-muted">{property.fullAddress || property.customerName}</p>
-                {property.round ? (
-                  <p className="mt-1.5 text-xs font-medium text-primary">
-                    {roundOptions.find((option) => option.value === property.round)?.label ??
-                      property.round}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <WizardCard heading={fillCopy(content.list.heading, { count: properties.length })}>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[32rem] text-left text-sm sm:text-[15px]">
+              <thead className="bg-foreground/[0.025] text-sm text-muted">
+                <tr>
+                  <th scope="col" className="px-5 py-3 font-normal">{content.list.columns.property}</th>
+                  <th scope="col" className="px-5 py-3 font-normal">{content.list.columns.postcode}</th>
+                  <th scope="col" className="px-5 py-3 font-normal">{content.list.columns.round}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {properties.map((property) => (
+                  <tr key={property.id}>
+                    <td className="px-5 py-3.5">
+                      <p className="font-medium text-foreground">{property.propertyName || property.fullAddress}</p>
+                      <p className="mt-0.5 text-sm text-muted">{property.customerName}</p>
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-foreground">{property.postcode}</td>
+                    <td className="px-5 py-3.5">
+                      {property.round ? (
+                        <span className="text-foreground">{roundLabel(property.round)}</span>
+                      ) : (
+                        <StatusPill tone="warning">{content.list.notInRound}</StatusPill>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </WizardCard>
       ) : null}
     </form>
   )
@@ -446,22 +751,29 @@ export function ServicePlanPanel({
         />
       </div>
       {serviceOptions.length > 0 ? (
-        <Field label="Service" labelWeight="medium" size="sm">
-          <Select
+        <Field label="Services" labelWeight="medium" size="sm">
+          <MultiSelect
             inputSize="sm"
-            value={draft.serviceId}
-            onChange={(e) => {
-              const nextId = e.target.value
-              const previousDefault = servicePrices[draft.serviceId]
-              const nextDefault = servicePrices[nextId]
-              onChange('serviceId', nextId)
-              // Prefill from the catalogue unless the user already typed their own price.
+            label="Select services"
+            placeholder="Select services"
+            displayMode="values"
+            showAllOption={false}
+            value={draft.serviceIds}
+            options={serviceOptions}
+            onChange={(nextIds) => {
+              // Price = sum of the selected services' catalogue prices. Prefill it
+              // unless the user already typed a custom total.
+              const previousSum = sumServicePrices(draft.serviceIds, servicePrices)
+              const nextSum = sumServicePrices(nextIds, servicePrices)
+              onChange('serviceIds', nextIds)
+              onChange('serviceId', nextIds[0] ?? '')
               const untouched =
                 !String(draft.pricePerVisit).trim() ||
-                (previousDefault != null && Number(draft.pricePerVisit) === previousDefault)
-              if (nextDefault != null && untouched) onChange('pricePerVisit', String(nextDefault))
+                Number(draft.pricePerVisit) === previousSum
+              if (untouched) {
+                onChange('pricePerVisit', nextIds.length > 0 ? String(nextSum) : '')
+              }
             }}
-            options={[{ value: '', label: 'Select service' }, ...serviceOptions]}
           />
         </Field>
       ) : null}
@@ -605,53 +917,6 @@ export function RiskNotesPanel({
           value={draft.accessNotes}
           onChange={(e) => onChange('accessNotes', e.target.value)}
           placeholder={fields.accessNotes.placeholder}
-        />
-      </Field>
-    </div>
-  )
-}
-
-function AssignPropertyPanel({
-  draft,
-  fields,
-  roundOptions,
-  serviceAreaOptions,
-  errors = {},
-  onChange,
-}: {
-  draft: PropertyDraft
-  fields: (typeof setupWizardContent)['addProperty']['fields']
-  roundOptions: SelectOption[]
-  serviceAreaOptions: SelectOption[]
-  errors?: PropertyDraftErrors
-  onChange: <K extends keyof PropertyDraft>(key: K, value: PropertyDraft[K]) => void
-}) {
-  return (
-    <div className="space-y-4">
-      <Field label={fields.round.label} required labelWeight="medium" size="sm" error={errors.round}>
-        <Select
-          inputSize="sm"
-          aria-invalid={Boolean(errors.round)}
-          value={draft.round}
-          onChange={(e) => onChange('round', e.target.value)}
-          options={roundOptions}
-        />
-      </Field>
-      <Field
-        label={
-          <LabelWithHint
-            label={fields.assignServiceArea.label}
-            hint={fields.assignServiceArea.hint}
-          />
-        }
-        labelWeight="medium"
-        size="sm"
-      >
-        <Select
-          inputSize="sm"
-          value={draft.assignServiceArea}
-          onChange={(e) => onChange('assignServiceArea', e.target.value)}
-          options={serviceAreaOptions}
         />
       </Field>
     </div>

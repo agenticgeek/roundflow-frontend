@@ -14,24 +14,17 @@ import type {
   ServiceInput,
   TechnicianInput,
 } from '@/api/types'
-import { useSetupStatus } from '@/features/setup/hooks/useSetup'
-import { isSetupGateBypassed } from '@/lib/env'
 import {
   invalidateBusinessSettings,
   queryKeys,
 } from '@/lib/query-keys'
 
-function useSettingsEnabled() {
-  const status = useSetupStatus()
-  return status.data?.setupCompleted === true || isSetupGateBypassed()
-}
+// GET /settings/* works before setup is complete (only writes are gated), so reads aren't gated here.
 
 export function useBusinessProfile() {
-  const enabled = useSettingsEnabled()
   return useQuery({
     queryKey: queryKeys.settings.businessProfile,
     queryFn: ({ signal }) => settingsApi.getBusinessProfile(signal),
-    enabled,
   })
 }
 
@@ -45,11 +38,9 @@ export function useUpdateBusinessProfile() {
 }
 
 export function useRoundSettings() {
-  const enabled = useSettingsEnabled()
   return useQuery({
     queryKey: queryKeys.settings.roundSettings,
     queryFn: ({ signal }) => settingsApi.getRoundSettings(signal),
-    enabled,
   })
 }
 
@@ -63,11 +54,9 @@ export function useUpdateRoundSettings() {
 }
 
 export function usePaymentSettings() {
-  const enabled = useSettingsEnabled()
   return useQuery({
     queryKey: queryKeys.settings.payment,
     queryFn: ({ signal }) => settingsApi.getPayment(signal),
-    enabled,
   })
 }
 
@@ -80,21 +69,43 @@ export function useUpdatePaymentSettings() {
   })
 }
 
-export function useConnectPayment() {
+/** Connection changes show in Settings → Payment and in the setup wizard's Payments step. */
+function invalidatePaymentConnections(queryClient: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    invalidateBusinessSettings(queryClient),
+    queryClient.invalidateQueries({ queryKey: queryKeys.setup.step(2) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.setup.status }),
+  ])
+}
+
+export function useConnectGoCardless() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { accessToken: string; environment: 'sandbox' | 'live' }) =>
+      settingsApi.connectGoCardless(input),
+    onSuccess: () => invalidatePaymentConnections(queryClient),
+  })
+}
+
+export function useDisconnectPayment() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (provider: 'gocardless' | 'stripe') =>
-      settingsApi.connectPayment(provider),
-    onSuccess: () => invalidateBusinessSettings(queryClient),
+      provider === 'stripe' ? settingsApi.disconnectStripe() : settingsApi.disconnectGoCardless(),
+    onSuccess: () => invalidatePaymentConnections(queryClient),
+  })
+}
+
+export function useSaveGoCardlessWebhookSecret() {
+  return useMutation({
+    mutationFn: (secret: string) => settingsApi.saveGoCardlessWebhookSecret(secret),
   })
 }
 
 export function useServices() {
-  const enabled = useSettingsEnabled()
   return useQuery({
     queryKey: queryKeys.settings.services,
     queryFn: ({ signal }) => settingsApi.getServices(signal),
-    enabled,
   })
 }
 
@@ -132,11 +143,10 @@ export function useDeleteService() {
 }
 
 export function useServiceAreas(enabled = true) {
-  const settingsEnabled = useSettingsEnabled()
   return useQuery({
     queryKey: queryKeys.settings.serviceAreas,
     queryFn: ({ signal }) => settingsApi.getServiceAreas(signal),
-    enabled: settingsEnabled && enabled,
+    enabled,
   })
 }
 
@@ -181,11 +191,10 @@ export function useDeleteServiceArea() {
 }
 
 export function useTechnicians(enabled = true) {
-  const settingsEnabled = useSettingsEnabled()
   return useQuery({
     queryKey: queryKeys.settings.technicians,
     queryFn: ({ signal }) => settingsApi.getTechnicians(signal),
-    enabled: settingsEnabled && enabled,
+    enabled,
   })
 }
 
@@ -224,11 +233,22 @@ export function useDeleteTechnician() {
   })
 }
 
+export function useUpdateMessageTemplate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: string }) =>
+      settingsApi.updateMessageTemplate(id, { body }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.messageTemplates }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.setup.step(5) }),
+      ]),
+  })
+}
+
 export function useMessageTemplates() {
-  const enabled = useSettingsEnabled()
   return useQuery({
     queryKey: queryKeys.settings.messageTemplates,
     queryFn: ({ signal }) => settingsApi.getMessageTemplates(signal),
-    enabled,
   })
 }

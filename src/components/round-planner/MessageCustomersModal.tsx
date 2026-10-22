@@ -6,7 +6,18 @@ import type { PlannerRoundSummary } from '@/components/round-planner/WeatherHold
 import { Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { useBulkMessage } from '@/features/messages/hooks/useMessages'
+import type { MessageChannel } from '@/api/messages.api'
+import { ApiError } from '@/lib/errors'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
+
+function toApiChannel(channel: string): MessageChannel {
+  const normalized = channel.toLowerCase()
+  if (normalized === 'whatsapp') return 'whatsapp'
+  if (normalized === 'email') return 'email'
+  return 'sms'
+}
 
 interface MessageCustomersModalProps {
   open: boolean
@@ -18,6 +29,8 @@ interface MessageCustomersModalProps {
 export function MessageCustomersModal({ open, round, onClose }: MessageCustomersModalProps) {
   const { messageCustomersModal } = roundPlannerContent
   const { showToast } = useToast()
+  const { canMutate } = useAppBootstrap()
+  const bulkMessage = useBulkMessage()
   const [templateId, setTemplateId] = useState(messageCustomersModal.templates[0]?.value ?? '')
   const [message, setMessage] = useState(messageCustomersModal.templates[0]?.body ?? '')
   const [excludePaymentHold, setExcludePaymentHold] = useState(true)
@@ -54,9 +67,32 @@ export function MessageCustomersModal({ open, round, onClose }: MessageCustomers
 
   if (!round) return null
 
-  function handleSend() {
-    onClose()
-    showToast(messageCustomersModal.successToast)
+  async function handleSend() {
+    if (!round || !canMutate || bulkMessage.isPending) return
+    if (!message.trim()) {
+      showToast('Write a message first.')
+      return
+    }
+    try {
+      const result = await bulkMessage.mutateAsync({
+        roundId: round.id,
+        channel: toApiChannel(channel),
+        body: message.trim(),
+        excludePaymentHold,
+      })
+      onClose()
+      showToast(messageCustomersModal.successToast, {
+        description: `Sent to ${result.queued} recipient${result.queued === 1 ? '' : 's'}.`,
+      })
+    } catch (error) {
+      showToast(
+        error instanceof ApiError && error.status === 409
+          ? 'Messaging isn’t connected yet (GoHighLevel). Connect it in Settings first.'
+          : error instanceof Error
+            ? error.message
+            : 'Could not send the messages.',
+      )
+    }
   }
 
   return (
@@ -80,10 +116,13 @@ export function MessageCustomersModal({ open, round, onClose }: MessageCustomers
             compact
             variant="primary"
             className="flex w-full items-center justify-center gap-2"
-            onClick={handleSend}
+            disabled={!canMutate || bulkMessage.isPending}
+            onClick={() => void handleSend()}
           >
             <DashboardIcon name="send" className="h-4 w-4" />
-            {messageCustomersModal.actions.send.replace('{count}', String(recipientCount))}
+            {bulkMessage.isPending
+              ? 'Sending…'
+              : messageCustomersModal.actions.send.replace('{count}', String(recipientCount))}
           </ModalButton>
         </div>
       }

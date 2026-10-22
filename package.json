@@ -20,6 +20,7 @@
     "react-dom": "^19.2.7",
     "react-hook-form": "^7.81.0",
     "react-router-dom": "^7.18.1",
+    "read-excel-file": "^9.3.10",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"

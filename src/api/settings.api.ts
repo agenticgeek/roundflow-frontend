@@ -1,9 +1,10 @@
 import { api } from '@/api/client'
+import { apiBaseUrl } from '@/lib/env'
+import { getCachedAccessToken } from '@/lib/supabase'
 import type { components } from '@/api/types.gen'
 import type { BankDetailsPayload } from '@/lib/bank-details'
 import type {
   BusinessSettings,
-  DeferredStatus,
   PaymentConnectResponse,
   Service,
   ServiceArea,
@@ -20,6 +21,11 @@ export type BusinessProfilePatch = components['schemas']['BusinessProfileUpdateI
 }
 export type RoundSettingsPatch = components['schemas']['RoundSettingsUpdateInput']
 export type PaymentSettingsPatch = components['schemas']['PaymentRulesUpdateInput']
+export type MessageTemplateView = components['schemas']['MessageTemplateView']
+
+// CONTRACT-DIFF: the generated connect response has no `webhookUrl`; GoCardless returns one —
+// the endpoint the admin adds in their GoCardless dashboard (Developers → Webhooks).
+export type GoCardlessConnectResponse = PaymentConnectResponse & { webhookUrl?: string | null }
 
 function jsonRequest(method: 'POST' | 'PATCH', body?: unknown): RequestInit {
   return {
@@ -49,10 +55,42 @@ export const settingsApi = {
     api<BusinessSettings | null>('/settings/payment', { signal }),
   updatePayment: (input: PaymentSettingsPatch) =>
     api<BusinessSettings>('/settings/payment', jsonRequest('PATCH', input)),
-  connectPayment: (provider: 'gocardless' | 'stripe') =>
-    api<PaymentConnectResponse>(
-      `/settings/payment/${provider}/connect`,
+  // Stripe uses a real OAuth redirect: the browser navigates to this endpoint,
+  // which 302s to Stripe and sends the user back to the configured callback.
+  // CAVEAT: this is a top-level navigation, so the bearer token can't ride in a
+  // header — it's passed as a query param, which the authorize endpoint must
+  // accept. Confirm with backend; otherwise this will 401.
+  stripeAuthorizeUrl: (): string => {
+    const url = `${apiBaseUrl()}/settings/stripe/authorize`
+    const token = getCachedAccessToken()
+    return token ? `${url}?access_token=${encodeURIComponent(token)}` : url
+  },
+
+  // GoCardless is token-based (not an OAuth redirect): the user pastes an access
+  // token, we validate + store it server-side.
+  connectGoCardless: (input: { accessToken: string; environment: 'sandbox' | 'live' }) =>
+    api<GoCardlessConnectResponse>(
+      '/settings/payment/gocardless/connect',
+      jsonRequest('POST', input),
+    ),
+
+  // Payments hardening handoff (2026-10-22): the secret GoCardless shows when the admin adds
+  // our webhook URL in their dashboard. Until it's saved, GoCardless webhooks are ignored.
+  // 409 = GoCardless not connected; 400 = empty secret.
+  disconnectStripe: () =>
+    api<{ status: 'disconnected' }>('/settings/stripe/disconnect', jsonRequest('POST')),
+
+  // Also clears the saved webhook secret server-side — reconnecting needs the secret again.
+  disconnectGoCardless: () =>
+    api<{ status: 'disconnected' }>(
+      '/settings/payment/gocardless/disconnect',
       jsonRequest('POST'),
+    ),
+
+  saveGoCardlessWebhookSecret: (secret: string) =>
+    api<{ status: 'saved' }>(
+      '/settings/payment/gocardless/webhook-secret',
+      jsonRequest('PATCH', { secret }),
     ),
 
   getServices: (signal?: AbortSignal) =>
@@ -88,6 +126,12 @@ export const settingsApi = {
   deleteTechnician: (id: string) =>
     api<void>(`/settings/technicians/${id}`, { method: 'DELETE' }),
 
+  // Real, DB-backed templates (new tenants are seeded with defaults). Writes need setup complete.
   getMessageTemplates: (signal?: AbortSignal) =>
-    api<DeferredStatus>('/settings/message-templates', { signal }),
+    api<MessageTemplateView[]>('/settings/message-templates', { signal }),
+  updateMessageTemplate: (
+    id: string,
+    input: { name?: string; channel?: MessageTemplateView['channel']; body?: string; subject?: string | null },
+  ) =>
+    api<MessageTemplateView>(`/settings/message-templates/${id}`, jsonRequest('PATCH', input)),
 }

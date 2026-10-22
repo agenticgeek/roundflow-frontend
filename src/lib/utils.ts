@@ -24,3 +24,11 @@ export function truncateTemplateBody(body: string, maxLength = 55): string {
   const flat = body.replace(/\s+/g, ' ').trim()
   return flat.length > maxLength ? flat.slice(0, maxLength) : flat
 }
+
+/** Replaces `{key}` placeholders in a copy string, e.g. `'Step {step}'`. */
+export function fillCopy(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (text, [key, value]) => text.replaceAll(`{${key}}`, String(value)),
+    template,
+  )
+}

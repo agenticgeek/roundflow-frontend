@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils'
 export interface DropdownOption {
   value: string
   label: string
+  /** Shown but not selectable (e.g. needs a connection first). */
+  disabled?: boolean
 }
 
 const dropdownSizeClass = {
@@ -73,11 +75,13 @@ function DropdownItem({
   checked,
   onSelect,
   divider = true,
+  disabled = false,
 }: {
   label: string
   checked: boolean
   onSelect: () => void
   divider?: boolean
+  disabled?: boolean
 }) {
   const [primary, secondary] = splitDropdownLabel(label)
 
@@ -86,10 +90,13 @@ function DropdownItem({
       type="button"
       role="option"
       aria-selected={checked}
+      aria-disabled={disabled || undefined}
+      disabled={disabled}
       onClick={onSelect}
       className={cn(
         'flex w-full items-start gap-3 px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent-surface/70',
         divider && 'border-b border-border/60 last:border-b-0',
+        disabled && 'cursor-not-allowed opacity-50 hover:bg-transparent',
       )}
     >
       <span className="mt-0.5">
@@ -302,6 +309,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
             key={option.value || '__empty__'}
             label={option.label}
             checked={option.value === value}
+            disabled={option.disabled}
             onSelect={() => handleSelect(option.value)}
           />
         ))}

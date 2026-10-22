@@ -12,6 +12,7 @@ import { Modal, ModalButton, modalInfoPanelClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { FREQUENCY_LABELS } from '@/features/customers/lib/mappers'
 import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
+import { useUpdateServicePlan } from '@/features/service-plans/hooks/useServicePlans'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
@@ -46,12 +47,19 @@ function currentFrequencyValue(frequency: string): CleaningFrequency | '' {
   return ''
 }
 
-/** Change cleaning frequency — PATCH property.cleaningFrequency. */
+/**
+ * Change cleaning frequency of the property's primary plan — PATCH /service-plans/:id, so a
+ * multi-plan property changes the plan the summary shows. Falls back to PATCH /properties/:id
+ * when there's no plan id.
+ */
 export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequencyModalProps) {
   const { changeFrequencyModal } = propertyDetailContent
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
-  const updateProperty = useUpdateProperty()
+  const updatePropertyMutation = useUpdateProperty()
+  const updatePlan = useUpdateServicePlan()
+  const planId = property?.primaryPlanId ?? null
+  const updateProperty = planId ? updatePlan : updatePropertyMutation
   const [selected, setSelected] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -72,15 +80,27 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
   async function handleSubmit() {
     if (!canSubmit || !property || !selected) return
     try {
-      await updateProperty.mutateAsync({
-        id: property.id,
-        input: { cleaningFrequency: selected as CleaningFrequency },
-      })
+      if (planId) {
+        await updatePlan.mutateAsync({ id: planId, input: { cleaningFrequency: selected as CleaningFrequency } })
+      } else {
+        await updatePropertyMutation.mutateAsync({
+          id: property.id,
+          input: { cleaningFrequency: selected as CleaningFrequency },
+        })
+      }
       onClose()
       showToast(changeFrequencyModal.successToast)
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) return
-      showToast(error instanceof Error ? error.message : 'Could not change frequency')
+      // Surface the reason on every failure, including a 400 (e.g. the backend
+      // rejecting the frequency) — previously a 400 was swallowed and the modal
+      // just sat there with no feedback.
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Could not change frequency'
+      showToast(message)
     }
   }
 

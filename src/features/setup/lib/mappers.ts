@@ -2,42 +2,30 @@ import type { components } from '@/api/types.gen'
 import type {
   BusinessSettings,
   CleaningFrequency,
-  Round,
-  RoundInput,
   Service,
   ServiceArea,
   ServiceInput,
   SetupStep9Bundle,
+  SetupStep9BulkItem,
   SetupStep9Input,
-  SetupStep10Input,
-  SetupStep10Result,
-  SetupStep11Input,
-  SetupStep11Status,
-  Technician,
-  TechnicianAppStatus,
-  TechnicianInput,
 } from '@/api/types'
 import type { SetupStep2Input, SetupStep5Input, SetupStep5Template } from '@/api/setup.api'
 import { daysToCycleLength, cycleLengthToDays } from '@/lib/cycle-length'
 import { bankDetailsFromForm, bankDetailsToForm } from '@/lib/bank-details'
-import { deriveTechnicianAppStatus } from '@/api/types'
 import type {
-  ActivateSystemData,
-  AssignTechniciansData,
   BusinessProfileData,
   CatalogueService,
   MessageChannel,
-  PaymentSetupData,
+  WizardPaymentData,
+  WizardMessage,
+  WizardMessagesData,
   PropertyDraft,
   PropertyRecord,
   RecurringCycle,
   RoundSettingsData,
-  SmsTemplatesData,
   ServiceArea as WizardServiceArea,
   ServiceAreaData,
   ServiceCatalogueData,
-  Technician as WizardTechnician,
-  TechnicianManagementData,
 } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 
@@ -57,19 +45,6 @@ const DAY_API_TO_UI: Record<string, string> = Object.fromEntries(
   Object.entries(DAY_UI_TO_API).map(([ui, api]) => [api, ui]),
 )
 
-const PAYMENT_RULE_UI_TO_API: Record<string, SetupStep2Input['paymentRule']> = {
-  'collect-after-visit': 'COLLECT_AFTER_VISIT',
-  'collect-before-visit': 'COLLECT_BEFORE_VISIT',
-  // CONTRACT-DIFF: UI "Monthly Invoice" maps to COLLECT_ON_DATE until labels align.
-  'monthly-invoice': 'COLLECT_ON_DATE',
-}
-
-const PAYMENT_RULE_API_TO_UI: Record<string, string> = {
-  COLLECT_AFTER_VISIT: 'collect-after-visit',
-  COLLECT_BEFORE_VISIT: 'collect-before-visit',
-  COLLECT_ON_DATE: 'monthly-invoice',
-}
-
 const CATEGORY_UI_TO_API: Record<string, components['schemas']['ServiceCategory']> = {
   'window-cleaning': 'WINDOW_CLEANING',
   'exterior-cleaning': 'EXTERIOR_CLEANING',
@@ -81,8 +56,17 @@ const CATEGORY_API_TO_UI: Record<string, string> = Object.fromEntries(
   Object.entries(CATEGORY_UI_TO_API).map(([ui, api]) => [api, ui]),
 )
 
+// CONTRACT-DIFF: business address, postcode and VAT rate are frontend-only until the
+// step-1 endpoint accepts them. Read them if the API starts returning them; they are not
+// sent in businessProfileFromForm yet.
+type BusinessSettingsWithPendingFields = BusinessSettings & {
+  businessAddress?: string | null
+  postcode?: string | null
+  vatRate?: number | string | null
+}
+
 export function businessProfileToForm(
-  data: BusinessSettings | null | undefined,
+  data: BusinessSettingsWithPendingFields | null | undefined,
 ): BusinessProfileData {
   const defaults = setupWizardContent.businessProfile.defaults
   if (!data) return defaults
@@ -92,8 +76,11 @@ export function businessProfileToForm(
     businessPhone: data.phone ?? defaults.businessPhone,
     businessEmail: data.email ?? defaults.businessEmail,
     companyNumber: data.companyNumber ?? defaults.companyNumber,
+    businessAddress: data.businessAddress ?? defaults.businessAddress,
+    postcode: data.postcode ?? defaults.postcode,
     vatNumber: data.vatRegistration ?? defaults.vatNumber,
     vatRegistered: data.vatRegistered ?? defaults.vatRegistered,
+    vatRate: data.vatRate != null ? String(data.vatRate) : defaults.vatRate,
     workingDays: (data.defaultWorkingDays ?? []).map(
       (day) => DAY_API_TO_UI[day] ?? day.toLowerCase(),
     ),
@@ -122,29 +109,38 @@ export function businessProfileFromForm(values: BusinessProfileData) {
   }
 }
 
-export function paymentSetupToForm(
-  data: BusinessSettings | null | undefined,
-): PaymentSetupData {
-  const defaults = setupWizardContent.paymentSetup.defaults
+// CONTRACT-DIFF: step 2 stores provider flags, debt hold, VAT and a payment rule. The default
+// payment method, invoice due days and the no-Direct-Debit action are frontend-only for now;
+// "once a day" timing is sent as COLLECT_ON_DATE until the API has a daily option.
+export function wizardPaymentToForm(data: BusinessSettings | null | undefined): WizardPaymentData {
+  const defaults = setupWizardContent.payments.formDefaults
   if (!data) return defaults
-
+  const goCardlessConnected = data.gocardlessConnected ?? defaults.goCardlessConnected
+  const stripeConnected = data.stripeConnected ?? defaults.stripeConnected
   return {
-    goCardlessConnected: data.gocardlessConnected ?? defaults.goCardlessConnected,
-    stripeConnected: data.stripeConnected ?? defaults.stripeConnected,
-    defaultPaymentRule:
-      PAYMENT_RULE_API_TO_UI[data.paymentRule ?? ''] ?? defaults.defaultPaymentRule,
-    vatApplicable: data.vatInInvoices ?? defaults.vatApplicable,
+    ...defaults,
+    goCardlessConnected,
+    stripeConnected,
+    defaultPaymentMethod: goCardlessConnected ? 'GOCARDLESS' : defaults.defaultPaymentMethod,
+    paymentTiming: data.paymentRule === 'COLLECT_ON_DATE' ? 'daily' : 'after-visit',
+    noDirectDebitAction: stripeConnected ? 'card-link' : 'invoice',
     debtHoldEnabled: data.debtHoldEnabled ?? defaults.debtHoldEnabled,
   }
 }
 
-export function paymentSetupFromForm(values: PaymentSetupData): SetupStep2Input {
+/**
+ * VAT lives in Business Profile — `vatRegistered` comes from step 1 so invoices follow it.
+ * The connect flags aren't sent: providers connect through the real Stripe / GoCardless
+ * flows, and echoing the flags back could overwrite a connection made since the step loaded.
+ */
+export function wizardPaymentFromForm(
+  values: WizardPaymentData,
+  vatRegistered: boolean,
+): SetupStep2Input {
   return {
-    paymentRule: PAYMENT_RULE_UI_TO_API[values.defaultPaymentRule],
+    paymentRule: values.paymentTiming === 'daily' ? 'COLLECT_ON_DATE' : 'COLLECT_AFTER_VISIT',
     debtHoldEnabled: values.debtHoldEnabled,
-    vatInInvoices: values.vatApplicable,
-    gocardlessConnected: values.goCardlessConnected,
-    stripeConnected: values.stripeConnected,
+    vatInInvoices: vatRegistered,
   }
 }
 
@@ -176,6 +172,8 @@ export function servicesFromForm(values: ServiceCatalogueData): ServiceInput[] {
   }))
 }
 
+// CONTRACT-DIFF: step 4 only persists the cycle length. Clean method, reminder schedule/times
+// and auto-create are frontend-only until the endpoint accepts them.
 export function roundSettingsToForm(
   data: BusinessSettings | null | undefined,
 ): RoundSettingsData {
@@ -206,81 +204,62 @@ const CHANNEL_UI_TO_API: Record<MessageChannel, SetupStep5Input['channel']> = {
   email: 'EMAIL',
 }
 
-/** Server list → wizard form. Falls back to the seeded defaults so step 5 can always reach ≥1 template. */
-export function messageTemplatesToForm(
-  rows: SetupStep5Template[] | undefined,
-): SmsTemplatesData {
-  if (!rows?.length) return setupWizardContent.smsTemplates.defaults
-  return {
-    templates: rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      channel: CHANNEL_API_TO_UI[row.channel ?? 'SMS'] ?? 'sms',
-      body: row.body,
-      subject: row.subject ?? null,
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+/**
+ * Server rows → wizard messages. The API stores one template per channel, so rows sharing
+ * a name are one message. Catalogue messages with no saved rows keep their defaults;
+ * saved names the catalogue doesn't know are kept under "Other".
+ */
+export function wizardMessagesToForm(rows: SetupStep5Template[] | undefined): WizardMessagesData {
+  const { catalogue } = setupWizardContent.messages
+  const aliases: Record<string, readonly string[]> = setupWizardContent.messages.aliases
+  const byName = new Map<string, SetupStep5Template[]>()
+  for (const row of rows ?? []) {
+    const key = normalizeName(row.name)
+    byName.set(key, [...(byName.get(key) ?? []), row])
+  }
+
+  const used = new Set<string>()
+  const messages: WizardMessage[] = catalogue.map((message) => {
+    const names = [message.name, ...(aliases[message.key] ?? [])].map(normalizeName)
+    const name = names.find((candidate) => byName.has(candidate))
+    if (!name) return { ...message, channels: [...message.channels] }
+    used.add(name)
+    const saved = byName.get(name) ?? []
+    return {
+      ...message,
+      channels: saved.map((row) => CHANNEL_API_TO_UI[row.channel ?? 'SMS'] ?? 'sms'),
+      body: saved[0]?.body ?? message.body,
+    }
+  })
+
+  for (const [name, saved] of byName) {
+    if (used.has(name)) continue
+    messages.push({
+      key: `custom-${name}`,
+      name: saved[0]?.name ?? name,
+      group: 'other',
+      description: '',
+      channels: saved.map((row) => CHANNEL_API_TO_UI[row.channel ?? 'SMS'] ?? 'sms'),
+      body: saved[0]?.body ?? '',
+    })
+  }
+  return { messages }
+}
+
+/** Wizard messages → `POST /setup/step/5` bulk-replace payload: one row per message channel. */
+export function wizardMessagesFromForm(values: WizardMessagesData): SetupStep5Input[] {
+  return values.messages.flatMap((message) =>
+    message.channels.map((channel) => ({
+      name: message.name.trim(),
+      channel: CHANNEL_UI_TO_API[channel] ?? 'SMS',
+      body: message.body.trim(),
+      ...(channel === 'email' ? { subject: message.name.trim() } : {}),
     })),
-  }
-}
-
-/** Wizard form → `POST /setup/step/5` bulk-replace payload. */
-export function messageTemplatesFromForm(values: SmsTemplatesData): SetupStep5Input[] {
-  return values.templates.map((template) => ({
-    name: template.name.trim(),
-    channel: CHANNEL_UI_TO_API[template.channel] ?? 'SMS',
-    body: template.body.trim(),
-    ...(template.channel === 'email' ? { subject: template.subject?.trim() || null } : {}),
-  }))
-}
-
-function toWizardAppStatus(
-  status: TechnicianAppStatus | undefined,
-): WizardTechnician['appStatus'] {
-  switch (status) {
-    case 'PENDING_INVITE':
-      return 'pending'
-    case 'INACTIVE':
-      return 'inactive'
-    case 'ACTIVE':
-    default:
-      return 'active'
-  }
-}
-
-export function techniciansToForm(
-  technicians: Technician[] | undefined,
-): TechnicianManagementData {
-  const defaults = setupWizardContent.technicianManagement.defaults
-  if (!technicians?.length) return defaults
-
-  return {
-    technicians: technicians.map((technician, index) => ({
-      id: technician.id ?? `tech-${index}`,
-      fullName: technician.displayName ?? technician.name ?? '',
-      mobile: technician.phone ?? '',
-      email: '',
-      role: technician.role ?? '',
-      defaultArea: '',
-      appStatus:
-        toWizardAppStatus(technician.appStatus ?? deriveTechnicianAppStatus(technician)),
-    })),
-  }
-}
-
-/** Step 6 replaces invite-pending rows only — accepted technicians are preserved server-side. */
-export function pendingTechniciansFromForm(
-  values: TechnicianManagementData,
-): TechnicianInput[] {
-  return values.technicians
-    .filter(
-      (technician) =>
-        technician.appStatus === 'pending' || technician.id.startsWith('tech-'),
-    )
-    .map((technician) => ({
-      name: technician.fullName.trim(),
-      phone: technician.mobile.trim() || undefined,
-      role: technician.role.trim() || undefined,
-      active: true,
-    }))
+  )
 }
 
 export function serviceAreasToForm(
@@ -296,7 +275,9 @@ export function serviceAreasToForm(
       postcodeSectors: area.postcodeSector
         ? area.postcodeSector.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
         : [],
+      // CONTRACT-DIFF: the API has no area notes yet — they stay frontend-only and aren't sent.
       notes: '',
+      roundCount: area.linkedRounds?.count ?? 0,
     })),
   }
 }
@@ -309,13 +290,6 @@ export function serviceAreasFromForm(values: ServiceAreaData) {
   }))
 }
 
-export interface FirstRoundFormValues {
-  name: string
-  defaultDay: string
-  frequency: string
-  serviceAreaId: string
-}
-
 const RECURRING_CYCLE_TO_FREQUENCY: Record<RecurringCycle, CleaningFrequency> = {
   '4-week': 'FOUR_WEEKLY',
   '6-week': 'SIX_WEEKLY',
@@ -323,31 +297,9 @@ const RECURRING_CYCLE_TO_FREQUENCY: Record<RecurringCycle, CleaningFrequency> = 
   '12-week': 'TWELVE_WEEKLY',
 }
 
-export function firstRoundToForm(
-  rounds: Round[] | undefined,
-  serviceAreas: ServiceArea[] | undefined,
-  /** Business's default recurring cycle (step 4) — prefills frequency for a first round. */
-  defaultCycleLengthDays?: number | null,
-): FirstRoundFormValues {
-  const round = rounds?.[0]
-  const defaultFrequency = round
-    ? undefined
-    : RECURRING_CYCLE_TO_FREQUENCY[daysToCycleLength(defaultCycleLengthDays)]
-  return {
-    name: round?.name ?? '',
-    defaultDay: round?.defaultDay ?? 'MON',
-    frequency: round?.frequency ?? defaultFrequency ?? 'FOUR_WEEKLY',
-    serviceAreaId: round?.serviceAreaId ?? serviceAreas?.[0]?.id ?? '',
-  }
-}
-
-export function firstRoundFromForm(values: FirstRoundFormValues): RoundInput {
-  return {
-    name: values.name.trim(),
-    defaultDay: values.defaultDay as RoundInput['defaultDay'],
-    frequency: values.frequency as RoundInput['frequency'],
-    serviceAreaId: values.serviceAreaId || undefined,
-  }
+/** Business default cycle (Round Settings) as a round frequency — prefills new rounds. */
+export function defaultRoundFrequency(defaultCycleLengthDays?: number | null): CleaningFrequency {
+  return RECURRING_CYCLE_TO_FREQUENCY[daysToCycleLength(defaultCycleLengthDays)] ?? 'FOUR_WEEKLY'
 }
 
 export function step9BundlesToRecords(
@@ -379,6 +331,7 @@ export function step9BundlesToRecords(
     round: bundle.property.roundId ?? '',
     assignServiceArea: bundle.property.serviceAreaId ?? '',
     serviceId: bundle.servicePlan.serviceId ?? '',
+    serviceIds: bundle.servicePlan.serviceId ? [bundle.servicePlan.serviceId] : [],
   }))
 }
 
@@ -391,7 +344,7 @@ export function propertyDraftToStep9Input(draft: PropertyDraft): SetupStep9Input
     fullAddress: draft.fullAddress.trim(),
     postcode: draft.postcode.trim(),
     price,
-    roundId: draft.round,
+    ...(draft.round ? { roundId: draft.round } : {}),
     ...(draft.propertyName.trim() ? { propertyName: draft.propertyName.trim() } : {}),
     ...(draft.phone.trim() ? { phone: draft.phone.trim() } : {}),
     ...(draft.landline.trim() ? { landline: draft.landline.trim() } : {}),
@@ -409,79 +362,41 @@ export function propertyDraftToStep9Input(draft: PropertyDraft): SetupStep9Input
     ...(draft.paymentMethod
       ? { paymentMethod: draft.paymentMethod as SetupStep9Input['paymentMethod'] }
       : {}),
-    ...(draft.serviceId ? { serviceId: draft.serviceId } : {}),
+    ...(draft.serviceIds.length > 0
+      ? { serviceId: draft.serviceIds[0], serviceIds: draft.serviceIds }
+      : draft.serviceId
+        ? { serviceId: draft.serviceId }
+        : {}),
     ...(draft.accessNotes.trim() ? { accessNotes: draft.accessNotes.trim() } : {}),
     ...(draft.riskNotes.trim() ? { riskNotes: draft.riskNotes.trim() } : {}),
   }
 }
 
-export function step10ToForm(data: SetupStep10Result | undefined): AssignTechniciansData {
-  if (!data) return { rounds: [] }
-
+/**
+ * One row for POST /setup/step/9/bulk. Built from the single-property mapping so both paths
+ * stay in sync; serviceAreaId is required here. `serviceId` stays as the primary of a
+ * multi-service selection alongside `serviceIds`.
+ */
+export function propertyDraftToStep9BulkItem(draft: PropertyDraft): SetupStep9BulkItem {
+  const single = propertyDraftToStep9Input(draft)
   return {
-    rounds: data.assignments.map((assignment) => ({
-      id: assignment.roundId,
-      name: assignment.roundName,
-      areaName: assignment.serviceAreaName ?? '—',
-      day: assignment.defaultDay ?? '',
-      propertyCount: assignment.propertyCount,
-      technicianId: assignment.technicianIds[0] ?? '',
-    })),
-  }
-}
-
-export function step10FromForm(values: AssignTechniciansData): SetupStep10Input {
-  return {
-    assignments: values.rounds.map((round) => ({
-      roundId: round.id,
-      technicianIds: round.technicianId ? [round.technicianId] : [],
-    })),
-  }
-}
-
-export function techniciansForAssignStep(
-  technicians: Technician[] | undefined,
-): WizardTechnician[] {
-  return (technicians ?? [])
-    .filter((technician): technician is Technician & { id: string } => Boolean(technician.id))
-    .map((technician) => ({
-      id: technician.id,
-      fullName: technician.displayName ?? technician.name ?? 'Technician',
-      mobile: technician.phone ?? '',
-      email: '',
-      role: technician.role ?? '',
-      defaultArea: '',
-      appStatus:
-        technician.appStatus === 'ACTIVE'
-          ? 'active'
-          : technician.appStatus === 'INACTIVE'
-            ? 'inactive'
-            : 'pending',
-    }))
-}
-
-export function step11ToForm(
-  status: SetupStep11Status | undefined,
-  roundIds: string[] = [],
-): ActivateSystemData {
-  const defaults = setupWizardContent.activateSystem.defaults
-  const today = new Date().toISOString().slice(0, 10)
-
-  return {
-    generateVisitsMode: defaults.generateVisitsMode,
-    startDate: defaults.startDate || today,
-    cycleWeeks: defaults.cycleWeeks,
-    roundIds: status?.activated ? roundIds : roundIds,
-  }
-}
-
-export function step11FromForm(values: ActivateSystemData): SetupStep11Input {
-  const generateAll = values.generateVisitsMode === 'all'
-  return {
-    startDate: values.startDate,
-    cycleWeeks: values.cycleWeeks,
-    generateAll,
-    ...(!generateAll ? { roundIds: values.roundIds } : {}),
+    customerName: single.customerName,
+    fullAddress: single.fullAddress,
+    postcode: single.postcode,
+    serviceAreaId: single.serviceAreaId ?? '',
+    roundId: single.roundId ?? '',
+    price: single.price,
+    ...(single.propertyName ? { propertyName: single.propertyName } : {}),
+    ...(single.phone ? { phone: single.phone } : {}),
+    ...(single.landline ? { landline: single.landline } : {}),
+    ...(single.email ? { email: single.email } : {}),
+    ...(single.propertyType ? { propertyType: single.propertyType } : {}),
+    ...(single.cleaningFrequency ? { cleaningFrequency: single.cleaningFrequency } : {}),
+    ...(single.paymentMethod ? { paymentMethod: single.paymentMethod } : {}),
+    ...(single.serviceId ? { serviceId: single.serviceId } : {}),
+    ...(single.serviceIds?.length ? { serviceIds: single.serviceIds } : {}),
+    ...(single.accessNotes ? { accessNotes: single.accessNotes } : {}),
+    ...(single.riskNotes ? { riskNotes: single.riskNotes } : {}),
   }
 }
 

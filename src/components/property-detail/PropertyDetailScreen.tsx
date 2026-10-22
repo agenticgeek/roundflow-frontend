@@ -4,12 +4,14 @@ import type {
   PropertyDetailRecord,
   PropertyDetailTabId,
   PropertyPlanStatus,
+  PropertyServicePlan,
 } from '@/content/property-detail'
 import { propertyDetailContent } from '@/content/property-detail'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
 import { ChangeFrequencyModal } from '@/components/property-detail/ChangeFrequencyModal'
 import { EditCustomerRecordModal } from '@/components/property-detail/EditCustomerRecordModal'
 import { PauseServiceModal } from '@/components/property-detail/PauseServiceModal'
+import { EditServicePlanModal } from '@/components/property-detail/EditServicePlanModal'
 import { SendPropertyMessageModal } from '@/components/property-detail/SendPropertyMessageModal'
 import {
   NotesRiskTab,
@@ -21,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { useResumeProperty } from '@/features/properties/hooks/useProperties'
+import { useResumeServicePlan } from '@/features/service-plans/hooks/useServicePlans'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
@@ -80,7 +83,12 @@ export function PropertyDetailScreen({
   const [messageOpen, setMessageOpen] = useState(false)
   const { actions, assignment, statusLabels, paymentStatusLabels, summary, summaryCards, tabs } =
     propertyDetailContent
-  const resumeProperty = useResumeProperty()
+  const resumePropertyMutation = useResumeProperty()
+  const resumePlan = useResumeServicePlan()
+  const resumeProperty = property.primaryPlanId ? resumePlan : resumePropertyMutation
+  /** One plan of a multi-plan property being edited or paused from its card. */
+  const [editingPlan, setEditingPlan] = useState<PropertyServicePlan | null>(null)
+  const [pausingPlan, setPausingPlan] = useState<PropertyServicePlan | null>(null)
   const { canMutate } = useAppBootstrap()
   const { showToast } = useToast()
 
@@ -105,8 +113,26 @@ export function PropertyDetailScreen({
   async function handleResume() {
     if (!canMutate || resumeProperty.isPending) return
     try {
-      await resumeProperty.mutateAsync(property.id)
+      // The header acts on the primary plan — by id when known, so a multi-plan property
+      // resumes the plan the summary shows.
+      if (property.primaryPlanId) await resumePlan.mutateAsync(property.primaryPlanId)
+      else await resumePropertyMutation.mutateAsync(property.id)
       showToast('Service resumed')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not resume service')
+    }
+  }
+
+  async function handleResumePlan(plan: PropertyServicePlan) {
+    if (!canMutate || resumePlan.isPending) return
+    try {
+      await resumePlan.mutateAsync(plan.id)
+      showToast(
+        propertyDetailContent.servicePlan.planActions.resumed.replace(
+          '{service}',
+          plan.serviceName || propertyDetailContent.servicePlan.unnamedService,
+        ),
+      )
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not resume service')
     }
@@ -264,6 +290,16 @@ export function PropertyDetailScreen({
               property={property}
               isUnassigned={isUnassigned}
               onAssign={() => setAssignOpen(true)}
+              planActions={
+                canMutate
+                  ? {
+                      onEdit: setEditingPlan,
+                      onPause: setPausingPlan,
+                      onResume: (plan) => void handleResumePlan(plan),
+                      resumingId: resumePlan.isPending ? (resumePlan.variables ?? null) : null,
+                    }
+                  : undefined
+              }
             />
           ) : activeTab === 'visit-history' ? (
             <VisitHistoryTab property={property} visits={tabData?.visits} />
@@ -301,7 +337,25 @@ export function PropertyDetailScreen({
         customerId={customerId}
         onClose={() => setEditOpen(false)}
       />
-      <PauseServiceModal open={pauseOpen} property={property} onClose={() => setPauseOpen(false)} />
+      <PauseServiceModal
+        open={pauseOpen}
+        property={property}
+        planId={property.primaryPlanId}
+        onClose={() => setPauseOpen(false)}
+      />
+      <PauseServiceModal
+        open={pausingPlan != null}
+        property={property}
+        planId={pausingPlan?.id}
+        planName={pausingPlan?.serviceName}
+        onClose={() => setPausingPlan(null)}
+      />
+      <EditServicePlanModal
+        open={editingPlan != null}
+        plan={editingPlan}
+        customerName={property.customerName}
+        onClose={() => setEditingPlan(null)}
+      />
       <SendPropertyMessageModal open={messageOpen} property={property} onClose={() => setMessageOpen(false)} />
     </div>
   )
@@ -458,14 +512,24 @@ const planStatusClass: Record<PropertyPlanStatus, string> = {
   hold: 'bg-danger/10 text-danger',
 }
 
+interface PlanActions {
+  onEdit: (plan: PropertyServicePlan) => void
+  onPause: (plan: PropertyServicePlan) => void
+  onResume: (plan: PropertyServicePlan) => void
+  /** Plan id currently being resumed. */
+  resumingId: string | null
+}
+
 function ServicePlanTab({
   property,
   isUnassigned,
   onAssign,
+  planActions,
 }: {
   property: PropertyDetailRecord
   isUnassigned: boolean
   onAssign: () => void
+  planActions?: PlanActions
 }) {
   const { servicePlan, planStatusLabels, assignment } = propertyDetailContent
   const planStatus = property.planStatus ?? (isUnassigned ? 'pending' : 'active')
@@ -505,7 +569,117 @@ function ServicePlanTab({
           </dd>
         </div>
       </dl>
+
+      <ServicePlanList plans={property.servicePlans ?? []} actions={planActions} />
     </>
+  )
+}
+
+const servicePlanStatusClass: Record<PropertyServicePlan['status'], string> = {
+  active: 'bg-success/10 text-success',
+  paused: 'bg-muted/15 text-muted',
+  cancelled: 'bg-danger/10 text-danger',
+}
+
+/**
+ * Every service plan on the property (multi-plan) — each with its own service, price and
+ * cadence. With 2+ plans each card gets its own Edit / Pause / Resume (PATCH, POST
+ * /service-plans/:id…); a single plan is changed from the header actions.
+ */
+function ServicePlanList({
+  plans,
+  actions,
+}: {
+  plans: readonly PropertyServicePlan[]
+  actions?: PlanActions
+}) {
+  const { servicePlan } = propertyDetailContent
+  const showActions = Boolean(actions) && plans.length > 1
+
+  return (
+    <section className="mt-8 border-t border-border pt-6">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold text-foreground">{servicePlan.plansTitle}</h3>
+        {plans.length > 0 ? (
+          <span className="text-xs text-muted">
+            {servicePlan.plansCount.replace('{count}', String(plans.length))}
+          </span>
+        ) : null}
+      </div>
+
+      {plans.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">{servicePlan.noPlans}</p>
+      ) : (
+        <ul className="mt-3 grid gap-3 lg:grid-cols-2">
+          {plans.map((plan) => (
+            <li key={plan.id} className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {plan.serviceName || servicePlan.unnamedService}
+                  </p>
+                  {plan.isPrimary && plans.length > 1 ? (
+                    <span className="shrink-0 rounded-md bg-accent-surface px-1.5 py-0.5 text-[11px] font-semibold text-accent">
+                      {servicePlan.primaryBadge}
+                    </span>
+                  ) : null}
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold',
+                    servicePlanStatusClass[plan.status],
+                  )}
+                >
+                  {servicePlan.planStatusLabels[plan.status]}
+                </span>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <PlanFact label={servicePlan.plan.frequency} value={plan.frequency} />
+                <PlanFact label={servicePlan.plan.price} value={plan.price} />
+                <PlanFact label={servicePlan.plan.nextDue} value={plan.nextDue} />
+                <PlanFact label={servicePlan.plan.lastCompleted} value={plan.lastCompleted} />
+                <PlanFact label={servicePlan.plan.paymentMethod} value={plan.paymentMethod} />
+              </dl>
+              {plan.pauseWindow ? (
+                <p className="mt-3 text-xs text-muted">
+                  {servicePlan.pausedWindow.replace('{window}', plan.pauseWindow)}
+                </p>
+              ) : null}
+              {showActions && actions && plan.status !== 'cancelled' ? (
+                <div className="mt-3 flex gap-4 border-t border-border pt-3 text-xs font-semibold">
+                  <button type="button" onClick={() => actions.onEdit(plan)} className="text-primary hover:underline">
+                    {servicePlan.planActions.edit}
+                  </button>
+                  {plan.status === 'paused' ? (
+                    <button
+                      type="button"
+                      onClick={() => actions.onResume(plan)}
+                      disabled={actions.resumingId === plan.id}
+                      className="text-primary hover:underline disabled:opacity-60"
+                    >
+                      {actions.resumingId === plan.id ? servicePlan.planActions.resuming : servicePlan.planActions.resume}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => actions.onPause(plan)} className="text-warning hover:underline">
+                      {servicePlan.planActions.pause}
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function PlanFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-muted">{label}</dt>
+      <dd className="mt-0.5 font-medium text-foreground">{value}</dd>
+    </div>
   )
 }
 

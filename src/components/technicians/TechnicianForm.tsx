@@ -8,6 +8,7 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { useServiceAreas } from '@/features/settings/hooks/useSettings'
 import { settingsServiceAreasToRows } from '@/features/settings/lib/mappers'
 import { isValidEmail, isValidPhone } from '@/lib/contact'
+import { TECHNICIAN_ROLE_OPTIONS, toTechnicianRole } from '@/lib/technician-roles'
 
 export type TechnicianFormValues = {
   name: string
@@ -62,7 +63,8 @@ export function TechnicianForm({
   const [email, setEmail] = useState(
     technician?.email && technician.email !== '—' ? technician.email : '',
   )
-  const [role, setRole] = useState(technician?.role ?? '')
+  // The API only accepts TRAINEE / STANDARD / SENIOR / LEAD (older rows may hold free text).
+  const [role, setRole] = useState<string>(toTechnicianRole(technician?.role) ?? 'STANDARD')
   const [serviceAreaId, setServiceAreaId] = useState(technician?.serviceAreaId ?? '')
   const [notes, setNotes] = useState(technician?.notes ?? '')
   const [sendInvite, setSendInvite] = useState(!editing)
@@ -74,7 +76,7 @@ export function TechnicianForm({
     setName(technician.name)
     setPhone(technician.phone !== '—' ? technician.phone : '')
     setEmail(technician.email !== '—' ? technician.email : '')
-    setRole(technician.role)
+    setRole(toTechnicianRole(technician.role) ?? 'STANDARD')
     setServiceAreaId(technician.serviceAreaId ?? '')
     setNotes(technician.notes)
     setActive(technician.appActive)
@@ -108,7 +110,7 @@ export function TechnicianForm({
       name: name.trim(),
       phone: phone.trim(),
       email: email.trim(),
-      role: role.trim() || 'Technician',
+      role: role || 'STANDARD',
       serviceAreaId: serviceAreaId || null,
       notes: notes.trim(),
       sendInvite: !editing && sendInvite,
@@ -165,12 +167,7 @@ export function TechnicianForm({
                 inputSize="sm"
                 value={role}
                 onChange={(event) => setRole(event.target.value)}
-                options={[
-                  { value: '', label: 'Select role...' },
-                  { value: 'Lead Technician', label: 'Lead Technician' },
-                  { value: 'Technician', label: 'Technician' },
-                  { value: 'Trainee Technician', label: 'Trainee Technician' },
-                ]}
+                options={TECHNICIAN_ROLE_OPTIONS}
                 className="border-primary/20 bg-accent-surface"
                 disabled={!canMutate || pending}
               />

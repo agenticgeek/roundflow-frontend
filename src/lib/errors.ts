@@ -9,6 +9,8 @@ export class ApiError extends Error {
     message: string,
     public readonly code?: string,
     public readonly fields?: Record<string, string>,
+    /** The parsed error response, for endpoints that return structured detail (e.g. per-row errors). */
+    public readonly body?: unknown,
   ) {
     super(message)
     this.name = 'ApiError'

@@ -13,8 +13,11 @@
 import type { Session } from '@supabase/supabase-js'
 import type { Profile, SetupStatus } from '@/api/types'
 
-/** Flip to false (or comment the wiring blocks) to kill the backdoor. */
-export const DEV_AUTH_BYPASS_ENABLED = true
+/**
+ * Local dev server only — never in a production build. The backend always verifies the real
+ * Supabase JWT, so the fake session can't call the API; it only unlocks the UI locally.
+ */
+export const DEV_AUTH_BYPASS_ENABLED = import.meta.env.DEV
 
 export const DEV_AUTH_BYPASS_EMAIL = 'admin'
 export const DEV_AUTH_BYPASS_PASSWORD = 'admin'

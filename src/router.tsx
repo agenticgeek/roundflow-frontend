@@ -1,25 +1,48 @@
+/* eslint-disable react-refresh/only-export-components -- route module: lazy page
+   consts live beside the `router` export; this file isn't hot-reloaded as a component. */
+import { lazy, Suspense, type ReactNode } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
-import { GuestRoute, ProtectedRoute, SetupRoute, TechnicianAppRoute } from '@/providers/RouteGuards'
+import {
+  GuestRoute,
+  IntegrationsReturnRoute,
+  ProtectedRoute,
+  SetupRoute,
+  TechnicianAppRoute,
+} from '@/providers/RouteGuards'
+import { FullScreenLoader } from '@/components/FullScreenLoader'
+
+// Auth / entry pages stay eager — they're the first paint for a logged-out user,
+// and small, so a lazy chunk would only add a loading flash.
 import Login from '@/pages/Login'
 import Signup from '@/pages/Signup'
 import AuthCallback from '@/pages/AuthCallback'
 import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
 import AcceptInvite from '@/pages/AcceptInvite'
-import Dashboard from '@/pages/Dashboard'
-import Emergencies from '@/pages/Emergencies'
-import RoundPlanner from '@/pages/RoundPlanner'
-import PropertyDetail from '@/pages/PropertyDetail'
-import TodaysWork from '@/pages/TodaysWork'
-import Customers from '@/pages/Customers'
-import DebtPayment from '@/pages/DebtPayment'
-import Reports from '@/pages/Reports'
-import Complaints from '@/pages/Complaints'
-import Settings from '@/pages/Settings'
-import Technicians from '@/pages/Technicians'
-import SetupWizard from '@/pages/SetupWizard'
-import TechnicianApp from '@/pages/TechnicianApp'
+
+// Authenticated app pages are code-split — each becomes its own chunk, so the
+// initial load only pulls the page you land on instead of the whole app.
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const Emergencies = lazy(() => import('@/pages/Emergencies'))
+const RoundPlanner = lazy(() => import('@/pages/RoundPlanner'))
+const PropertyDetail = lazy(() => import('@/pages/PropertyDetail'))
+const TodaysWork = lazy(() => import('@/pages/TodaysWork'))
+const Customers = lazy(() => import('@/pages/Customers'))
+const DebtPayment = lazy(() => import('@/pages/DebtPayment'))
+const Reports = lazy(() => import('@/pages/Reports'))
+const Complaints = lazy(() => import('@/pages/Complaints'))
+const Settings = lazy(() => import('@/pages/Settings'))
+const Technicians = lazy(() => import('@/pages/Technicians'))
+const SetupWizard = lazy(() => import('@/pages/SetupWizard'))
+const SetupLive = lazy(() => import('@/pages/SetupLive'))
+const AssignTechnicians = lazy(() => import('@/pages/AssignTechnicians'))
+const TechnicianApp = lazy(() => import('@/pages/TechnicianApp'))
+
+/** Wrap a lazy page element in a Suspense boundary with the app's loader. */
+function page(node: ReactNode) {
+  return <Suspense fallback={<FullScreenLoader />}>{node}</Suspense>
+}
 
 const technicianRoutes = [
   ROUTES.technicianNew,
@@ -35,107 +58,70 @@ export const router = createBrowserRouter([
   { path: ROUTES.home, element: <Navigate to={ROUTES.dashboard} replace /> },
   {
     path: ROUTES.technicianApp,
-    element: (
-      <TechnicianAppRoute>
-        <TechnicianApp />
-      </TechnicianAppRoute>
-    ),
+    element: <TechnicianAppRoute>{page(<TechnicianApp />)}</TechnicianAppRoute>,
   },
   {
     path: ROUTES.setupWizard,
-    element: (
-      <SetupRoute>
-        <SetupWizard />
-      </SetupRoute>
-    ),
+    element: <SetupRoute>{page(<SetupWizard />)}</SetupRoute>,
+  },
+  {
+    // Outside SetupRoute: setup is complete by the time this opens.
+    path: ROUTES.setupLive,
+    element: <ProtectedRoute>{page(<SetupLive />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.dashboard,
-    element: (
-      <ProtectedRoute>
-        <Dashboard />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<Dashboard />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.emergencies,
-    element: (
-      <ProtectedRoute>
-        <Emergencies />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<Emergencies />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.roundPlanner,
-    element: (
-      <ProtectedRoute>
-        <RoundPlanner />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<RoundPlanner />)}</ProtectedRoute>,
+  },
+  {
+    path: ROUTES.roundPlannerAssign,
+    element: <ProtectedRoute>{page(<AssignTechnicians />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.propertyDetail,
-    element: (
-      <ProtectedRoute>
-        <PropertyDetail />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<PropertyDetail />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.todaysWork,
-    element: (
-      <ProtectedRoute>
-        <TodaysWork />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<TodaysWork />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.customers,
-    element: (
-      <ProtectedRoute>
-        <Customers />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<Customers />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.settings,
-    element: (
-      <ProtectedRoute>
-        <Settings />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<Settings />)}</ProtectedRoute>,
+  },
+  {
+    // Stripe's OAuth return lands here — Settings opens on the Payment section, or the setup
+    // wizard's Payments step when setup isn't finished yet.
+    path: ROUTES.settingsIntegrations,
+    element: <IntegrationsReturnRoute>{page(<Settings />)}</IntegrationsReturnRoute>,
   },
   {
     path: ROUTES.debtPayment,
-    element: (
-      <ProtectedRoute>
-        <DebtPayment />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<DebtPayment />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.reportsHistory,
-    element: (
-      <ProtectedRoute>
-        <Reports />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<Reports />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.complaints,
-    element: (
-      <ProtectedRoute>
-        <Complaints />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<Complaints />)}</ProtectedRoute>,
   },
   ...technicianRoutes.map((path) => ({
     path,
-    element: (
-      <ProtectedRoute>
-        <Technicians />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute>{page(<Technicians />)}</ProtectedRoute>,
   })),
   {
     path: ROUTES.login,

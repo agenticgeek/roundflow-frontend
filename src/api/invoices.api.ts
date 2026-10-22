@@ -1,4 +1,4 @@
-import { api } from '@/api/client'
+import { api, apiBlob } from '@/api/client'
 
 /** CONTRACT-DIFF: `/invoices` not in generated OpenAPI yet — live per INVOICING_HANDOFF. */
 
@@ -64,7 +64,23 @@ export type InvoiceRecord = {
   sentAt: string | null
   createdAt: string
   customerId: string
-  visitId: string
+  visitId: string | null
+  // Audit follow-up 2026-10-22: GET /invoices/:id now carries what the PDF shows.
+  visitDate?: string | null
+  technicianName?: string | null
+  roundName?: string | null
+  paymentMethod?: string | null
+  customer?: {
+    name: string
+    email: string | null
+    phone: string | null
+    addressLine: string | null
+    postcode: string | null
+  }
+  lineItems?: { description: string; technicianName: string | null; amount: number }[]
+  /** `amount` minus VAT (VAT is 0 when the business isn't VAT registered). */
+  subtotal?: number
+  vatAmount?: number
 }
 
 export type CustomerInvoiceListItem = {
@@ -109,4 +125,18 @@ export const invoicesApi = {
       `/customers/${encodeURIComponent(customerId)}/invoices`,
       { signal },
     ),
+
+  /** PDF bytes for a SAVED invoice. */
+  pdf: (id: string, signal?: AbortSignal) =>
+    apiBlob(`/invoices/${encodeURIComponent(id)}/pdf`, {
+      signal,
+      headers: { Accept: 'application/pdf' },
+    }),
+
+  /** PDF bytes for a PREVIEW/quote, before the invoice is created. */
+  previewPdf: (visitId: string, signal?: AbortSignal) =>
+    apiBlob(`/invoices/preview/pdf?visitId=${encodeURIComponent(visitId)}`, {
+      signal,
+      headers: { Accept: 'application/pdf' },
+    }),
 }

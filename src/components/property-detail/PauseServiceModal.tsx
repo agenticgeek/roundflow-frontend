@@ -11,6 +11,8 @@ import {
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { usePauseProperty } from '@/features/properties/hooks/useProperties'
+import { usePauseServicePlan } from '@/features/service-plans/hooks/useServicePlans'
+import { useSendMessage } from '@/features/messages/hooks/useMessages'
 import { addDays, todayIsoDate } from '@/features/rounds/lib/planner'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError } from '@/lib/errors'
@@ -22,6 +24,13 @@ const DEFAULT_PAUSE_DAYS = 28
 interface PauseServiceModalProps {
   open: boolean
   property: PropertyDetailRecord | null
+  /**
+   * The plan to pause (POST /service-plans/:id/pause). Without one, falls back to
+   * POST /properties/:id/pause, which pauses whichever plan the backend treats as primary.
+   */
+  planId?: string | null
+  /** Shown in the subtitle when pausing one plan of several. */
+  planName?: string
   onClose: () => void
 }
 
@@ -32,11 +41,14 @@ function applyMessageTemplate(template: string, property: PropertyDetailRecord) 
 }
 
 /** Pause an active service — opened from property detail header. */
-export function PauseServiceModal({ open, property, onClose }: PauseServiceModalProps) {
+export function PauseServiceModal({ open, property, planId, planName, onClose }: PauseServiceModalProps) {
   const { pauseServiceModal, pauseServiceToast } = propertyDetailContent
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
-  const pauseProperty = usePauseProperty()
+  const pausePropertyMutation = usePauseProperty()
+  const pausePlan = usePauseServicePlan()
+  const pauseProperty = planId ? pausePlan : pausePropertyMutation
+  const sendMessage = useSendMessage()
   const [reason, setReason] = useState<string>(pauseServiceModal.reasons[0]?.value ?? '')
   const [duration, setDuration] = useState<PauseDuration>('range')
   const [startDate, setStartDate] = useState<string>(() => todayIsoDate())
@@ -56,7 +68,10 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
 
   if (!property) return null
 
-  const subtitle = pauseServiceModal.subtitle.replace('{customer}', property.customerName)
+  const subtitle = pauseServiceModal.subtitle.replace(
+    '{customer}',
+    planName ? `${property.customerName} · ${planName}` : property.customerName,
+  )
   const smsMeta = pauseServiceModal.smsMeta.replace('{count}', String(smsMessage.length))
   const reasonLabel =
     pauseServiceModal.reasons.find((item) => item.value === reason)?.label ?? reason
@@ -69,22 +84,52 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
     }
 
     try {
-      await pauseProperty.mutateAsync({
-        id: property.id,
-        input: {
-          reason: reasonLabel,
-          pauseStartDate: startDate,
-          pauseEndDate: duration === 'indefinite' ? null : resumeDate,
-        },
-      })
-      onClose()
-      showToast(pauseServiceToast.title, { description: pauseServiceToast.description })
-      void notifySms
-      void smsMessage
+      if (planId) {
+        await pausePlan.mutateAsync({
+          id: planId,
+          input: {
+            reason: reasonLabel,
+            pauseStartDate: startDate,
+            ...(duration === 'indefinite' ? {} : { pauseEndDate: resumeDate }),
+          },
+        })
+      } else {
+        await pausePropertyMutation.mutateAsync({
+          id: property.id,
+          input: {
+            reason: reasonLabel,
+            pauseStartDate: startDate,
+            pauseEndDate: duration === 'indefinite' ? null : resumeDate,
+          },
+        })
+      }
     } catch (error) {
       if (error instanceof ApiError && error.status === 400) return
       showToast(error instanceof Error ? error.message : 'Could not pause service')
+      return
     }
+
+    // Service is paused. The SMS is best-effort — a send failure must not undo it.
+    if (notifySms && smsMessage.trim()) {
+      try {
+        await sendMessage.mutateAsync({
+          propertyId: property.id,
+          channel: 'sms',
+          body: smsMessage.trim(),
+        })
+      } catch (error) {
+        onClose()
+        showToast(
+          error instanceof ApiError && error.status === 409
+            ? 'Service paused, but the SMS wasn’t sent — messaging isn’t connected yet.'
+            : 'Service paused, but the SMS couldn’t be sent.',
+        )
+        return
+      }
+    }
+
+    onClose()
+    showToast(pauseServiceToast.title, { description: pauseServiceToast.description })
   }
 
   return (
@@ -108,11 +153,13 @@ export function PauseServiceModal({ open, property, onClose }: PauseServiceModal
             compact
             variant="primary"
             className="w-full gap-2"
-            disabled={!canMutate || pauseProperty.isPending}
+            disabled={!canMutate || pauseProperty.isPending || sendMessage.isPending}
             onClick={() => void handlePause()}
           >
             <DashboardIcon name="pause" className="h-4 w-4" />
-            {pauseServiceModal.actions.pause}
+            {pauseProperty.isPending || sendMessage.isPending
+              ? 'Pausing…'
+              : pauseServiceModal.actions.pause}
           </ModalButton>
         </div>
       }
