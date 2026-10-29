@@ -34,6 +34,8 @@ export interface TodaysWorkJob {
   id: string
   customer: string
   address: string
+  latitude?: number | null
+  longitude?: number | null
   status: TodaysWorkJobStatus
   paymentHold?: boolean
   issueNote?: string
@@ -140,6 +142,7 @@ export const todaysWorkContent = {
     },
     jobsTitle: 'Jobs',
     paymentHold: 'Payment Hold',
+    navigate: 'Navigate',
     actions: {
       reassignTechnician: 'Reassign Technician',
       pushMissedJobs: 'Push Missed Jobs',

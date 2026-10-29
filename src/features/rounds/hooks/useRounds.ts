@@ -268,6 +268,40 @@ export function useRoundsOccurrenceDay(
   }
 }
 
+/**
+ * Day stops for several dates at once — each `{ date, roundIds }` is fetched like
+ * `useRoundsOccurrenceDay` (shared cache keys). Results keyed `date → roundId`.
+ */
+export function useRoundsOccurrenceDays(
+  requests: readonly { date: string; roundIds: string[] }[],
+  enabled = true,
+): { byDate: Map<string, Map<string, PlannerDayResult>>; isLoading: boolean; isError: boolean } {
+  const queries = requests.flatMap(({ date, roundIds }) =>
+    chunk(roundIds, PLANNER_BATCH_MAX_ROUNDS).map((ids) => ({ date, ids })),
+  )
+  const results = useQueries({
+    queries: queries.map(({ date, ids }) => ({
+      queryKey: queryKeys.rounds.occurrenceDayBatch(ids, date),
+      queryFn: ({ signal }: { signal?: AbortSignal }) => fetchDayChunk(ids, date, signal),
+      enabled: enabled && ids.length > 0,
+      staleTime: FAN_OUT_STALE_TIME,
+    })),
+  })
+
+  const byDate = new Map<string, Map<string, PlannerDayResult>>()
+  results.forEach((result, index) => {
+    const date = queries[index]!.date
+    const day = byDate.get(date) ?? new Map<string, PlannerDayResult>()
+    result.data?.forEach((item) => day.set(item.roundId, item))
+    byDate.set(date, day)
+  })
+  return {
+    byDate,
+    isLoading: results.some((result) => result.isLoading),
+    isError: results.some((result) => result.isError),
+  }
+}
+
 /** Round detail per round — the occurrence summary carries no technician data (handoff §6.3). */
 export function useRoundDetails(roundIds: string[], enabled = true): FanOutResult<RoundDetail> {
   const results = useQueries({

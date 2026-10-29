@@ -1,7 +1,12 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { ROUTES } from '@/config/routes'
+import { useUnassignedRoundsAlert } from '@/features/rounds/hooks/useUnassignedRoundsAlert'
+import { UnassignedRoundsBanner } from '@/components/round-planner/UnassignedRoundsBanner'
+import { AssignRoundTechnicianModal, type QuickAssignTarget } from '@/components/round-planner/AssignRoundTechnicianModal'
 import type { RoundPlannerMetric } from '@/content/round-planner'
-import { roundPlannerContent } from '@/content/round-planner'
+import { quickAssignContent, roundPlannerContent } from '@/content/round-planner'
 import type { RoundPlannerInteractions } from '@/hooks/use-round-planner-interactions'
 import type { PlannerListStop, PlannerRoundCard } from '@/features/rounds/lib/planner'
 import {
@@ -58,9 +63,21 @@ export function RoundPlannerScreen({
   const content = roundPlannerContent
   const { canMutate } = useAppBootstrap()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const today = todayIsoDate()
+  const unassignedAlert = useUnassignedRoundsAlert()
+  const [quickAssign, setQuickAssign] = useState<QuickAssignTarget | null>(null)
 
   const roundsQuery = useRounds()
+
+  function openQuickAssign(card: PlannerRoundCard) {
+    const round = roundsQuery.data?.find((item) => item.id === card.roundId)
+    setQuickAssign({
+      round: round ?? { id: card.roundId, name: card.roundName, serviceAreaId: null, serviceAreaName: null },
+      date: card.date,
+      stopCount: card.stopCount,
+    })
+  }
   const settingsQuery = useRoundSettings()
   const techniciansQuery = useTechniciansList()
 
@@ -242,6 +259,18 @@ export function RoundPlannerScreen({
         onViewChange={interactions.setView}
       />
 
+      {unassignedAlert ? (
+        <UnassignedRoundsBanner
+          alert={unassignedAlert}
+          canMutate={canMutate}
+          onAssign={() => navigate(ROUTES.roundPlannerAssign)}
+          onShowRound={(id) => {
+            interactions.setRoundId(id)
+            interactions.setView('calendar')
+          }}
+        />
+      ) : null}
+
       <RoundPlannerToolbar
         searchLabel={content.filters.search.label}
         searchPlaceholder={content.filters.search.placeholder}
@@ -305,6 +334,8 @@ export function RoundPlannerScreen({
             currency={currency}
             loading={roundsQuery.isLoading || occurrences.isLoading}
             onSelectCard={(card) => interactions.openRoundDetail({ roundId: card.roundId, date: card.date })}
+            onAssignCard={canMutate ? openQuickAssign : undefined}
+            assignLabel={quickAssignContent.cardAction}
           />
         </div>
       ) : null}
@@ -354,6 +385,8 @@ export function RoundPlannerScreen({
         onOpenList={(card) => interactions.openDayIn('list', card)}
         onOpenMap={(card) => interactions.openDayIn('map', card)}
       />
+
+      <AssignRoundTechnicianModal target={quickAssign} onClose={() => setQuickAssign(null)} />
     </div>
   )
 }

@@ -10,6 +10,8 @@ export const ROUTES = {
   forgotPassword: '/forgot-password',
   resetPassword: '/reset-password',
   acceptInvite: '/accept-invite',
+  /** Where a technician's invite email lands: set name + password, then join the team. */
+  technicianSetup: '/app-invite',
   technicianApp: '/technician-app',
   setupWizard: '/setup',
   setupLive: '/setup/live',

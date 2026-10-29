@@ -127,6 +127,8 @@ export function roundTodayStopsToJobs(stops: RoundTodayStop[] | undefined): Toda
     id: stop.visitId,
     customer: stop.customerName,
     address: stop.addressLine,
+    latitude: stop.latitude,
+    longitude: stop.longitude,
     status: mapJobStatus(stop.status),
     paymentHold: stop.paymentHold || undefined,
     issueNote: stop.issueFlag ?? undefined,

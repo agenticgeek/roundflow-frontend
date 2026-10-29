@@ -102,10 +102,11 @@ export function useSaveGoCardlessWebhookSecret() {
   })
 }
 
-export function useServices() {
+export function useServices(enabled = true) {
   return useQuery({
     queryKey: queryKeys.settings.services,
     queryFn: ({ signal }) => settingsApi.getServices(signal),
+    enabled,
   })
 }
 

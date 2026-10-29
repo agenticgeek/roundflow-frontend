@@ -253,8 +253,9 @@ export const roundPlannerContent = {
     },
     loading: 'Locating stops…',
     error: 'Could not load Google Maps.',
-    unresolvedTitle: 'Could not locate',
-    unresolvedHint: 'Check the address and postcode for these stops.',
+    unresolvedTitle: 'No pin yet',
+    unresolvedHint: 'These stops have no coordinates yet. New properties and postcode changes can take up to 15 minutes to appear — refresh later, or check the postcode.',
+    navigate: 'Navigate'
   },
   listView: {
     actions: {
@@ -338,14 +339,86 @@ export const assignTechniciansContent = {
     reviewSplit: 'Review job split →',
   },
   empty: 'No rounds match these filters.',
+  steps: ['Choose technicians', 'Split jobs', 'Review'],
+  stepOf: 'Step {current} of {total}',
+  choose: {
+    noChanges: 'Pick a technician for at least one round to continue.',
+  },
+  splitStep: {
+    title: 'How should they share the work?',
+    subtitle: 'Only rounds with two or more technicians need a choice.',
+    nothing: 'Every round has one technician — nothing to split. Continue to review.',
+  },
+  review: {
+    title: 'Check and save',
+    subtitle: '{count} rounds will be updated.',
+    subtitleOne: '1 round will be updated.',
+    round: 'Round',
+    technicians: 'Technicians',
+    firstVisit: 'First visit',
+    howShared: 'Sharing',
+    oneDoesAll: 'One does all jobs',
+    split: 'Jobs split by street',
+    single: '—',
+    removed: 'No technician',
+    edit: 'Edit',
+  },
+  done: {
+    title: 'Technicians assigned',
+    body: '{rounds} rounds now have a technician, covering {visits} upcoming visits.',
+    bodyOne: '1 round now has a technician, covering {visits} upcoming visits.',
+    dashboard: 'Go to dashboard',
+    planner: 'Back to Round Planner',
+  },
   footer: {
     back: 'Back',
+    backToPlanner: 'Round Planner',
     progress: '{assigned} of {total} rounds assigned',
     skip: 'Skip — assign later',
+    continue: 'Continue',
     save: 'Save assignments',
     saving: 'Saving…',
   },
   toasts: { saved: 'Assignments saved', failed: 'Some assignments couldn’t be saved' },
   loadError: 'Could not load rounds.',
   retry: 'Retry',
+} as const
+
+/** Banner on the Round Planner when an active round with upcoming visits has no technician. */
+export const unassignedRoundsAlertContent = {
+  /** `{count}` visits — over the window below. */
+  titleOne: '1 upcoming visit has no technician',
+  titleMany: '{count} upcoming visits have no technician',
+  /** Shown instead when the soonest affected round is today or tomorrow. */
+  urgentTitle: '{round} is {when} and has no technician',
+  urgentDetail: 'Its {count} visits won’t appear in anyone’s app until someone is assigned.',
+  roundLine: '{round} · {date}',
+  moreRounds: ' — and {count} more round',
+  moreRoundsPlural: ' — and {count} more rounds',
+  today: 'today',
+  tomorrow: 'tomorrow',
+  windowHint: 'Next 2 weeks',
+  assign: 'Assign technicians',
+  showRound: 'Show on planner',
+} as const
+
+/** Calendar card → assign a technician to an unassigned round without leaving the planner. */
+export const quickAssignContent = {
+  cardAction: 'Assign technician',
+  title: 'Assign technician',
+  subtitle: '{round} · {date} · {stops} stops',
+  pick: 'Who’s doing this round?',
+  hint: 'Pick more than one to share it. You can change this any time.',
+  covers: 'Covers {area}',
+  rounds: '{count} rounds',
+  roundsOne: '1 round',
+  noTechnicians: 'No technicians yet — add them on the Technicians page.',
+  addTechnicians: 'Go to Technicians',
+  loadError: 'Could not load technicians.',
+  cancel: 'Cancel',
+  save: 'Assign',
+  saveMany: 'Assign {count}',
+  toast: '{name} assigned to {round}',
+  toastMany: '{count} technicians assigned to {round}',
+  failed: 'Couldn’t assign technicians. Try again.',
 } as const

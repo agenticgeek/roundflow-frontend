@@ -78,6 +78,9 @@ export type PlannerStop = {
   technicianName?: string | null
   issues: { id: string; type: string; note?: string | null }[]
   completedAt?: string | null
+  /** Geocoded backend-side from the postcode; `null` until the backfill job resolves it (~15 min). */
+  latitude?: number | null
+  longitude?: number | null
 }
 
 export type PlannerDayResult = {
@@ -107,6 +110,9 @@ export type RoundTodayStop = {
   paymentHold: boolean
   hasIssue: boolean
   issueFlag: string | null
+  /** `null` = no pin yet (not yet geocoded, or an unresolvable postcode). */
+  latitude?: number | null
+  longitude?: number | null
 }
 
 export type RoundTodayResult = {
