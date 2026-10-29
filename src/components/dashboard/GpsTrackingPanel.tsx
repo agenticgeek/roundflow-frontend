@@ -6,6 +6,7 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { ComingSoonOverlay } from '@/components/ui/coming-soon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { mapsDirectionsUrl } from '@/lib/navigation'
 import { cn, formatCurrency } from '@/lib/utils'
 
 interface GpsTrackingPanelProps {
@@ -72,9 +73,9 @@ function summarizeByTechnician(stops: readonly PlannerListStop[]): TechnicianSum
 }
 
 /**
- * Today's scheduled stops plotted on a live Google Map, geocoded client-side
- * (same infra as Round Planner's Map view — no lat/lng or vehicle-tracking
- * data exists in the schema, so this shows planned stops, not live positions).
+ * Today's scheduled stops plotted on a live Google Map from the backend's
+ * `latitude`/`longitude` (same data as Round Planner's Map view). There is no
+ * vehicle-tracking data, so this shows planned stops, not live positions.
  */
 export function GpsTrackingPanel({ stops, loading, selectedTechnician, onSelectTechnician }: GpsTrackingPanelProps) {
   const { gps } = dashboardContent
@@ -287,11 +288,13 @@ function GoogleMapCanvas({
     const marker = markersRef.current.get(selectedVisitId)
     if (!entry || !marker) return
 
+    const navigateLabel = dashboardContent.gps.navigate
     infoWindow.setContent(
       `<div style="font:13px system-ui;min-width:160px">
         <strong>${escapeHtml(entry.stop.addressLine)}</strong><br/>
         <span style="color:#666">${escapeHtml(entry.stop.customerName)}</span><br/>
-        <span>${escapeHtml(formatCurrency(entry.stop.price, 'GBP'))}</span>
+        <span>${escapeHtml(formatCurrency(entry.stop.price, 'GBP'))}</span><br/>
+        <a href="${escapeHtml(mapsDirectionsUrl({ ...entry.stop, address: `${entry.stop.addressLine}, ${entry.stop.postcode}` }))}" target="_blank" rel="noopener noreferrer" style="color:#029bb6;font-weight:600">${escapeHtml(navigateLabel)}</a>
       </div>`,
     )
     infoWindow.open({ map, anchor: marker })

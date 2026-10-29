@@ -48,6 +48,17 @@ export default function AcceptInvite() {
   const invite = previewQuery.data
   const content = authContent.acceptInvite
 
+  // Technician invites have their own setup flow (name + password + app hand-off). Forward
+  // them there, keeping the email link's session in the URL fragment, until the backend
+  // links technician invites to /app-invite directly.
+  useEffect(() => {
+    if (invite?.role !== 'TECHNICIAN') return
+    navigate(
+      `${ROUTES.technicianSetup}?token=${encodeURIComponent(token)}${window.location.hash}`,
+      { replace: true },
+    )
+  }, [invite?.role, navigate, token])
+
   useEffect(() => {
     if (!invite?.email || fullName) return
     const local = invite.email.split('@')[0] ?? ''

@@ -16,6 +16,9 @@ interface RoundPlannerCalendarProps {
   currency: string
   loading: boolean
   onSelectCard: (card: PlannerRoundCard) => void
+  /** Shown on cards with no technician; omit to hide the action (e.g. read-only users). */
+  onAssignCard?: (card: PlannerRoundCard) => void
+  assignLabel: string
 }
 
 /** Mon–Sun grid — one row per week in the window, cells looked up by date. */
@@ -30,6 +33,8 @@ export function RoundPlannerCalendar({
   currency,
   loading,
   onSelectCard,
+  onAssignCard,
+  assignLabel,
 }: RoundPlannerCalendarProps) {
   return (
     <PanelCard interactive={false} className="overflow-hidden p-0">
@@ -60,6 +65,8 @@ export function RoundPlannerCalendar({
                   currency={currency}
                   loading={loading}
                   onSelectCard={onSelectCard}
+                  onAssignCard={onAssignCard}
+                  assignLabel={assignLabel}
                 />
               ))}
             </div>
@@ -80,6 +87,8 @@ function CalendarCell({
   currency,
   loading,
   onSelectCard,
+  onAssignCard,
+  assignLabel,
 }: {
   date: string
   cards: PlannerRoundCard[]
@@ -90,6 +99,8 @@ function CalendarCell({
   currency: string
   loading: boolean
   onSelectCard: (card: PlannerRoundCard) => void
+  onAssignCard?: (card: PlannerRoundCard) => void
+  assignLabel: string
 }) {
   return (
     <div
@@ -124,6 +135,8 @@ function CalendarCell({
               unassignedLabel={unassignedLabel}
               currency={currency}
               onSelect={() => onSelectCard(card)}
+              onAssign={onAssignCard ? () => onAssignCard(card) : undefined}
+              assignLabel={assignLabel}
             />
           ))}
         </ul>
@@ -144,21 +157,36 @@ function RoundCard({
   unassignedLabel,
   currency,
   onSelect,
+  onAssign,
+  assignLabel,
 }: {
   card: PlannerRoundCard
   stopsLabel: string
   unassignedLabel: string
   currency: string
   onSelect: () => void
+  onAssign?: () => void
+  assignLabel: string
 }) {
+  const unassigned = !card.technicianName
+  // Finished days don't need anyone any more.
+  const canAssign = unassigned && card.status !== 'completed' && Boolean(onAssign)
+
   return (
-    <li>
+    <li
+      className={cn(
+        'overflow-hidden rounded-lg border transition-colors duration-150',
+        canAssign
+          ? 'border-warning/50 bg-warning-surface hover:border-warning'
+          : 'border-accent/20 bg-accent-surface hover:border-accent/40',
+      )}
+    >
       <button
         type="button"
         onClick={onSelect}
         className={cn(
-          'w-full rounded-lg border border-accent/20 bg-accent-surface px-2.5 py-2 text-left',
-          'transition-colors duration-150 hover:border-accent/40 hover:bg-accent-surface/80',
+          'w-full px-2.5 py-2 text-left transition-colors duration-150',
+          canAssign ? 'hover:bg-warning-surface/70' : 'hover:bg-accent-surface/80',
         )}
       >
         <div className="flex items-start justify-between gap-2">
@@ -168,7 +196,7 @@ function RoundCard({
         <p className="mt-1 text-[11px] text-muted">
           {card.stopCount} {stopsLabel} · {formatCurrency(card.totalValue, currency)}
         </p>
-        <p className="mt-1 text-[11px] font-medium text-accent">
+        <p className={cn('mt-1 text-[11px] font-medium', canAssign ? 'text-warning-foreground' : 'text-accent')}>
           {card.technicianName ?? unassignedLabel} · {plannerDayStatusLabels[card.status]}
         </p>
         {card.holdCount > 0 || card.issueCount > 0 ? (
@@ -182,6 +210,19 @@ function RoundCard({
           </p>
         ) : null}
       </button>
+
+      {canAssign ? (
+        <button
+          type="button"
+          onClick={onAssign}
+          className="flex w-full items-center justify-center gap-1 border-t border-warning/30 bg-card/70 px-2.5 py-1.5 text-[11px] font-semibold text-warning-foreground transition-colors duration-150 hover:bg-card"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3" aria-hidden="true">
+            <path d="M8 3.5v9M3.5 8h9" strokeLinecap="round" />
+          </svg>
+          {assignLabel}
+        </button>
+      ) : null}
     </li>
   )
 }

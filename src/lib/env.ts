@@ -37,6 +37,23 @@ export function isSetupGateBypassed(): boolean {
   return IS_DEV || import.meta.env.VITE_BYPASS_SETUP_GATE === 'true'
 }
 
+/**
+ * `/app-invite?token=preview` shows the technician setup screens with sample data and no API
+ * calls. Always on in development; on in deployed builds too until the invite backend is
+ * ready — set `VITE_ENABLE_INVITE_PREVIEW=false` to turn it off there.
+ */
+export function isInvitePreviewEnabled(): boolean {
+  return IS_DEV || import.meta.env.VITE_ENABLE_INVITE_PREVIEW !== 'false'
+}
+
+/** Store pages for the technician mobile app — each undefined until the listing is live. */
+export function technicianAppStoreLinks(): { ios?: string; android?: string } {
+  return {
+    ios: import.meta.env.VITE_TECHNICIAN_APP_IOS_URL || undefined,
+    android: import.meta.env.VITE_TECHNICIAN_APP_ANDROID_URL || undefined,
+  }
+}
+
 /** Google Cloud API key for Round Planner's Map view, or undefined until configured. */
 export function googleMapsApiKey(): string | undefined {
   return import.meta.env.VITE_GOOGLE_MAPS_API_KEY || undefined

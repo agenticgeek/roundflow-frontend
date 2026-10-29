@@ -38,6 +38,7 @@ const SetupWizard = lazy(() => import('@/pages/SetupWizard'))
 const SetupLive = lazy(() => import('@/pages/SetupLive'))
 const AssignTechnicians = lazy(() => import('@/pages/AssignTechnicians'))
 const TechnicianApp = lazy(() => import('@/pages/TechnicianApp'))
+const TechnicianSetup = lazy(() => import('@/pages/TechnicianSetup'))
 
 /** Wrap a lazy page element in a Suspense boundary with the app's loader. */
 function page(node: ReactNode) {
@@ -143,6 +144,11 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.acceptInvite,
     element: <AcceptInvite />,
+  },
+  {
+    // Public: reached from a technician's invite email, signed in or not.
+    path: ROUTES.technicianSetup,
+    element: page(<TechnicianSetup />),
   },
   {
     path: ROUTES.forgotPassword,

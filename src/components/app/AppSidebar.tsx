@@ -12,6 +12,7 @@ import {
   dashboardQuickActionClass,
 } from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
+import { useRoutePrefetch } from '@/hooks/use-route-prefetch'
 
 interface AppSidebarNavProps {
   navItems: readonly AppNavItem[]
@@ -40,6 +41,7 @@ export function AppSidebarNav({
   onToggleCollapse,
 }: AppSidebarNavProps) {
   const { signOut, signingOut: signingOutLabel, collapse, expand } = appShellContent.sidebar
+  const prefetchRoute = useRoutePrefetch()
 
   return (
     <>
@@ -80,6 +82,9 @@ export function AppSidebarNav({
             to={item.route}
             title={collapsed ? item.label : undefined}
             onClick={onNavigate}
+            onMouseEnter={() => prefetchRoute(item.route)}
+            onFocus={() => prefetchRoute(item.route)}
+            onTouchStart={() => prefetchRoute(item.route)}
             className={({ isActive }) => dashboardNavItemClass(isActive, collapsed)}
           >
             <DashboardIcon name={item.icon} className="h-4 w-4 shrink-0" />

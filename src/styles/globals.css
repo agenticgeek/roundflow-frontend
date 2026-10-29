@@ -61,6 +61,17 @@
   --animate-toast-out: toast-out 0.18s ease-in both;
   --animate-wizard-step: wizard-step 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-reveal-item: reveal-item 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-drift: drift 16s ease-in-out infinite alternate;
+  --animate-route-march: route-march 1.4s linear infinite;
+  --animate-draw: draw 0.6s cubic-bezier(0.65, 0, 0.35, 1) both;
+  --animate-ring-out: ring-out 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  --animate-pop-in: pop-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-burst: burst 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-shimmer: shimmer 3.2s ease-in-out infinite;
+  --animate-orbit: orbit 9s linear infinite;
+  --animate-card-in: card-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-float: float 4s ease-in-out infinite;
+  --animate-twinkle: twinkle 2.4s ease-in-out infinite both;
 
   @keyframes fade-in-up {
     from {
@@ -134,6 +145,115 @@
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+
+  @keyframes drift {
+    from {
+      transform: translate(0, 0) scale(1);
+    }
+    to {
+      transform: translate(var(--drift-x, 48px), var(--drift-y, -32px)) scale(1.12);
+    }
+  }
+
+  @keyframes route-march {
+    to {
+      stroke-dashoffset: -32;
+    }
+  }
+
+  /* Pair with pathLength="1" and stroke-dasharray="1". */
+  @keyframes draw {
+    from {
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes ring-out {
+    from {
+      opacity: 0.55;
+      transform: scale(0.7);
+    }
+    to {
+      opacity: 0;
+      transform: scale(2);
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes burst {
+    from {
+      opacity: 1;
+      transform: translate(0, 0) scale(0.4);
+    }
+    to {
+      opacity: 0;
+      transform: translate(var(--burst-x), var(--burst-y)) scale(1);
+    }
+  }
+
+  @keyframes shimmer {
+    from {
+      transform: translateX(-120%) skewX(-20deg);
+    }
+    55%,
+    to {
+      transform: translateX(320%) skewX(-20deg);
+    }
+  }
+
+  @keyframes orbit {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
+  }
+
+  @keyframes twinkle {
+    0%,
+    100% {
+      opacity: 0;
+      transform: scale(0.4) rotate(0deg);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1) rotate(45deg);
+    }
+  }
+
+  @keyframes card-in {
+    from {
+      opacity: 0;
+      transform: translateY(24px) scale(0.97);
+      filter: blur(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
     }
   }
 }

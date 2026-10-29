@@ -5,6 +5,7 @@ import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { SidePanel } from '@/components/ui/side-panel'
 import { dashboardCtaClass, toneBorderClass } from '@/components/dashboard/dashboard-styles'
 import { TodaysWorkStopsSkeleton } from '@/components/todays-work/TodaysWorkSkeletons'
+import { mapsDirectionsUrl } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 
 interface TodaysWorkRoundDetailPanelProps {
@@ -162,6 +163,15 @@ function JobCard({ job }: { job: TodaysWorkJob }) {
         <div className="min-w-0">
           <p className="font-semibold text-foreground">{job.customer}</p>
           <p className="mt-0.5 text-sm text-muted">{job.address}</p>
+          <a
+            href={mapsDirectionsUrl(job)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+          >
+            <DashboardIcon name="map-pin" className="h-3.5 w-3.5" />
+            {detailPanel.navigate}
+          </a>
         </div>
         <span
           className={cn(

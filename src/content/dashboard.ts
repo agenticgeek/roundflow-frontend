@@ -120,8 +120,9 @@ export const dashboardContent = {
     },
     loading: 'Locating stops…',
     error: 'Could not load Google Maps.',
-    unresolvedTitle: 'Could not locate',
-    unresolvedHint: 'Check the address and postcode for these stops.',
+    unresolvedTitle: 'No pin yet',
+    unresolvedHint: 'These stops have no coordinates yet. New properties and postcode changes can take up to 15 minutes to appear — refresh later, or check the postcode.',
+    navigate: 'Navigate'
   },
   kpis: {
     title: 'Technician KPIs',

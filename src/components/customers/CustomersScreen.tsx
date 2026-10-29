@@ -12,8 +12,11 @@ import { CustomersScreenSkeleton } from '@/components/customers/CustomersSkeleto
 import { ImportPropertiesPanel } from '@/components/setup-wizard/ImportPropertiesPanel'
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { PropertyDraft } from '@/types/setup-wizard'
-import type { PropertyCreateInput } from '@/api/types'
-import { useCustomers } from '@/features/customers/hooks/useCustomers'
+import type { CustomerListParams, PropertyCreateInput } from '@/api/types'
+import { LoadingOverlay } from '@/components/ui/loading-overlay'
+import { Pager } from '@/components/ui/pager'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { CUSTOMERS_PAGE_SIZE, useCustomers } from '@/features/customers/hooks/useCustomers'
 import { customerListRowToRecord, formatMoney } from '@/features/customers/lib/mappers'
 import { useCreateProperty } from '@/features/properties/hooks/useProperties'
 import { useRounds } from '@/features/rounds/hooks/useRounds'
@@ -42,6 +45,22 @@ const metricClass: Record<(typeof customersContent.metrics)[number]['tone'], str
 }
 
 const defaultStatusFilters = customersContent.filters.status.options.map((option) => option.value)
+
+/** Status filters the API can apply itself (GET /customers?status=). */
+const SERVER_STATUS: Partial<Record<string, CustomerListParams['status']>> = {
+  active: 'ACTIVE',
+  hold: 'HOLD',
+  cancelled: 'CANCELLED',
+}
+
+/**
+ * The single status to send to the server, when exactly one server-supported status is
+ * picked. Anything else (several statuses, "Payment Overdue") is filtered on the page.
+ */
+function serverStatusFor(selectedStatuses: string[]): CustomerListParams['status'] {
+  if (selectedStatuses.length !== 1) return undefined
+  return SERVER_STATUS[selectedStatuses[0]!]
+}
 
 function matchesStatusFilter(record: CustomerPropertyRecord, selectedStatuses: string[]) {
   if (selectedStatuses.length === 0 || selectedStatuses.length === defaultStatusFilters.length) {
@@ -77,16 +96,29 @@ export function CustomersScreen() {
   const createProperty = useCreateProperty()
   const roundsQuery = useRounds('ACTIVE')
   const serviceAreasQuery = useServiceAreas(showImport)
-  const servicesQuery = useServices()
-  const listParams = useMemo(
+  // Only the Import panel needs services — don't load them alongside the list.
+  const servicesQuery = useServices(showImport)
+  const debouncedSearch = useDebouncedValue(search.trim(), 300)
+  const serverStatus = serverStatusFor(statusIds)
+  const apiRoundId = roundId !== 'all' && roundId !== 'not-assigned' ? roundId : undefined
+
+  // Paging restarts at 1 whenever the search or a filter changes.
+  const filterKey = `${debouncedSearch}|${roundId}|${statusIds.join(',')}`
+  const [pageState, setPageState] = useState({ key: filterKey, page: 1 })
+  const page = pageState.key === filterKey ? pageState.page : 1
+
+  const listParams = useMemo<CustomerListParams>(
     () => ({
-      search: search.trim() || undefined,
-      roundId: roundId !== 'all' && roundId !== 'not-assigned' ? roundId : undefined,
-      pageSize: 100,
+      search: debouncedSearch || undefined,
+      roundId: apiRoundId,
+      status: serverStatus,
+      page,
+      pageSize: CUSTOMERS_PAGE_SIZE,
     }),
-    [roundId, search],
+    [apiRoundId, debouncedSearch, page, serverStatus],
   )
   const customersQuery = useCustomers(listParams)
+  const pagination = customersQuery.data?.pagination
 
   const records = useMemo(
     () => (customersQuery.data?.customers ?? []).map(customerListRowToRecord),
@@ -220,7 +252,9 @@ export function CustomersScreen() {
           <p className="mt-1 text-sm text-muted">
             {customersQuery.isError
               ? 'Could not load customers.'
-              : `Showing ${filteredRecords.length} customer${filteredRecords.length === 1 ? '' : 's'}`}
+              : pagination
+                ? `${pagination.total} customer${pagination.total === 1 ? '' : 's'}`
+                : `Showing ${filteredRecords.length} customer${filteredRecords.length === 1 ? '' : 's'}`}
           </p>
         </div>
         {canMutate && !showImport ? (
@@ -304,37 +338,53 @@ export function CustomersScreen() {
         </div>
       </div>
 
-      <section className="space-y-3">
-        {customersQuery.isError ? (
-          <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
-            <p>Could not load customers.</p>
-            <button
-              type="button"
-              className={cn(dashboardCtaClass, 'mt-3')}
-              onClick={() => void customersQuery.refetch()}
-            >
-              Retry
-            </button>
-          </PanelCard>
-        ) : filteredRecords.length === 0 ? (
-          <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
-            {customersContent.emptyLabel}
-          </PanelCard>
-        ) : (
-          filteredRecords.map((record) => (
-            <CustomerRecordCard
-              key={record.id}
-              record={record}
-              onOpen={() =>
-                navigate(propertyDetailPath(record.propertyId), {
-                  state: { from: 'customers', customerId: record.id },
-                })
-              }
-              onAssign={() => setAssignRecordId(record.id)}
+      {/* First load shows the skeleton; paging and filtering keep the old page faded under a loader. */}
+      <LoadingOverlay
+        loading={customersQuery.isFetching && !customersQuery.isPending}
+        label="Loading customers…"
+      >
+        <section className="space-y-3">
+          {customersQuery.isError ? (
+            <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
+              <p>Could not load customers.</p>
+              <button
+                type="button"
+                className={cn(dashboardCtaClass, 'mt-3')}
+                onClick={() => void customersQuery.refetch()}
+              >
+                Retry
+              </button>
+            </PanelCard>
+          ) : filteredRecords.length === 0 ? (
+            <PanelCard interactive={false} className="py-10 text-center text-sm text-muted">
+              {customersContent.emptyLabel}
+            </PanelCard>
+          ) : (
+            filteredRecords.map((record) => (
+              <CustomerRecordCard
+                key={record.id}
+                record={record}
+                onOpen={() =>
+                  navigate(propertyDetailPath(record.propertyId), {
+                    state: { from: 'customers', customerId: record.id },
+                  })
+                }
+                onAssign={() => setAssignRecordId(record.id)}
+              />
+            ))
+          )}
+          {!customersQuery.isError && pagination && pagination.totalPages > 1 ? (
+            <Pager
+              pagination={pagination}
+              loading={customersQuery.isFetching}
+              onPage={(next) => {
+                setPageState({ key: filterKey, page: next })
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
             />
-          ))
-        )}
-      </section>
+          ) : null}
+        </section>
+      </LoadingOverlay>
 
       <AssignToRoundModal
         open={assignRecord !== null}

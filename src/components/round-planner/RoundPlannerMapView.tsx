@@ -6,6 +6,7 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { ComingSoonOverlay } from '@/components/ui/coming-soon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { mapsDirectionsUrl } from '@/lib/navigation'
 import { cn, formatCurrency } from '@/lib/utils'
 
 interface RoundPlannerMapViewProps {
@@ -48,8 +49,8 @@ function markerIcon(color: string): google.maps.Symbol {
 }
 
 /**
- * Live Google Map for the day's stops — geocoded client-side (Round Planner
- * handoff §8: no lat/lng in the schema). Falls back to a setup notice when
+ * Live Google Map for the day's stops, pinned from the backend's
+ * `latitude`/`longitude` (stops without coordinates yet are skipped). Falls back to a setup notice when
  * `VITE_GOOGLE_MAPS_API_KEY` isn't configured.
  */
 export function RoundPlannerMapView({ stops, currency }: RoundPlannerMapViewProps) {
@@ -227,11 +228,13 @@ function GoogleMapCanvas({
     const marker = markersRef.current.get(selectedVisitId)
     if (!entry || !marker) return
 
+    const navigateLabel = roundPlannerContent.mapView.navigate
     infoWindow.setContent(
       `<div style="font:13px system-ui;min-width:160px">
         <strong>${escapeHtml(entry.stop.addressLine)}</strong><br/>
         <span style="color:#666">${escapeHtml(entry.stop.customerName)}</span><br/>
-        <span>${escapeHtml(formatCurrency(entry.stop.price, currency))}</span>
+        <span>${escapeHtml(formatCurrency(entry.stop.price, currency))}</span><br/>
+        <a href="${escapeHtml(mapsDirectionsUrl({ ...entry.stop, address: `${entry.stop.addressLine}, ${entry.stop.postcode}` }))}" target="_blank" rel="noopener noreferrer" style="color:#029bb6;font-weight:600">${escapeHtml(navigateLabel)}</a>
       </div>`,
     )
     infoWindow.open({ map, anchor: marker })

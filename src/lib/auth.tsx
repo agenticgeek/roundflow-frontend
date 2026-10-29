@@ -14,6 +14,7 @@ import {
 // === DEV AUTH BACKDOOR END ===
 import {
   clearPendingInvite,
+  isInviteSetupPath,
   readPendingInvite,
   resolvePendingInviteToken,
 } from '@/lib/pending-invite'
@@ -78,6 +79,10 @@ async function ensureProfile(session: Session): Promise<{ created: boolean }> {
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error
   }
+
+  // The invite pages accept the invite explicitly after the person sets their name and
+  // password — never provision here, or an invited technician would get a business of their own.
+  if (isInviteSetupPath()) return { created: false }
 
   const inviteToken = resolvePendingInviteToken(session.user.user_metadata ?? {})
   if (inviteToken) {

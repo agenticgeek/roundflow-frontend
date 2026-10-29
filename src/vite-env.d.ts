@@ -10,6 +10,12 @@ interface ImportMetaEnv {
   readonly VITE_BYPASS_SETUP_GATE?: string
   /** Google Cloud API key with Maps JavaScript API + Geocoding API enabled. Round Planner's Map view. */
   readonly VITE_GOOGLE_MAPS_API_KEY?: string
+  /** "false" turns off the `/app-invite?token=preview` sample screens in a deployed build. */
+  readonly VITE_ENABLE_INVITE_PREVIEW?: string
+  /** App Store page for the RoundFlow technician app. Shown after a technician sets up their login. */
+  readonly VITE_TECHNICIAN_APP_IOS_URL?: string
+  /** Google Play page for the RoundFlow technician app. */
+  readonly VITE_TECHNICIAN_APP_ANDROID_URL?: string
 }
 
 interface ImportMeta {
