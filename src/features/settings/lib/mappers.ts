@@ -1,15 +1,21 @@
 import type { BusinessSettings, Service, ServiceArea, Technician } from '@/api/types'
-import type { PaymentSettingsPatch, RoundSettingsPatch } from '@/api/settings.api'
-import { daysToCycleLength, cycleLengthToDays } from '@/lib/cycle-length'
+import type { BusinessProfilePatch, PaymentSettingsPatch, RoundSettingsPatch } from '@/api/settings.api'
 import { bankDetailsFromForm, bankDetailsToForm } from '@/lib/bank-details'
 import { deriveTechnicianAppStatus } from '@/api/types'
 import type { components } from '@/api/types.gen'
 import type {
   BankDetailsForm,
   CatalogueService,
-  RecurringCycle,
+  NoDirectDebitAction,
+  RoundSettingsData,
 } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
+import { roundSettingsFromForm, roundSettingsToForm } from '@/features/setup/lib/mappers'
+import {
+  noDirectDebitFromForm,
+  noDirectDebitToForm,
+  type PaymentTiming,
+} from '@/features/settings/lib/business-rules'
 
 type DayOfWeek = components['schemas']['DayOfWeek']
 
@@ -27,17 +33,19 @@ const DAY_API_TO_UI: Record<string, string> = Object.fromEntries(
   Object.entries(DAY_UI_TO_API).map(([ui, api]) => [api, ui]),
 )
 
-const PAYMENT_RULE_UI_TO_API: Record<string, PaymentSettingsPatch['paymentRule']> = {
+const PAYMENT_RULE_UI_TO_API: Record<string, PaymentTiming> = {
   'collect-after-visit': 'COLLECT_AFTER_VISIT',
   'collect-before-visit': 'COLLECT_BEFORE_VISIT',
-  // CONTRACT-DIFF: UI "Monthly Invoice" maps to COLLECT_ON_DATE until labels align.
   'monthly-invoice': 'COLLECT_ON_DATE',
+  // GAP-008: "once a day for all completed visits".
+  'daily-batch': 'COLLECT_DAILY_BATCH',
 }
 
-const PAYMENT_RULE_API_TO_UI: Record<string, string> = {
+const PAYMENT_RULE_API_TO_UI: Record<PaymentTiming, string> = {
   COLLECT_AFTER_VISIT: 'collect-after-visit',
   COLLECT_BEFORE_VISIT: 'collect-before-visit',
   COLLECT_ON_DATE: 'monthly-invoice',
+  COLLECT_DAILY_BATCH: 'daily-batch',
 }
 
 const CATEGORY_UI_TO_API: Record<string, components['schemas']['ServiceCategory']> = {
@@ -56,8 +64,14 @@ export type SettingsBusinessForm = {
   businessPhone: string
   businessEmail: string
   companyNumber: string
+  addressLine1: string
+  addressLine2: string
+  town: string
+  postcode: string
   vatNumber: string
   vatRegistered: boolean | null
+  /** Select value, e.g. "20" — sent as a number. */
+  vatRate: string
   timezone: string
   currency: string
   bankDetails: BankDetailsForm
@@ -69,12 +83,16 @@ export type SettingsPaymentForm = {
   debtHoldEnabled: boolean
   goCardlessConnected: boolean
   stripeConnected: boolean
+  /** GAP-008 payment defaults. PaymentMethod enum value. */
+  defaultPaymentMethod: string
+  /** Text input — a whole number 0–90. */
+  invoiceDueDays: string
+  noDirectDebitAction: NoDirectDebitAction
 }
 
-export type SettingsRoundForm = {
-  recurringCycle: RecurringCycle
+/** GAP-003: the same round rules as the wizard's step 4, plus working days. */
+export type SettingsRoundForm = RoundSettingsData & {
   workingDays: string[]
-  reminderTiming: string[]
 }
 
 export function settingsBusinessToForm(
@@ -86,8 +104,13 @@ export function settingsBusinessToForm(
     businessPhone: data?.phone ?? defaults.businessPhone,
     businessEmail: data?.email ?? defaults.businessEmail,
     companyNumber: data?.companyNumber ?? defaults.companyNumber,
+    addressLine1: data?.addressLine1 ?? defaults.businessAddress,
+    addressLine2: data?.addressLine2 ?? defaults.addressLine2,
+    town: data?.town ?? defaults.town,
+    postcode: data?.postcode ?? defaults.postcode,
     vatNumber: data?.vatRegistration ?? defaults.vatNumber,
     vatRegistered: data?.vatRegistered ?? defaults.vatRegistered,
+    vatRate: data?.vatRate != null ? String(data.vatRate) : defaults.vatRate,
     timezone: data?.timezone ?? defaults.timezone,
     currency: data?.currency ?? defaults.currency,
     // GET /settings/business-profile per the Bank Details handoff.
@@ -95,14 +118,19 @@ export function settingsBusinessToForm(
   }
 }
 
-export function settingsBusinessFromForm(values: SettingsBusinessForm) {
+export function settingsBusinessFromForm(values: SettingsBusinessForm): BusinessProfilePatch {
   return {
     businessName: values.businessName.trim(),
     phone: values.businessPhone.trim() || null,
     email: values.businessEmail.trim() || null,
     companyNumber: values.companyNumber.trim() || null,
+    addressLine1: values.addressLine1.trim() || null,
+    addressLine2: values.addressLine2.trim() || null,
+    town: values.town.trim() || null,
+    postcode: values.postcode.trim().toUpperCase() || null,
     vatRegistration: values.vatNumber.trim() || null,
     vatRegistered: values.vatRegistered ?? undefined,
+    vatRate: Number(values.vatRate),
     timezone: values.timezone || null,
     currency: values.currency || null,
     // PATCH /settings/business-profile per the Bank Details handoff — omitting the key
@@ -115,13 +143,19 @@ export function settingsPaymentToForm(
   data: BusinessSettings | null | undefined,
 ): SettingsPaymentForm {
   const defaults = setupWizardContent.paymentSetup.defaults
+  const wizardDefaults = setupWizardContent.payments.formDefaults
   return {
-    defaultPaymentRule:
-      PAYMENT_RULE_API_TO_UI[data?.paymentRule ?? ''] ?? defaults.defaultPaymentRule,
+    defaultPaymentRule: data?.paymentRule
+      ? PAYMENT_RULE_API_TO_UI[data.paymentRule]
+      : defaults.defaultPaymentRule,
     vatApplicable: data?.vatInInvoices ?? defaults.vatApplicable,
     debtHoldEnabled: data?.debtHoldEnabled ?? defaults.debtHoldEnabled,
     goCardlessConnected: data?.gocardlessConnected ?? defaults.goCardlessConnected,
     stripeConnected: data?.stripeConnected ?? defaults.stripeConnected,
+    defaultPaymentMethod: data?.defaultPaymentMethod ?? wizardDefaults.defaultPaymentMethod,
+    invoiceDueDays:
+      data?.invoiceDueDays != null ? String(data.invoiceDueDays) : wizardDefaults.invoiceDueDays,
+    noDirectDebitAction: noDirectDebitToForm(data?.noDirectDebitAction, wizardDefaults.noDirectDebitAction),
   }
 }
 
@@ -130,34 +164,31 @@ export function settingsPaymentFromForm(values: SettingsPaymentForm): PaymentSet
     paymentRule: PAYMENT_RULE_UI_TO_API[values.defaultPaymentRule],
     vatInInvoices: values.vatApplicable,
     debtHoldEnabled: values.debtHoldEnabled,
+    defaultPaymentMethod: values.defaultPaymentMethod as PaymentSettingsPatch['defaultPaymentMethod'],
+    invoiceDueDays: Number(values.invoiceDueDays),
+    noDirectDebitAction: noDirectDebitFromForm(values.noDirectDebitAction),
   }
 }
 
 export function settingsRoundToForm(
   data: BusinessSettings | null | undefined,
 ): SettingsRoundForm {
-  const defaults = setupWizardContent.roundSettings.defaults
   const profileDefaults = setupWizardContent.businessProfile.defaults
   return {
-    recurringCycle: daysToCycleLength(data?.defaultCycleLength) ?? defaults.recurringCycle,
+    // `preCleanReminderTimings` is deprecated (B2) and no longer read — reminderMode replaces it.
+    ...roundSettingsToForm(data),
     workingDays: (data?.defaultWorkingDays ?? profileDefaults.workingDays).map(
       (day) => DAY_API_TO_UI[day] ?? day.toLowerCase(),
     ),
-    // CONTRACT-DIFF: the generated BusinessSettings response type hasn't caught up with
-    // preCleanReminderTimings yet, even though the PATCH input schema already has it.
-    reminderTiming:
-      (data as (BusinessSettings & { preCleanReminderTimings?: string[] }) | null | undefined)
-        ?.preCleanReminderTimings ?? [],
   }
 }
 
 export function settingsRoundFromForm(values: SettingsRoundForm): RoundSettingsPatch {
   return {
-    defaultCycleLength: cycleLengthToDays(values.recurringCycle),
+    ...roundSettingsFromForm(values),
     defaultWorkingDays: values.workingDays.map(
       (day) => DAY_UI_TO_API[day] ?? (day.toUpperCase() as DayOfWeek),
     ),
-    preCleanReminderTimings: values.reminderTiming as RoundSettingsPatch['preCleanReminderTimings'],
   }
 }
 

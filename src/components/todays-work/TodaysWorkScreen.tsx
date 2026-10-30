@@ -12,6 +12,8 @@ import { TodaysWorkMetrics } from '@/components/todays-work/TodaysWorkMetrics'
 import { TodaysWorkRoundDetailPanel } from '@/components/todays-work/TodaysWorkRoundDetailPanel'
 import { TodaysWorkRoundsTable } from '@/components/todays-work/TodaysWorkRoundsTable'
 import { TodaysWorkToolbar } from '@/components/todays-work/TodaysWorkToolbar'
+import { BulkInvoicesModal } from '@/components/todays-work/BulkInvoicesModal'
+import { todayIso } from '@/lib/round-dates'
 import { mergeRoundTodayDetail } from '@/features/today/lib/mappers'
 import { useRoundToday } from '@/features/today/hooks/useToday'
 import { TodaysWorkScreenSkeleton } from '@/components/todays-work/TodaysWorkSkeletons'
@@ -59,6 +61,8 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
         closeDayDisabled={!canMutate || interactions.dayClosed}
         reportEmergencyLabel={isTechnician ? emergenciesContent.report.button : undefined}
         onReportEmergency={isTechnician ? () => setReportEmergencyOpen(true) : undefined}
+        createInvoicesLabel={header.createInvoices}
+        onCreateInvoices={canMutate ? () => interactions.setBulkInvoicesOpen(true) : undefined}
       />
 
       {todayQuery.isPending ? (
@@ -127,6 +131,13 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
         kpi={todayQuery.data?.kpi}
         onClose={interactions.closeCloseDay}
       />
+
+      {interactions.bulkInvoicesOpen ? (
+        <BulkInvoicesModal
+          date={todayQuery.data?.date ?? todayIso()}
+          onClose={() => interactions.setBulkInvoicesOpen(false)}
+        />
+      ) : null}
 
       {isTechnician ? (
         <ReportEmergencyModal

@@ -4,7 +4,6 @@ import type {
   DebtInvoiceDetail,
   DebtKpis,
   DebtPaymentMethodParam,
-  DebtRemindChannel,
 } from '@/api/debt.api'
 import type {
   DebtCustomerRecord,
@@ -53,12 +52,6 @@ export const UI_METHOD_TO_API: Record<string, DebtPaymentMethodParam | undefined
   stripe: 'STRIPE',
 }
 
-export const UI_CHANNEL_TO_API: Record<string, DebtRemindChannel> = {
-  sms: 'SMS',
-  whatsapp: 'WHATSAPP',
-  email: 'EMAIL',
-}
-
 function formatMoney(value: number) {
   return `£${value.toLocaleString('en-GB', {
     minimumFractionDigits: value % 1 === 0 ? 0 : 2,
@@ -83,7 +76,7 @@ function paymentMethodLabel(method: string): DebtPaymentMethod {
   }
 }
 
-function daysAgoLabel(iso: string | null): string | undefined {
+function daysAgoLabel(iso: string | null | undefined): string | undefined {
   if (!iso) return undefined
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return undefined
@@ -94,14 +87,16 @@ function daysAgoLabel(iso: string | null): string | undefined {
   return `${days} days ago`
 }
 
-function daysOverdue(dueDate: string): number {
+function daysOverdue(dueDate: string | null | undefined): number {
+  if (!dueDate) return 0
   const due = new Date(dueDate)
   if (Number.isNaN(due.getTime())) return 0
   const diffMs = Date.now() - due.getTime()
   return Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)))
 }
 
-function formatInvoiceDate(iso: string) {
+function formatInvoiceDate(iso: string | null | undefined) {
+  if (!iso) return '—'
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleDateString('en-GB', {
@@ -111,15 +106,19 @@ function formatInvoiceDate(iso: string) {
   })
 }
 
+/** GAP-031: "Across N customers" from `totalOutstandingsCount` (0 when an older API omits it). */
+function customersCaption(count: number | undefined) {
+  const total = count ?? 0
+  return `Across ${total} customer${total === 1 ? '' : 's'}`
+}
+
 export function kpisToMetrics(kpis: DebtKpis | undefined) {
   return [
     {
       id: 'total-outstandings',
       label: 'Total Outstandings',
       value: kpis ? formatMoney(kpis.totalOutstandings) : '—',
-      helper: kpis
-        ? `Across ${kpis.totalOutstandingsCount} customer${kpis.totalOutstandingsCount === 1 ? '' : 's'}`
-        : '—',
+      helper: kpis ? customersCaption(kpis.totalOutstandingsCount) : '—',
       tone: 'accent' as const,
     },
     {
@@ -147,9 +146,7 @@ export function kpisToMetrics(kpis: DebtKpis | undefined) {
       id: 'bad-debt',
       label: 'Bad Debt',
       value: kpis ? formatMoney(kpis.badDebt) : '—',
-      helper: kpis
-        ? `${kpis.badDebtCount} manually flagged`
-        : 'Manually flagged',
+      helper: kpis ? `${kpis.badDebtCount ?? 0} manually flagged` : 'Manually flagged',
       tone: 'danger' as const,
     },
   ]
@@ -163,15 +160,17 @@ export function boardItemToRecord(
   const address = [item.addressLine, item.postcode].filter(Boolean).join(', ')
 
   return {
-    id: item.invoiceId,
-    invoiceId: item.invoiceId,
-    invoiceNumber: item.invoiceNumber,
+    // ON_HOLD rows are per customer and may have no invoice (GAP-026).
+    id: item.invoiceId ?? `customer:${item.customerId}`,
+    invoiceId: item.invoiceId ?? undefined,
+    invoiceNumber: item.invoiceNumber ?? undefined,
     customerId: item.customerId,
     customer: item.customerName,
     address: address || '—',
     amountOwed: formatMoney(item.amount),
     amountValue: item.amount,
-    paymentMethod: paymentMethodLabel(item.paymentMethod),
+    paymentMethod: paymentMethodLabel(item.paymentMethod ?? '—'),
+    paymentMethodCode: item.paymentMethod ?? null,
     round: '—',
     status: BUCKET_TO_UI_TAB[bucket],
     contactStatus: item.lastContactedAt ? 'contacted' : 'not-contacted',

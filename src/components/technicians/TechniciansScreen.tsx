@@ -19,10 +19,8 @@ import {
   toUpdateInput,
   type TechnicianFormValues,
 } from '@/components/technicians/TechnicianForm'
-import {
-  PropertyPhotos,
-  TechnicianConversation,
-} from '@/components/technicians/TechnicianPhotos'
+import { TechnicianConversation } from '@/components/technicians/TechnicianPhotos'
+import { TechnicianVisitPhotos } from '@/components/technicians/TechnicianPhotoGallery'
 import {
   ApprovePhotosModal,
   RemoveTechnicianModal,
@@ -31,9 +29,9 @@ import {
   TechnicianDetailSkeleton,
   TechnicianFormSkeleton,
 } from '@/components/technicians/TechniciansSkeletons'
+import { useResendTechnicianInvite } from '@/features/invites/hooks/useResendTechnicianInvite'
 import {
   useCreateTechnician,
-  useSendTechnicianInvite,
   useTechnician,
   useTechniciansList,
   useUpdateTechnician,
@@ -76,7 +74,7 @@ export function TechniciansScreen() {
   )
   const createTechnician = useCreateTechnician()
   const updateTechnician = useUpdateTechnician()
-  const sendInvite = useSendTechnicianInvite()
+  const resendInvite = useResendTechnicianInvite()
 
   const listRows = useMemo(() => technicianListToUi(listQuery.data), [listQuery.data])
   const metrics = useMemo(
@@ -87,10 +85,6 @@ export function TechniciansScreen() {
   const detailUi = technicianDetailToUi(detailQuery.data)
   const listFallback = listRows.find((row) => row.id === routeTechnicianId) ?? null
   const technician = detailUi ?? listFallback
-
-  const photoJob =
-    techniciansContent.photoJobs.find((job) => job.id === photosMatch?.params.photoJobId) ??
-    techniciansContent.photoJobs[0]
 
   function approveAll() {
     setApproveOpen(false)
@@ -158,18 +152,15 @@ export function TechniciansScreen() {
   }
 
   async function handleResendInvite() {
-    if (!canMutate || !technician || sendInvite.isPending) return
+    if (!canMutate || !technician || resendInvite.isPending) return
     const email = technician.email !== '—' ? technician.email.trim() : ''
     if (!email) {
       showToast('Add an email before resending an invite.')
       return
     }
     try {
-      await sendInvite.mutateAsync({
-        email,
-        role: 'TECHNICIAN',
-        technicianId: technician.id,
-      })
+      // Resends the open invite (POST /invites/:id/resend). Creating a new one would 409.
+      await resendInvite.mutateAsync({ technicianId: technician.id, email })
       showToast('Invite resent.')
     } catch (error) {
       if (error instanceof ApiError && (error.status === 400 || error.status === 409)) {
@@ -216,7 +207,7 @@ export function TechniciansScreen() {
           technician={technician}
           canMutate={canMutate}
           pending={updateTechnician.isPending}
-          resendPending={sendInvite.isPending}
+          resendPending={resendInvite.isPending}
           onCancel={() => navigate(technicianDetailPath(technician.id))}
           onSave={handleUpdate}
           onRemove={() => setRemoveOpen(true)}
@@ -225,12 +216,12 @@ export function TechniciansScreen() {
       )
     }
   } else if (photosMatch && technician) {
+    // GAP-019: the route's last segment is the visit id.
     content = (
-      <PropertyPhotos
-        technician={technician}
-        job={photoJob}
-        onBack={() => navigate(technicianConversationPath(technician.id))}
-        onApproveAll={() => setApproveOpen(true)}
+      <TechnicianVisitPhotos
+        technicianName={technician.name}
+        visitId={photosMatch.params.photoJobId ?? ''}
+        onBack={() => navigate(technicianDetailPath(technician.id))}
       />
     )
   } else if (conversationMatch && technician) {

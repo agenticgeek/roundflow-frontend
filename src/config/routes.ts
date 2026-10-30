@@ -23,11 +23,15 @@ export const ROUTES = {
   todaysWork: '/todays-work',
   customers: '/customers',
   debtPayment: '/debt-payment',
+  /** GAP-028 invoice and payment lists. */
+  invoices: '/invoices',
   reportsHistory: '/reports-history',
   complaints: '/complaints',
   settings: '/settings',
-  /** Where the backend sends admins back after Stripe's OAuth (`?stripe=connected`). */
+  /** Where admins land after Stripe's OAuth completes (`?stripe=connected`). */
   settingsIntegrations: '/settings/integrations',
+  /** Stripe Connect redirect URI — register it in Stripe → Connect → Settings. */
+  stripeCallback: '/settings/stripe/callback',
   technicians: '/technicians',
   technicianNew: '/technicians/new',
   technicianDetail: '/technicians/:technicianId',

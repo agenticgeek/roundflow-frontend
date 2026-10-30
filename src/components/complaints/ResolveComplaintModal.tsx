@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { complaintsContent } from '@/content/complaints'
 import { Textarea } from '@/components/ui'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalToggleRow } from '@/components/ui/modal'
 
 interface ResolveComplaintModalProps {
   open: boolean
   onClose: () => void
-  /** Notes are optional — sent with POST /complaints/:id/resolve when given. */
-  onConfirm: (notes: string) => void
+  /** Notes are optional — sent with POST /complaints/:id/resolve when given, with `upheld` (GAP-025). */
+  onConfirm: (notes: string, upheld: boolean) => void
   resolving?: boolean
 }
 
@@ -20,9 +20,12 @@ export function ResolveComplaintModal({
 }: ResolveComplaintModalProps) {
   const content = complaintsContent.resolve
   const [notes, setNotes] = useState('')
+  const [upheld, setUpheld] = useState(false)
 
   useEffect(() => {
-    if (open) setNotes('')
+    if (!open) return
+    setNotes('')
+    setUpheld(false)
   }, [open])
 
   return (
@@ -48,6 +51,15 @@ export function ResolveComplaintModal({
         />
       </label>
 
+      <ModalToggleRow
+        compact
+        label={complaintsContent.upheld.label}
+        description={complaintsContent.upheld.description}
+        checked={upheld}
+        onChange={setUpheld}
+        ariaLabel={complaintsContent.upheld.label}
+      />
+
       <div className="flex items-center justify-end gap-3 pt-3">
         <button
           type="button"
@@ -58,7 +70,7 @@ export function ResolveComplaintModal({
         </button>
         <button
           type="button"
-          onClick={() => onConfirm(notes.trim())}
+          onClick={() => onConfirm(notes.trim(), upheld)}
           disabled={resolving}
           className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >

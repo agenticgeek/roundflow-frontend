@@ -1,7 +1,6 @@
 import type { FormEvent, ReactNode } from 'react'
 import { useRef, useState } from 'react'
-import type { BusinessProfileData } from '@/types/setup-wizard'
-import { setupWizardContent } from '@/content/setup-wizard'
+import { setupWizardContent, type BusinessProfileForm } from '@/content/setup-wizard'
 import { Field, Input, PhoneInput, Select, Toggle } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { BankDetailsFields } from '@/components/setup-wizard/BankDetailsFields'
@@ -12,8 +11,8 @@ import { focusFirstInvalid, hasErrors, type FieldErrors } from '@/lib/form-error
 import { isValidUkPostcode } from '@/lib/postcode'
 
 interface BusinessProfileStepProps {
-  initialValues: BusinessProfileData
-  onSubmit: (values: BusinessProfileData) => void
+  initialValues: BusinessProfileForm
+  onSubmit: (values: BusinessProfileForm) => void
 }
 
 type ProfileField = 'businessName' | 'businessPhone' | 'businessEmail' | 'postcode' | 'vatNumber'
@@ -83,13 +82,13 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
   const { businessProfile, validation } = setupWizardContent
   const { fields, sections, locale } = businessProfile
 
-  const [values, setValues] = useState<BusinessProfileData>(initialValues)
+  const [values, setValues] = useState<BusinessProfileForm>(initialValues)
   const [errors, setErrors] = useState<FieldErrors<ProfileField>>({})
   const [bankErrors, setBankErrors] = useState<BankDetailsFieldErrors>({})
   const formRef = useRef<HTMLFormElement>(null)
   useReportWizardDirty(values, initialValues)
 
-  function updateField<K extends keyof BusinessProfileData>(key: K, value: BusinessProfileData[K]) {
+  function updateField<K extends keyof BusinessProfileForm>(key: K, value: BusinessProfileForm[K]) {
     setErrors((prev) => (prev[key as ProfileField] ? { ...prev, [key]: undefined } : prev))
     if (key === 'bankDetails') setBankErrors({})
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -225,7 +224,25 @@ export function BusinessProfileStep({ initialValues, onSubmit }: BusinessProfile
               value={values.businessAddress}
               onChange={(e) => updateField('businessAddress', e.target.value)}
               placeholder={fields.businessAddress.placeholder}
-              autoComplete="street-address"
+              autoComplete="address-line1"
+            />
+          </Field>
+
+          <Field label={fields.addressLine2.label} labelWeight="medium">
+            <Input
+              value={values.addressLine2}
+              onChange={(e) => updateField('addressLine2', e.target.value)}
+              placeholder={fields.addressLine2.placeholder}
+              autoComplete="address-line2"
+            />
+          </Field>
+
+          <Field label={fields.town.label} labelWeight="medium">
+            <Input
+              value={values.town}
+              onChange={(e) => updateField('town', e.target.value)}
+              placeholder={fields.town.placeholder}
+              autoComplete="address-level2"
             />
           </Field>
 

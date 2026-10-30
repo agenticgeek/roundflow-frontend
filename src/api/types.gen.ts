@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Liveness probe
-         * @description Unauthenticated. Returns server status + timestamp.
+         * @description Unauthenticated. GAP-005: the server listens while tenant migrations run, so this answers 503 `{ status: "migrating" }` until they finish, then 200 with status + timestamp.
          */
         get: {
             parameters: {
@@ -31,6 +31,66 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["HealthStatus"];
+                    };
+                };
+                /** @description Tenant migrations still running. */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HealthMigrating"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness probe
+         * @description Unauthenticated. 503 `{ status: "migrating" }` until tenant migrations finish, then 200 `{ status: "ready" }`. A migration failure exits the process.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Ready. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            status: "ready";
+                        };
+                    };
+                };
+                /** @description Tenant migrations still running. */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HealthMigrating"];
                     };
                 };
             };
@@ -85,6 +145,17 @@ export interface paths {
                 };
                 /** @description Auth error (Supabase error shape varies). */
                 400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Missing or invalid `apikey` header. */
+                401: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -158,6 +229,103 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/me/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the caller's UI preferences
+         * @description Returns the stored preferences blob (`{}` if none). Any authenticated user with a Profile.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Stored preferences. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PreferencesResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description No Profile for this user. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Shallow-merge keys into the caller's UI preferences
+         * @description Top-level keys in the body overwrite the stored ones; other stored keys are kept (set one key at a time). 400 if the merged blob exceeds 100KB.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description The merged preferences. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PreferencesResult"];
+                    };
+                };
+                /** @description Body is not an object, or the merged payload is over 100KB. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description No Profile for this user. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/auth/signup": {
         parameters: {
             query?: never;
@@ -169,7 +337,7 @@ export interface paths {
         put?: never;
         /**
          * Register a new admin (first-time signup)
-         * @description Called by the frontend after Supabase confirms a new session and `GET /auth/me` returns 404. Creates a Profile (role: ADMIN) and a Tenant row in one transaction. **Idempotent** — if a Profile already exists for this `supabaseUserId` it is returned with 200 instead of 201. `companyName` is accepted but not persisted here; it is collected by Setup Wizard step 1.
+         * @description Called by the frontend after Supabase confirms a new session and `GET /auth/me` returns 404. Creates a Profile (role: ADMIN) and a Tenant row in one transaction, then provisions the tenant's own Postgres schema (`t_<20 hex chars>`) and best-effort seeds default Services/MessageTemplates into it. **Idempotent** — if a Profile already exists for this `supabaseUserId` it is returned with 200 instead of 201 (schema provisioning is re-attempted, as a no-op if already done). `companyName` is accepted but not persisted here; it is collected by Setup Wizard step 1.
          */
         post: {
             parameters: {
@@ -219,11 +387,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List invites not yet accepted
+         * @description Newest first. Includes expired invites with `expired: true` so they can be resent. Requires ADMIN or MANAGER role.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unaccepted invites for the caller's tenant. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PendingInvite"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         put?: never;
         /**
          * Send an invite email
-         * @description Creates a `TenantInvite` (7-day TTL) and sends an email to the invitee via Resend. Only one pending invite per email+tenant is allowed — 409 if a pending invite already exists. Requires ADMIN or MANAGER role. If `technicianId` is supplied, that Technician row's `profileId` is set when the invite is accepted.
+         * @description Creates a `TenantInvite` (7-day TTL) and sends an email to the invitee via Supabase Auth. Only one pending invite per email+tenant is allowed — 409 if an unexpired, unaccepted invite already exists (use POST /invites/{id}/resend instead). Expired unaccepted invites for the email are replaced. If the email already has a Supabase account, a magic link to the same accept-invite URL is sent instead. Requires ADMIN or MANAGER role. If `technicianId` is supplied, that Technician row's `profileId` is set when the invite is accepted.
          */
         post: {
             parameters: {
@@ -268,115 +461,8 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/invites/{token}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: string;
-            };
-            cookie?: never;
-        };
-        /**
-         * Validate an invite token (public)
-         * @description Public endpoint — no auth required. Used by the frontend before the invitee authenticates to check the token is valid and pre-fill the signup form. Returns 410 if the token is expired or has already been accepted.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    token: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Token is valid. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["InviteTokenInfo"];
-                    };
-                };
-                404: components["responses"]["NotFound"];
-                410: components["responses"]["Gone"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/invites/{token}/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Accept an invite (invitee calls after Supabase auth)
-         * @description Called by the frontend after the invitee authenticates with Supabase. The caller's JWT email must match the invite email (403 if not). Creates a `Profile` with the invite's `tenantId` and `role`, stamps `acceptedAt`, and — if the invite had a `technicianId` — links that Technician row (`profileId = profile.id`). **Idempotent** — returns the existing Profile with 200 if it was already created.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    token: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["InviteAcceptInput"];
-                };
-            };
-            responses: {
-                /** @description Profile already existed (idempotent). */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            profile: components["schemas"]["Profile"];
-                        };
-                    };
-                };
-                /** @description Profile created and invite accepted. */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            profile: components["schemas"]["Profile"];
-                        };
-                    };
-                };
-                400: components["responses"]["BadRequest"];
-                401: components["responses"]["Unauthorized"];
-                /** @description The authenticated user's email does not match the invite email. */
-                403: {
+                /** @description Invite email failed to send; the invite was rolled back. */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -384,8 +470,6 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                404: components["responses"]["NotFound"];
-                410: components["responses"]["Gone"];
             };
         };
         delete?: never;
@@ -403,7 +487,7 @@ export interface paths {
         };
         /**
          * Setup progress
-         * @description Per-step completion (derived, not stored) plus `setupCompleted` and `allRequiredComplete`. Required steps: 1,2,3,4,6,7,8. Only step 5 (SMS Templates) is deferred.
+         * @description Per-step completion plus `setupCompleted`, `allRequiredComplete` and `wizardSteps` (GAP-002 — the web wizard's 10 steps in display order with their backend step numbers). A step is complete once it has been saved at least once (stored in BusinessSettings.completedSteps; existing mid-setup tenants are backfilled from the old row-count rules). Required steps: 1-9 and 11. Only step 10 (Assign Technicians to Rounds) is deferred — it reports `complete` but doesn't block `POST /setup/complete`.
          */
         get: {
             parameters: {
@@ -469,7 +553,7 @@ export interface paths {
         put?: never;
         /**
          * Step 1 — Business Profile
-         * @description Upserts the BusinessSettings singleton. `businessName` is required.
+         * @description Upserts the BusinessSettings singleton (incl. structured address `addressLine1/addressLine2/town/postcode` and `vatRate` 0–100) and marks step 1 complete. `businessName` is required. Response omits encrypted provider secrets.
          */
         post: {
             parameters: {
@@ -513,7 +597,7 @@ export interface paths {
         };
         /**
          * Step 2 — get Payment Setup
-         * @description Returns the BusinessSettings singleton (read `paymentRule`, `debtHoldEnabled`, `vatInInvoices`, `gocardlessConnected`, `stripeConnected`). Open after setup completes.
+         * @description Returns the BusinessSettings singleton (read `paymentRule`, `debtHoldEnabled`, `vatInInvoices`, `defaultPaymentMethod`, `invoiceDueDays`, `noDirectDebitAction`, and the read-only `gocardlessConnected` / `stripeConnected` / `ghlConnected`). Open after setup completes.
          */
         get: {
             parameters: {
@@ -539,7 +623,7 @@ export interface paths {
         put?: never;
         /**
          * Step 2 — Payment Setup
-         * @description Upserts payment configuration on the BusinessSettings singleton. All fields optional; step 2 counts as complete once `paymentRule` is set. The GoCardless/Stripe connect actions are **Phase-1 stubs** (`gocardlessConnected`/`stripeConnected` are plain booleans — no real OAuth yet).
+         * @description Upserts payment configuration on the tenant's BusinessSettings row and marks step 2 complete. All fields optional. Sending `gocardlessConnected` or `stripeConnected` is a 400 `FIELD_REMOVED` — connect providers through POST /settings/payment/gocardless/connect, GET /settings/stripe/authorize or GET /settings/ghl/authorize (allowed before setup is complete).
          */
         post: {
             parameters: {
@@ -563,7 +647,15 @@ export interface paths {
                         "application/json": components["schemas"]["BusinessSettings"];
                     };
                 };
-                400: components["responses"]["BadRequest"];
+                /** @description Validation error, or a removed field was sent (code FIELD_REMOVED). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
             };
@@ -652,7 +744,7 @@ export interface paths {
         };
         /**
          * Step 4 — get Round Settings
-         * @description Returns the BusinessSettings singleton (same row as step 1; read `defaultCycleLength` / `defaultWorkingDays`). Open after setup completes.
+         * @description Returns the BusinessSettings singleton (same row as step 1; read `defaultCycleLength` / `defaultWorkingDays` / `reminderMode` / `reminderTime` / `defaultCleanMethod` / `autoCreateNextVisit`). Open after setup completes.
          */
         get: {
             parameters: {
@@ -678,7 +770,7 @@ export interface paths {
         put?: never;
         /**
          * Step 4 — Round Settings
-         * @description Upserts BusinessSettings. `defaultCycleLength` is required (days).
+         * @description Upserts BusinessSettings and marks step 4 complete. `defaultCycleLength` is required (days). `reminderMode` + `reminderTime` (HH:mm, tenant-local) drive the pre-clean reminder job.
          */
         post: {
             parameters: {
@@ -747,7 +839,7 @@ export interface paths {
         put?: never;
         /**
          * Step 5 — replace all message templates
-         * @description Bulk-replaces all message templates with the posted array. Step complete when ≥1 template saved.
+         * @description Bulk-replaces all message templates with the posted array and marks step 5 complete.
          */
         post: {
             parameters: {
@@ -1000,7 +1092,7 @@ export interface paths {
         put?: never;
         /**
          * Complete setup
-         * @description Marks setup complete. Requires all non-deferred steps (1,2,3,4,6,7,8). After completion, mutating step endpoints return 403.
+         * @description Marks setup complete (step 12). Requires every non-deferred step before 12 — i.e. 1–9 and 11 (step 10 is deferred). After completion, mutating wizard endpoints return 403 and Settings mutations unlock.
          */
         post: {
             parameters: {
@@ -1070,7 +1162,7 @@ export interface paths {
         head?: never;
         /**
          * Update business profile (partial)
-         * @description Partial upsert of step-1 fields (businessName, phone, email, companyNumber, vatRegistered, vatRegistration, timezone, currency, defaultWorkingDays). Omitted = untouched; null clears. Does not touch round-settings fields.
+         * @description Partial upsert of step-1 fields (businessName, phone, email, companyNumber, vatRegistered, vatRegistration, timezone, currency, defaultWorkingDays, bankDetails, addressLine1, addressLine2, town, postcode, vatRate). Omitted = untouched; null clears. Does not touch round-settings fields.
          */
         patch: {
             parameters: {
@@ -1110,7 +1202,7 @@ export interface paths {
         };
         /**
          * Get round settings
-         * @description Returns the BusinessSettings singleton; read `defaultCycleLength` / `defaultWorkingDays`.
+         * @description Returns the BusinessSettings singleton; read `defaultCycleLength` / `defaultWorkingDays` / `reminderMode` / `reminderTime` / `defaultCleanMethod` / `autoCreateNextVisit`.
          */
         get: {
             parameters: {
@@ -1140,7 +1232,7 @@ export interface paths {
         head?: never;
         /**
          * Update round settings (partial)
-         * @description Partial upsert of round fields only (`defaultCycleLength`, `defaultWorkingDays`).
+         * @description Partial upsert of round fields only (`defaultCycleLength`, `defaultWorkingDays`, `reminderMode`, `reminderTime`, `defaultCleanMethod`, `autoCreateNextVisit`). The deprecated `preCleanReminderTimings` is still accepted and mapped onto `reminderMode` when `reminderMode` is not sent (EVENING_BEFORE → EVENING_BEFORE, TWO_HOURS_BEFORE → MORNING_OF, [] → NONE).
          */
         patch: {
             parameters: {
@@ -1235,81 +1327,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/settings/services/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete a service
-         * @description 409 if any ServicePlan or Visit references the service.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Deleted. */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
-            };
-        };
-        options?: never;
-        head?: never;
-        /** Update a service (partial) */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["ServiceUpdateInput"];
-                };
-            };
-            responses: {
-                /** @description The updated service. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Service"];
-                    };
-                };
-                400: components["responses"]["BadRequest"];
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-            };
-        };
-        trace?: never;
-    };
     "/settings/service-areas": {
         parameters: {
             query?: never;
@@ -1377,81 +1394,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/settings/service-areas/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete a service area
-         * @description 409 if any Round or Property references the area.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Deleted. */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
-            };
-        };
-        options?: never;
-        head?: never;
-        /** Update a service area (partial) */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["ServiceAreaUpdateInput"];
-                };
-            };
-            responses: {
-                /** @description The updated service area. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ServiceArea"];
-                    };
-                };
-                400: components["responses"]["BadRequest"];
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-            };
-        };
-        trace?: never;
-    };
     "/settings/technicians": {
         parameters: {
             query?: never;
@@ -1516,81 +1458,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/settings/technicians/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete a technician
-         * @description Only invite-pending technicians (profileId = null) can be deleted; 409 if the invite was accepted.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Deleted. */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
-            };
-        };
-        options?: never;
-        head?: never;
-        /** Update a technician (partial) */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["TechnicianUpdateInput"];
-                };
-            };
-            responses: {
-                /** @description The updated technician. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Technician"];
-                    };
-                };
-                400: components["responses"]["BadRequest"];
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-            };
-        };
-        trace?: never;
-    };
     "/settings/payment": {
         parameters: {
             query?: never;
@@ -1630,7 +1497,7 @@ export interface paths {
         head?: never;
         /**
          * Update payment rules (partial)
-         * @description Updates `paymentRule` / `vatInInvoices` / `debtHoldEnabled` only. Does NOT touch the connect flags — use the connect endpoint for those.
+         * @description Updates `paymentRule` / `vatInInvoices` / `debtHoldEnabled` / `debtHoldMaxInvoices` / `debtHoldMaxAmount` / `defaultPaymentMethod` / `invoiceDueDays` / `noDirectDebitAction` only. Does NOT touch the connect flags — use the GoCardless/Stripe connect endpoints for those.
          */
         patch: {
             parameters: {
@@ -1661,33 +1528,33 @@ export interface paths {
         };
         trace?: never;
     };
-    "/settings/payment/{provider}/connect": {
+    "/settings/payment/gocardless/connect": {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                provider: "gocardless" | "stripe";
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
         put?: never;
         /**
-         * Connect a payment provider (Phase-1 stub)
-         * @description Phase-1 stub: flips the relevant *Connected boolean to true and returns `{ status: "connected" }`. No OAuth / no URL yet — a real `connectUrl` will come from GHL in Phase 2.
+         * Connect GoCardless with an access token
+         * @description Allowed before setup is complete (A6). Verifies `accessToken` against the GoCardless API (`creditors.list`) — 400 if it fails. On success stores the token (encrypted) + environment, sets `gocardlessConnected = true`, generates a fresh random route secret and returns the `webhookUrl` the admin must add by hand in the GoCardless dashboard (GoCardless has no API for creating webhook endpoints). Then paste GoCardless's signing secret via PATCH /settings/payment/gocardless/webhook-secret. Re-connecting rotates the route secret.
          */
         post: {
             parameters: {
                 query?: never;
                 header?: never;
-                path: {
-                    provider: "gocardless" | "stripe";
-                };
+                path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GoCardlessConnectInput"];
+                };
+            };
             responses: {
-                /** @description Connection result. */
+                /** @description Connected. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1696,7 +1563,264 @@ export interface paths {
                         "application/json": components["schemas"]["ProviderConnectResponse"];
                     };
                 };
+                /** @description Missing field, bad environment, or the token could not be verified. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/payment/gocardless/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disconnect GoCardless
+         * @description Allowed before setup is complete. Clears the access token, route secret, signing secret and environment, and sets `gocardlessConnected = false`. Existing customer mandates are not touched.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Disconnected. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProviderStatusResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/payment/gocardless/webhook-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Save the GoCardless webhook signing secret
+         * @description Allowed before setup is complete. Stores (encrypted) the signing secret GoCardless issued for the endpoint the admin created at the `webhookUrl` from connect. Until this is saved, POST /webhooks/gocardless silently acks events without processing them.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GoCardlessWebhookSecretInput"];
+                };
+            };
+            responses: {
+                /** @description Saved. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProviderStatusResult"];
+                    };
+                };
                 400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description GoCardless is not connected. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/settings/stripe/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Stripe Connect consent URL
+         * @description Allowed before setup is complete. Returns `200 { url }` — the `https://connect.stripe.com/oauth/authorize` URL (scope `read_write`, `state = <tenantId>:<random>`). The web app now builds this URL itself from VITE_STRIPE_CONNECT_CLIENT_ID; this endpoint is kept for API clients. A top-level browser navigation (`Accept: text/html` and not application/json) still gets the old `302` for one release.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Consent URL. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OAuthAuthorizeUrl"];
+                    };
+                };
+                /** @description Browser navigation only — redirect to the Stripe consent page. */
+                302: {
+                    headers: {
+                        Location?: string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/stripe/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stripe Connect OAuth callback
+         * @description Exchanges `code` for the connected account's credentials, stores them (secret key encrypted), sets `stripeConnected = true` and mirrors `stripeConnectAccountId` onto the public Tenant row (for the platform-level Connect webhook). Bearer-authenticated: the web's callback page relays `?code&state` with `Accept: application/json` and gets `200 { status: "connected", stripeConnectAccountId }`; any other Accept gets a `302` to `${FRONTEND_URL}/settings/integrations?stripe=connected`. Errors are JSON (400 when denied or `code`/`state` missing). `state` is not validated.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    code?: string;
+                    state?: string;
+                    /** @description Set by Stripe when the admin denies access → 400. */
+                    error?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Connected (Accept: application/json). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StripeCallbackResult"];
+                    };
+                };
+                /** @description Redirect back to the frontend integrations page (non-JSON Accept). */
+                302: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Authorisation denied, or `code`/`state` missing. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                500: components["responses"]["ServerError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/stripe/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disconnect Stripe
+         * @description Allowed before setup is complete. Clears the connected account id, publishable key and secret key, sets `stripeConnected = false`, and clears the Tenant mirror.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Disconnected. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProviderStatusResult"];
+                    };
+                };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
             };
@@ -1776,6 +1900,413 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/ghl/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the GHL OAuth consent URL
+         * @description Allowed before setup is complete. Returns `200 { url }` for GHL's OAuth consent page. `state` is a signed token (HMAC, 10-minute expiry) carrying the tenant id and the redirect URI, so the public callback can trust it. Optional `redirectUri` = the web app's own callback page (must be on the FRONTEND_URL origin, 400 otherwise); default `${PUBLIC_API_URL}/settings/ghl/callback`. A top-level browser navigation (`Accept: text/html` and not application/json) still gets a `302` for one release.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Where GHL sends the browser back to. Must be on the web app's origin. */
+                    redirectUri?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Consent URL. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OAuthAuthorizeUrl"];
+                    };
+                };
+                /** @description Browser navigation only — redirect to the GHL consent page. */
+                302: {
+                    headers: {
+                        Location?: string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description redirectUri is not on the web app's origin. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ghl/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GHL OAuth callback (public)
+         * @description **Public** — no Bearer token (GHL redirects the admin's browser here). The tenant and the redirect URI the code was issued for come from the signed `state` minted by GET /settings/ghl/authorize. Exchanges `code` for access/refresh tokens (stored encrypted, with expiry), sets `ghlConnected = true`, stamps `ghlLocationId` on the public Tenant row and generates a webhook route secret. With `Accept: application/json` (a web callback page relaying `?code&state`) it answers `200 { status, method: "oauth", locationId, webhookUrl }` or a JSON error; otherwise it `302`s to `${FRONTEND_URL}/settings/integrations?ghl=connected&webhookUrl=…` (or `?ghl=error&message=…`).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    code?: string;
+                    state?: string;
+                    /** @description Set by GHL when the admin denies access → 400. */
+                    error?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Connected (Accept: application/json). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GhlCallbackResult"];
+                    };
+                };
+                /** @description Redirect back to the frontend integrations page (non-JSON Accept), carrying `ghl=connected&webhookUrl` or `ghl=error&message`. */
+                302: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Denied, `code`/`state` missing, or `state` invalid/expired (code INVALID_STATE). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description The tenant in `state` no longer exists. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description GHL rejected the authorisation code (code GHL_SEND_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ghl/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GHL connection status card
+         * @description `connected: false` with every other field null when not connected. `method` = `oauth` (has a refresh token) or `private` (location API key). `locationName` is fetched live from GHL (null when unreachable). `connectedAt` is always null for now.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Connection status. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GhlStatus"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ghl/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test the GHL connection
+         * @description Calls GHL `/locations/{id}` with the stored token.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Connection works. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GhlTestResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description GHL is not connected (code GHL_NOT_CONNECTED). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description GHL call failed (code GHL_SEND_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ghl/connect-private": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Connect a GHL sub-account with a Location API key
+         * @description Allowed before setup is complete. Private-integration connect (no OAuth): verifies `apiKey` + `locationId` by fetching the location from GHL (400 if that fails), stores the key encrypted (no refresh token / expiry — these keys don't expire), sets `ghlConnected = true`, stamps `ghlLocationId` on the Tenant row and returns the `webhookUrl` to register in GHL.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GhlPrivateConnectInput"];
+                };
+            };
+            responses: {
+                /** @description Connected. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProviderConnectResponse"];
+                    };
+                };
+                /** @description Missing field, or the key/location could not be verified. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ghl/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disconnect GHL
+         * @description Allowed before setup is complete. Clears the GHL tokens, location id and webhook secret, sets `ghlConnected = false`, and clears the public Tenant row's `ghlLocationId` (so the outbox worker and inbound webhooks stop routing to this tenant).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Disconnected. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProviderStatusResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/kpi-thresholds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List technician KPI alert thresholds
+         * @description ADMIN/MANAGER. Ordered by metric, operator. Not gated on setup completion.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Thresholds. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KpiThreshold"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        /**
+         * Replace all KPI alert thresholds
+         * @description Body: a raw array or `{ thresholds: [...] }`; replaces every threshold. `metric` ∈ strikes|damages|upsells|revenuePerHour|timeOnJobMinutes, `operator` ∈ GT|LT, `value` 0–99999999. 400 on a duplicate metric+operator pair. The nightly KPI check raises one alert per technician + metric + month when a threshold is crossed (surfaced in GET /dashboard/alerts `kpiAlerts`).
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["KpiThresholdInput"][] | {
+                        thresholds: components["schemas"]["KpiThresholdInput"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description The saved thresholds. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KpiThreshold"][];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/customers": {
         parameters: {
             query?: never;
@@ -1785,7 +2316,7 @@ export interface paths {
         };
         /**
          * List customers + summary KPIs (Screen 14)
-         * @description Search + filter. `?search=` matches name/addressLine/postcode (case-insensitive contains); `?roundId=` filters by assigned round; `?status=` ∈ ACTIVE|PAUSED|CANCELLED|HOLD (HOLD is derived from paymentHold visits). Summary KPIs are business-wide (not filtered).
+         * @description Search + filter, paginated (`page`/`pageSize`, default 1/50, max pageSize 100). `?search=` matches name/addressLine/postcode (case-insensitive contains); `?roundId=` filters by assigned round; `?status=` ∈ ACTIVE|PAUSED|CANCELLED|HOLD (HOLD is derived from paymentHold visits). Summary KPIs are business-wide (not filtered). Rows carry `paymentStatus` as the uppercase enum NONE|PAID|UNPAID|OVERDUE|ON_HOLD|FAILED (BREAKING — was lowercase paid/hold/pending/overdue/failed/none), plus `nextDue` and `badDebt`; `amountDue` = unpaid SENT invoices.
          */
         get: {
             parameters: {
@@ -1793,6 +2324,8 @@ export interface paths {
                     search?: string;
                     roundId?: string;
                     status?: "ACTIVE" | "PAUSED" | "CANCELLED" | "HOLD";
+                    page?: number;
+                    pageSize?: number;
                 };
                 header?: never;
                 path?: never;
@@ -1855,6 +2388,3872 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/customers/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Customer picker search (GAP-010) — top 10
+         * @description Matches name, email, property postcode (case-insensitive contains) and phone/landline by digits (3+ digits). Non-cancelled customers only, ordered by name.
+         */
+        get: {
+            parameters: {
+                query: {
+                    q: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Up to 10 matches. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CustomerSearchRow"][];
+                    };
+                };
+                /** @description `q` missing/blank, too long, or contains a null byte. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/properties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * M6 — Add Property (creates Customer + Property + ServicePlan, atomic)
+         * @description Creates a new Customer together with its first Property + ServicePlan. (POST /customers creates a bare customer; POST /customers/{id}/properties adds a property to an existing one.) `roundId: null` = Save & Assign Later (unassigned).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PropertyCreateInput"];
+                };
+            };
+            responses: {
+                /** @description Created. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            customerId?: string;
+                            propertyId?: string;
+                            servicePlanId?: string;
+                            assigned?: boolean;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/complaints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Complaints — paginated, newest first
+         * @description Paginated (`page`/`pageSize`, default 1/50, max pageSize 100) — returns `{ rows, pagination }`, not a bare array. Optional filters: `status` (OPEN|IN_REVIEW|REVISIT_BOOKED|RESOLVED), `search` (title or customer name), `assignedTo=me` (filter to current user's technician). TECHNICIAN role receives 403.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "OPEN" | "IN_REVIEW" | "REVISIT_BOOKED" | "RESOLVED";
+                    /** @description Case-insensitive search on title or customer name. */
+                    search?: string;
+                    /** @description Pass `me` to return only complaints assigned to the calling user's technician record. */
+                    assignedTo?: "me";
+                    /** @description Filter by specific technician ID. Ignored when `assignedTo=me`. */
+                    technicianId?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated complaint list. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintsListResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /**
+         * Log Complaint — record a new customer service complaint
+         * @description Creates a complaint with `status: OPEN`. All customer fields reference an existing customer record by `customerId`. TECHNICIAN role receives 403.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ComplaintCreateInput"];
+                };
+            };
+            responses: {
+                /** @description Complaint created. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Complaint"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/emergencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List emergencies
+         * @description Returns all technician emergency reports, newest first. Filter by `status` to get only active or resolved ones. ADMIN/MANAGER only.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Filter by status. Omit to return all. */
+                    status?: "ACTIVE" | "RESOLVED";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Emergency list. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmergencyRow"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /**
+         * Report an emergency
+         * @description Technician self-reports that they cannot complete a round. Creates an ACTIVE emergency record. Any authenticated user may call this (technicians included).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description The technician who cannot continue. */
+                        technicianId: string;
+                        /** @description The round they were assigned to. */
+                        roundId: string;
+                        /**
+                         * @description Properties not yet visited.
+                         * @example 3
+                         */
+                        remainingStops: number;
+                        /** @example Alnwick High St Hub */
+                        lastLocation?: string | null;
+                        /**
+                         * Format: date-time
+                         * @description When the service window closes.
+                         */
+                        scheduledWindowEnd?: string | null;
+                        notes?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Emergency created. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmergencyRow"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description Technician or round not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Top metric cards
+         * @description Returns 6 KPI values derived from today's visits, open complaints, and this month's payment/revenue data. ADMIN/MANAGER only.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Dashboard KPIs. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DashboardKpis"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alert card counts
+         * @description Three live-query counts: skipped visits today, failed/overdue payments (all time), and open complaints with a revisit due before end of this week. ADMIN/MANAGER only.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Alert counts. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DashboardAlerts"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/rounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's rounds table
+         * @description Returns one row per round that has visits scheduled today, with completion progress, issue count, and value. ADMIN/MANAGER only.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Round rows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DashboardRoundRow"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/technician-kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Per-technician performance
+         * @description One row per active technician for the requested period: jobs/value completed, open complaints, issues, and (B6 · GAP-025, now computed) timeOnJobMinutes, revenuePerHour, strikes, damages, upsells, upsellValue. ADMIN/MANAGER only.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Aggregation window. Defaults to `monthly` (current calendar month). `yearly` covers Jan 1 → Dec 31 of the current year. */
+                    period?: "monthly" | "yearly";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Technician KPI rows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianKpi"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/charts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Monthly chart data (bar charts)
+         * @description Returns parallel arrays of month labels, value-of-work-completed, and issue count for the last 6 or 12 calendar months. All three arrays are the same length so they can be fed directly into a chart library. `revenuePerHour` is a Phase-2 stub (always null). ADMIN/MANAGER only.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Number of months to include. Defaults to `6m` (last 6 calendar months including current). */
+                    range?: "6m" | "12m";
+                    /** @description Comma-separated technician IDs. When given, restricts the chart data to visits assigned to one of these technicians. */
+                    technicianIds?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Chart data. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DashboardChartData"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add One-off Job — create a single ad-hoc visit outside the recurring schedule
+         * @description Creates a visit with `isOneOff: true`. `roundId: null` means the visit appears in Today's Work only; supply a `roundId` to also show it in the Round Planner for that round. `servicePlanId` is always `null`. `status` is always `SCHEDULED`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["VisitCreateInput"];
+                };
+            };
+            responses: {
+                /** @description Created visit. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Visit"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List rounds
+         * @description Optional `status` filter (ACTIVE|DRAFT|ARCHIVED).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "ACTIVE" | "DRAFT" | "ARCHIVED";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Round list. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RoundSummary"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /**
+         * Create a round
+         * @description Always created ACTIVE. `frequency` and `serviceAreaId` are required; `serviceAreaId` must reference an existing service area (404 if not).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RoundCreateInput"];
+                };
+            };
+            responses: {
+                /** @description Created round. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RoundDetail"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/planner/occurrences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Batched calendar view across multiple rounds
+         * @description One call in place of one GET /rounds/{id}/planner/occurrences per round. `roundIds` is a required comma-separated list (max 50 ids). At least one of `from`/`to` is required; the range must not exceed 90 days. An id with no matching visits simply gets an empty `occurrences` array — a stale/unknown round id never fails the whole call.
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description Comma-separated round IDs, max 50. */
+                    roundIds: string;
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description One entry per requested round id. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RoundOccurrenceBatchItem"][];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technicians": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List technicians
+         * @description Each row includes the technician's round names and today's job stats (total/completed/skipped/remaining), computed up front.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Technician list. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianListRow"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /**
+         * Create a technician
+         * @description Creates an invite-pending technician (profileId = null) unless `sendInvite` is true, in which case an email is required and a TenantInvite is also created and emailed. 409 if a pending invite for that email already exists; 503 if the technician was created but the invite email failed to send (retry with POST /invites).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TechnicianDirectoryCreateInput"];
+                };
+            };
+            responses: {
+                /** @description Created technician. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianListItem"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description serviceAreaId not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description A pending invite for this email already exists, or the email already belongs to a technician. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Technician created but the invite email failed to send. */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send one message to a single customer
+         * @description Resolves the customer by `customerId`, or by `propertyId` (looked up to its property's customer) — one of the two is required. `channel` omitted or `AUTO` = SMS when the customer has a mobile, else EMAIL. The OUTBOUND Message is recorded only after GHL accepts it, with GHL's message id in Message.externalId.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MessageSendInput"];
+                };
+            };
+            responses: {
+                /** @description Sent. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MessageSendResult"];
+                    };
+                };
+                /** @description Validation error, or no contact detail for the channel (code NO_CONTACT_FOR_CHANNEL). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Property or customer not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description GoHighLevel is not connected (code GHL_NOT_CONNECTED). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description GHL rejected the message (code GHL_SEND_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broadcast one message to every customer in a round
+         * @description Sends right now — no scheduling. `excludePaymentHold: true` drops any customer whose round properties all have a payment-hold visit. Best-effort: a per-recipient failure is logged and skipped; `queued` counts successes, not attempts. 409 if GoHighLevel isn't connected.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MessageBulkInput"];
+                };
+            };
+            responses: {
+                /** @description Broadcast result. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MessageBulkResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description GoHighLevel is not connected. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/step/9": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Step 9 — list properties added so far */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Setup properties. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SetupPropertyResult"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        /**
+         * Step 9 — add one property
+         * @description One-time setup property creation — does not reuse POST /properties. Call multiple times to add multiple properties. `roundId` is required (and must reference an ACTIVE round). GAP-010: pass `customerId` to attach the property to an existing customer (404 if unknown); otherwise a customer with the same mobile/email is reused (`customerMatched: true`). `lastCleanedDate` (ISO) seeds the plan's nextDueDate (one cycle after it, on the round day). Marks step 9 complete.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetupPropertyInput"];
+                };
+            };
+            responses: {
+                /** @description Created property. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SetupPropertyResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description customerId not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/step/9/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Step 9 — bulk import properties
+         * @description GAP-009: every row needs a `phone` (row error otherwise); row errors carry `error` (and the deprecated `message`). A row whose `cleaningFrequency` differs from its round's frequency is a row error unless `allowFrequencyMismatch: true`. Accepts up to 1000 rows in `properties[]`, processed in batches of 100 (each batch its own transaction). A row that fails validation, or a batch that fails to commit, is reported in `errors[]` by its original row index — it does not abort the other, valid rows in the same request. Pass `idempotencyKey` in the body (not a header) to make a retried call safe: a repeat call with the same key short-circuits to the original result (`idempotent: true`, `results` empty) instead of re-creating the rows. Responds `201` whenever anything was created, or this was an idempotent replay; responds `400` only when every row failed and it wasn't an idempotent replay.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetupPropertyBulkInput"];
+                };
+            };
+            responses: {
+                /** @description Import result — some or all rows created (or an idempotent replay). */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BulkSetupPropertyResult"];
+                    };
+                };
+                /** @description Every row failed validation or failed to commit. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BulkSetupPropertyResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/step/10": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Step 10 — current round/technician assignment board */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Assignment board. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Step10Result"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        /**
+         * Step 10 — assign technicians to rounds
+         * @description Body is a raw JSON array (not wrapped in an object) of `{ roundId, technicianIds }`. Replaces assignments for each round included in the request (idempotent); a round not included is left untouched. Every `roundId` must reference an ACTIVE round and every `technicianId` an active technician, and `roundId` must not repeat within the array.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RoundTechnicianAssignmentInput"][];
+                };
+            };
+            responses: {
+                /** @description Updated assignment board. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Step10Result"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/step/11": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Step 11 — activation status
+         * @description `activated` is derived from whether any SCHEDULED visit exists yet.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Activation status. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivationStatus"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        /**
+         * Step 11 — activate system & generate visits
+         * @description Generates the initial batch of SCHEDULED visits (A2 / GAP-016) for every ACTIVE property's first ACTIVE plan on the targeted round(s), from `startDate` through `startDate + cycleWeeks`, starting at each plan's nextDueDate and repeating on its frequency; held customers and unavailable technicians are skipped. GET /setup/step/11/preview returns the same plan without writing. `startDate` must be today or later. 409 if the system is already activated (setup already complete); 404 if `generateAll: false` and none of the given `roundIds` matched an ACTIVE round.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ActivationInput"];
+                };
+            };
+            responses: {
+                /** @description Activation result. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivationResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description None of the specified roundIds were found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description System is already activated. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/step/11/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Step 11 — preview the visits activation would generate
+         * @description Runs the same planner as POST /setup/step/11 over every ACTIVE round, without saving. 400 on a bad/missing `startDate` or `cycleWeeks` (integer 1–52).
+         */
+        get: {
+            parameters: {
+                query: {
+                    startDate: string;
+                    cycleWeeks: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Per-round preview. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivationPreview"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/step/12": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Step 12 — review & launch checklist
+         * @description A human-readable checklist derived from the overall setup status (same underlying step data as GET /setup/status).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Checklist. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReviewChecklist"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt/kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Debt KPI cards */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Debt KPIs. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DebtKpis"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Debt board — paginated invoice rows for one bucket tab
+         * @description `bucket` is required. The 6 named buckets are mutually exclusive by construction; anything else (including the literal `ALL`) falls into the catch-all "everything not in the other buckets" bucket. `ON_HOLD` is customer-based (every held customer, one row each, even without a SENT invoice) so it matches GET /debt/board/counts.
+         */
+        get: {
+            parameters: {
+                query: {
+                    bucket: "BAD_DEBT" | "ON_HOLD" | "FAILED_GC" | "DUE_BEFORE_CLEAN" | "SEVEN_DAYS_OVER" | "FOURTEEN_DAYS_OVER" | "ALL";
+                    roundId?: string;
+                    paymentMethod?: components["schemas"]["PaymentMethod"];
+                    /** @description Case-insensitive search on customer name or property address. */
+                    search?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated debt board rows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DebtBoardResult"];
+                    };
+                };
+                /** @description bucket query param is required. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt/board/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * All 7 bucket-tab counts in one call
+         * @description Replaces the previous frontend pattern of one GET /debt/board?pageSize=1 request per tab.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    roundId?: string;
+                    paymentMethod?: components["schemas"]["PaymentMethod"];
+                    search?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Bucket counts. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DebtBucketCounts"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Activity log — paginated
+         * @description Optional `type` filter and `from`/`to` date-range filter (both YYYY-MM-DD, inclusive). `actorName` is resolved from the control-plane Profile matching each log row's actorId.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @example ROUND_UPDATED */
+                    type?: string;
+                    from?: string;
+                    to?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated activity log. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReportsActivityResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Visit report — paginated */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Unknown values fall back to last30. CANCELLED visits are excluded unless filtered for explicitly. */
+                    period?: "today" | "last7" | "last30" | "last90" | "thisMonth" | "lastMonth" | "thisYear";
+                    status?: components["schemas"]["VisitStatus"];
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated visit rows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReportsVisitsResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/technicians": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Technician performance report — paginated */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Unknown values fall back to last30. CANCELLED visits are excluded unless filtered for explicitly. */
+                    period?: "today" | "last7" | "last30" | "last90" | "thisMonth" | "lastMonth" | "thisYear";
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated technician rows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReportsTechniciansResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daily revenue series
+         * @description Not paginated — one row per day with ≥1 completed visit in the period.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Unknown values fall back to last30. CANCELLED visits are excluded unless filtered for explicitly. */
+                    period?: "today" | "last7" | "last30" | "last90" | "thisMonth" | "lastMonth" | "thisYear";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Revenue rows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReportsRevenueRow"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Summary totals for the period */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Unknown values fall back to last30. CANCELLED visits are excluded unless filtered for explicitly. */
+                    period?: "today" | "last7" | "last30" | "last90" | "thisMonth" | "lastMonth" | "thisYear";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Summary totals. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReportsSummary"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * CSV export
+         * @description Unlike /reports/visits and /reports/technicians, this always exports the FULL (unpaginated) result set for the period — every row, not just the UI's current page — as `text/csv`. `type=revenue` exports the same rows as GET /reports/revenue.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    type?: "visits" | "technicians" | "revenue";
+                    /** @description Unknown values fall back to last30. CANCELLED visits are excluded unless filtered for explicitly. */
+                    period?: "today" | "last7" | "last30" | "last90" | "thisMonth" | "lastMonth" | "thisYear";
+                    /** @description Only applies when type=visits. */
+                    status?: components["schemas"]["VisitStatus"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description CSV file. `Content-Disposition: attachment; filename="{type}-{period}.csv"`. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/csv": string;
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's Work aggregate (Screen 12)
+         * @description KPI tiles, per-round rows, and per-technician workload cards for today.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Today's Work. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TodaysWorkAggregate"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/today/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Operational Day (M21)
+         * @description `unfinishedAction: "push_to_tomorrow"` moves every still-SCHEDULED/IN_PROGRESS visit to the next working day (Mon–Fri, skipping weekends) and resets IN_PROGRESS back to SCHEDULED; `"mark_as_skipped"` marks them SKIPPED in place. 409 if the day is already closed, or if BusinessSettings hasn't been configured yet.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CloseDayInput"];
+                };
+            };
+            responses: {
+                /** @description Close-of-day summary. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CloseDaySummary"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Operational day has already been closed, or settings aren't configured. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview an invoice for a visit (not saved)
+         * @description Computed live from the visit — nothing is persisted. 409 `ALREADY_INVOICED` if the visit already has an invoice, 409 `VISIT_NOT_COMPLETED` if the visit isn't COMPLETED.
+         */
+        get: {
+            parameters: {
+                query: {
+                    visitId: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Invoice preview. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoicePreview"];
+                    };
+                };
+                /** @description visitId query param is required. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description ALREADY_INVOICED or VISIT_NOT_COMPLETED. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/preview/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview an invoice for a visit, as a PDF
+         * @description Same data as GET /invoices/preview, rendered to PDF with `status: "PREVIEW"`. Registered ahead of /invoices/{id}/pdf so "preview" is never captured as an invoice id.
+         */
+        get: {
+            parameters: {
+                query: {
+                    visitId: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Inline PDF. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/pdf": string;
+                    };
+                };
+                /** @description visitId query param is required. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description ALREADY_INVOICED or VISIT_NOT_COMPLETED. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List invoices (GAP-028) — paginated, newest first
+         * @description Filters: `status`, `from`/`to` (issue date, YYYY-MM-DD, `to` inclusive), `customerId`, `q` (invoice number or customer name, contains). `paymentMethod` = the visit payment's method, else the visit's, else the customer's.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: components["schemas"]["InvoiceStatus"];
+                    from?: string;
+                    to?: string;
+                    customerId?: string;
+                    q?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Invoice page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            rows: components["schemas"]["InvoiceListRow"][];
+                            pagination: components["schemas"]["Pagination"];
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /**
+         * Create (save) an invoice for a visit
+         * @description 409 `ALREADY_INVOICED` if the visit already has an invoice; 409 `VISIT_NOT_COMPLETED` unless the visit is COMPLETED. The due date defaults to today + BusinessSettings.invoiceDueDays.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InvoiceCreateInput"];
+                };
+            };
+            responses: {
+                /** @description Created invoice. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoiceActionResult"];
+                    };
+                };
+                /** @description visitId is required. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description ALREADY_INVOICED or VISIT_NOT_COMPLETED. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export invoices as CSV
+         * @description Same filters as GET /invoices, every matching row. Columns: invoiceNumber, customerId, customerName, total, status, issuedAt, dueDate, paidAt, paymentMethod.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: components["schemas"]["InvoiceStatus"];
+                    from?: string;
+                    to?: string;
+                    customerId?: string;
+                    q?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description CSV attachment (invoices.csv). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/csv": string;
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/bulk/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview "create invoices for a day" (B5)
+         * @description Lists the date's non-cancelled visits that would be invoiced (`items`) and those skipped (`skipped`, reason ALREADY_INVOICED | NOT_COMPLETED | ON_HOLD). Nothing is saved.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InvoiceBulkInput"];
+                };
+            };
+            responses: {
+                /** @description Preview. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoiceBulkPreview"];
+                    };
+                };
+                /** @description `date` missing/invalid. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create invoices for a day (B5)
+         * @description Creates an invoice per previewed item; one failure doesn't roll back the rest (`failed[]`). `sendNow: true` sends each through POST /invoices/{id}/send logic (`channel`, default AUTO); an invoice that was created but not sent has `sent: false` and also appears in `failed` with its `invoiceId`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InvoiceBulkInput"] & {
+                        /** @default false */
+                        sendNow?: boolean;
+                        /**
+                         * @description Omitted/AUTO = SMS when the customer has a mobile, else EMAIL.
+                         * @enum {string}
+                         */
+                        channel?: "AUTO" | "SMS" | "EMAIL" | "WHATSAPP";
+                    };
+                };
+            };
+            responses: {
+                /** @description Created / failed. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoiceBulkResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List payments — paginated, newest first
+         * @description Filters: `status`, `method`, `from`/`to` (created date, YYYY-MM-DD, `to` inclusive).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: components["schemas"]["PaymentStatus"];
+                    method?: components["schemas"]["PaymentMethod"];
+                    from?: string;
+                    to?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Payment page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            rows: components["schemas"]["PaymentListRow"][];
+                            pagination: components["schemas"]["Pagination"];
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export payments as CSV
+         * @description Same filters as GET /payments. Columns: id, customerId, customerName, amount, method, status, paidAt, createdAt, visitDate, invoiceNumber.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: components["schemas"]["PaymentStatus"];
+                    method?: components["schemas"]["PaymentMethod"];
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description CSV attachment (payments.csv). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/csv": string;
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/stripe/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a one-time Stripe Checkout session for an invoice
+         * @description Returns the existing PENDING session's URL (200) instead of creating a duplicate if one already exists for this invoice; otherwise creates a new one (201). 400 if Stripe isn't connected. 409 if the invoice is already PAID or VOID.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StripeCheckoutInput"];
+                };
+            };
+            responses: {
+                /** @description New checkout session. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StripeSessionResult"];
+                    };
+                };
+                /** @description Stripe is not connected. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Invoice is already paid or void. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/stripe/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a Stripe Checkout session to save a card
+         * @description 'setup' mode — no charge is made; saves a payment method for future automatic charges. 400 if Stripe isn't connected.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StripeSetupInput"];
+                };
+            };
+            responses: {
+                /** @description New setup session. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StripeSessionResult"];
+                    };
+                };
+                /** @description Stripe is not connected. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Signed-in technician's profile */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Profile summary. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileMe"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update name / date of birth / avatar */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileMeUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description Updated profile summary. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileMe"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/mobile/me/avatar/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signed URL to upload a profile photo
+         * @description Upload the bytes to `signedUrl`, then save the returned `path` via PATCH /mobile/me `avatarUrl`. Display it via GET /mobile/me `avatarSignedUrl` (the bucket is private).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["MobileUploadUrlInput"];
+                };
+            };
+            responses: {
+                /** @description Signed upload URL. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SignedUploadUrl"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/messages/attachments/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signed URL to upload a chat image
+         * @description Use the uploaded URL(s) in POST /mobile/chat/messages with `type: PHOTOS`. The round id is not validated.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileChatAttachmentUploadInput"];
+                };
+            };
+            responses: {
+                /** @description Signed upload URL. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SignedUploadUrl"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Caller's notifications (cursor-paginated, newest first) */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description `nextCursor` from the previous page. */
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description A page of notifications. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileNotificationPage"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark all of the caller's notifications read */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Done. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            read: true;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register a push token
+         * @description Upsert by `pushToken` — re-registering moves the token to the caller.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileDeviceInput"];
+                };
+            };
+            responses: {
+                /** @description Registered. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            registered: true;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/company": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Company contact details + policy links (Help & Support) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Company info (all fields null if not configured). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileCompany"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/support/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report a problem */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileSupportReportInput"];
+                };
+            };
+            responses: {
+                /** @description Report stored. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportReportResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/rounds/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's rounds for the caller (home screen)
+         * @description One row per round that has visits assigned to the caller today. `[]` if the caller has no Technician row.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Round summaries. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileRoundSummary"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/visits/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's visits assigned to the caller
+         * @description Ordered by date then createdAt. Rows carry `startedAt`/`arrivedAt`/`completedAt` for progress. `[]` if the caller has no Technician row.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Visit rows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileVisitRow"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's completions + revenue summary
+         * @description Zeroed summary if the caller has no Technician row.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Completions summary. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileCompletions"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/chat/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Round chat messages (oldest first)
+         * @description Poll with `since` to fetch only newer messages. 403 NOT_YOUR_ROUND unless the caller is assigned to the round or has a visit on it. Each message carries `isMine` and `photoSignedUrls` (1-hour signed read URLs for `photoUrls`).
+         */
+        get: {
+            parameters: {
+                query: {
+                    roundId: string;
+                    /** @description Only messages created strictly after this instant. */
+                    since?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Messages. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatMessage"][];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Post a round chat message
+         * @description 403 NOT_YOUR_ROUND unless the caller is on the round; WORK_PHOTOS also needs the visit to be the caller's (403 NOT_YOUR_VISIT). The sender is stored as the caller's Profile id.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileChatMessageInput"];
+                };
+            };
+            responses: {
+                /** @description Created message. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatMessage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/stripe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stripe platform Connect webhook
+         * @description One platform-level endpoint for all tenants ("Listen to events on Connected accounts"). Verified with the `Stripe-Signature` header against `STRIPE_CONNECT_WEBHOOK_SECRET`; the tenant is resolved from `event.account` → Tenant.stripeConnectAccountId. Idempotent by event id. Handles `checkout.session.completed` (one-time: PAID Payment + invoice PAID; setup: saves the default payment method), `checkout.session.expired` and `payment_intent.payment_failed`. A paid invoice also auto-releases the customer's payment hold when nothing else is outstanding. Non-Connect events and unknown accounts are acked with 200.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Stripe-Signature": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Acknowledged (also for replays, non-Connect events and unknown accounts). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Signature verification failed. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description The event could not be recorded or processed (Stripe will retry). */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description STRIPE_CONNECT_WEBHOOK_SECRET is not configured (code WEBHOOK_NOT_CONFIGURED). */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/gocardless": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * GoCardless webhook (per tenant)
+         * @description URL comes from POST /settings/payment/gocardless/connect. `secret` must match the tenant's route secret and the body is verified with the `Webhook-Signature` header against the signing secret saved via PATCH /settings/payment/gocardless/webhook-secret. Unknown tenant, wrong route secret, or no signing secret saved yet → silent 200 (nothing processed). Handles payments paid/confirmed/failed/cancelled and mandates active/cancelled/failed/expired; idempotent per event id.
+         */
+        post: {
+            parameters: {
+                query: {
+                    tenantId: string;
+                    secret: string;
+                };
+                header: {
+                    "Webhook-Signature": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Acknowledged (or silently ignored). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description tenantId/secret missing, or malformed body. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Invalid webhook signature. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/ghl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * GoHighLevel webhook (per tenant)
+         * @description URL comes from the GHL connect flow. `secret` is compared (constant-time) with the tenant's GHL webhook secret. Handles: lead handoff (payload with `contactId` and no `type` → creates Customer [+ Property if address1 + postalCode]), `InboundMessage` (stored as an INBOUND Message), `Uninstall` (clears the GHL connection); ContactCreate/ContactUpdate are ignored (RoundFlow is master). Events with an `id` are deduplicated.
+         */
+        post: {
+            parameters: {
+                query: {
+                    tenantId: string;
+                    secret: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Acknowledged. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Body is not valid JSON. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description tenantId/secret missing, unknown tenant, GHL not connected, or secret mismatch. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend an invite email
+         * @description Re-sends the email for an unaccepted invite (expired or not) and resets `expiresAt` to 7 days from now. The token is unchanged, so links in earlier emails keep working. Requires ADMIN or MANAGER role.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The updated TenantInvite. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TenantInvite"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description No invite with this id in the caller's tenant. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Invite already accepted (`code: INVITE_ACCEPTED`). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Email failed to send; the invite is unchanged. */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Validate an invite token (public)
+         * @description Public endpoint — no auth required. Used by the frontend before the invitee authenticates to check the token is valid and pre-fill the signup form. Returns 410 if the token is expired or has already been accepted.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Token is valid. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InviteTokenInfo"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                410: components["responses"]["Gone"];
+            };
+        };
+        put?: never;
+        post?: never;
+        /**
+         * Cancel an invite
+         * @description **For this operation the path segment is the invite `id`** (from GET /invites), not the token. Deletes an unaccepted invite; its email link then returns 404. Requires ADMIN or MANAGER role.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description No invite with this id in the caller's tenant. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Invite already accepted (`code: INVITE_ACCEPTED`). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an invite (invitee calls after Supabase auth)
+         * @description Called by the frontend after the invitee authenticates with Supabase. The caller's JWT email must match the invite email (403 if not). Creates a `Profile` with the invite's `tenantId` and `role`, stamps `acceptedAt`, and — if the invite had a `technicianId` — links that Technician row (`profileId = profile.id`). **Idempotent** — returns the existing Profile with 200 if it was already created.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InviteAcceptInput"];
+                };
+            };
+            responses: {
+                /** @description Profile already existed (idempotent). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            profile: components["schemas"]["Profile"];
+                        };
+                    };
+                };
+                /** @description Profile created and invite accepted. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            profile: components["schemas"]["Profile"];
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description The authenticated user's email does not match the invite email. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                410: components["responses"]["Gone"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/services/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a service
+         * @description 409 if any ServicePlan or Visit references the service.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update a service (partial) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServiceUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description The updated service. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Service"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
+    "/settings/service-areas/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a service area
+         * @description 409 if any Round or Property references the area.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update a service area (partial) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServiceAreaUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description The updated service area. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ServiceArea"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
+    "/settings/technicians/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a technician
+         * @description Only invite-pending technicians (profileId = null) can be deleted; 409 if the invite was accepted.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update a technician (partial) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TechnicianUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description The updated technician. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Technician"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
+    "/settings/message-templates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a message template */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update a message template (partial) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MessageTemplateUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description Updated template. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MessageTemplateView"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         trace?: never;
     };
     "/customers/{id}": {
@@ -1920,7 +6319,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** M19 — Edit Customer Record (Customer + Property + Plan, atomic) */
+        /**
+         * M19 — Edit Customer Record (Customer + Property + Plan, atomic)
+         * @description Partial update. `messagesOptOut: true` stops automated messages (pre-clean reminders, visit-completed) for this customer. Queues a GHL customer.synced event.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -1957,29 +6359,164 @@ export interface paths {
         };
         trace?: never;
     };
-    "/properties": {
+    "/customers/{id}/visits": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Paginated visit history (every status)
+         * @description Newest first; includes CANCELLED visits with `cancelReason` (the detail aggregate's visitHistory tab excludes them). `page`/`pageSize` default 1/50, max 100.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Visit history page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CustomerVisitsPage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Customer not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/bad-debt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Flag / clear a customer as bad debt (GAP-022)
+         * @description There is no reason column — `reason` is written to the activity log (CUSTOMER_BAD_DEBT_FLAGGED / CUSTOMER_BAD_DEBT_CLEARED).
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        flag: boolean;
+                        reason?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated flag. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            badDebt: boolean;
+                        };
+                    };
+                };
+                /** @description `flag` missing or not a boolean. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Customer not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/customers/{id}/properties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
             cookie?: never;
         };
         get?: never;
         put?: never;
         /**
-         * M6 — Add Property (creates Customer + Property + ServicePlan, atomic)
-         * @description The only way customers are created (there is no POST /customers). `roundId: null` = Save & Assign Later (unassigned).
+         * Add a property (+ ServicePlan) to an existing customer
+         * @description Atomic Property + ServicePlan create. 404 if the customer, round or service area doesn't exist; 409 if the customer is CANCELLED. Geocoding runs in the background.
          */
         post: {
             parameters: {
                 query?: never;
                 header?: never;
-                path?: never;
+                path: {
+                    id: string;
+                };
                 cookie?: never;
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["PropertyCreateInput"];
+                    "application/json": components["schemas"]["CustomerPropertyAddInput"];
                 };
             };
             responses: {
@@ -1989,18 +6526,182 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            customerId?: string;
-                            propertyId?: string;
-                            servicePlanId?: string;
-                            assigned?: boolean;
-                        };
+                        "application/json": components["schemas"]["CustomerPropertyAddResult"];
                     };
                 };
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                /** @description Customer is cancelled. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * List a customer's invoices, newest first
+         * @description Returns `[]` for an unknown customer id (no 404). Each row carries `paidAt` and the linked visit's `payment` ({ id, status, method } or null).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Invoices. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CustomerInvoiceRow"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/mandate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a GoCardless Direct Debit mandate (redirect flow)
+         * @description Creates a GoCardless redirect flow using the tenant's stored GoCardless token and returns its URL. The customer is sent back to `${FRONTEND_URL}/customers/{id}/mandate/success`, after which the frontend calls POST /customers/{id}/mandate/complete.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Redirect-flow URL. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MandateRedirectResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Customer already has an active mandate, or GoCardless is not connected. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/mandate/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete the GoCardless redirect flow
+         * @description Completes `redirectFlowId` with GoCardless and stores the GoCardless customer + mandate ids on the customer with `gocardlessMandateStatus = pending_customer_approval`. The status moves to `active` (etc.) via POST /webhooks/gocardless mandate events.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MandateCompleteInput"];
+                };
+            };
+            responses: {
+                /** @description Mandate created. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MandateCompleteResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description GoCardless is not connected. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -2047,7 +6748,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update property (+ Move Round: assign/unassign) */
+        /**
+         * Update property (+ Move Round: assign/unassign, frequency move)
+         * @description `cleaningFrequency` without `roundId` reuses the B3 move logic of PATCH /service-plans/{id}: the plan (and property) move to a matching ACTIVE round in the service area, else 409 `NO_MATCHING_ROUND` with `suggestions` + `proposedName` unless `createRoundIfMissing: true` (then that round is created). The move runs first, so a 409 leaves the property untouched. Response = the Property plus `movedToRound` ({ id, name, created } or null).
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -2069,13 +6773,22 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Property"];
+                        "application/json": components["schemas"]["PropertyUpdateResult"];
                     };
                 };
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                /** @description No ACTIVE round matches the new frequency (code NO_MATCHING_ROUND). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NoMatchingRoundError"];
+                    };
+                };
             };
         };
         trace?: never;
@@ -2092,8 +6805,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * M9 — Pause Service (ServicePlan.status → PAUSED)
-         * @description 409 if the plan is already PAUSED. `reason` is validated but not persisted (no column).
+         * M9 — Pause Service
+         * @description Pauses the property's primary plan. SCHEDULED visits of the plan inside [pauseStartDate, pauseEndDate] (end inclusive; open-ended = every visit from the start) are CANCELLED with `cancelReason: "PAUSED"`. A start on/before today sets the plan PAUSED now; a future start keeps it ACTIVE with the window stored (`pauseScheduled: true`) and the nightly job pauses it on the day. 409 if the plan is already PAUSED. `reason` is validated but not persisted (no column).
          */
         post: {
             parameters: {
@@ -2110,15 +6823,13 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Updated ServicePlan. */
+                /** @description Updated ServicePlan + pause outcome. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
+                        "application/json": components["schemas"]["PauseResult"];
                     };
                 };
                 400: components["responses"]["BadRequest"];
@@ -2147,7 +6858,7 @@ export interface paths {
         put?: never;
         /**
          * Resume Service (status → ACTIVE, clears pause window)
-         * @description 409 if the plan is not currently PAUSED.
+         * @description Sets the plan ACTIVE, clears the pause window and sets nextDueDate to the round's next defaultDay on/after today (cancelled visits are not restored; the nightly generator creates the next one). Also cancels a scheduled (future) pause. 409 if the plan is neither PAUSED nor has a pause window.
          */
         post: {
             parameters: {
@@ -2166,9 +6877,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
+                        "application/json": components["schemas"]["ServicePlan"];
                     };
                 };
                 401: components["responses"]["Unauthorized"];
@@ -2192,7 +6901,10 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** List notes (Notes & Risk), newest first */
+        /**
+         * List notes (Notes & Risk): pinned access/risk notes, then notes newest first
+         * @description GAP-022: non-blank `accessNotes` / `riskNotes` come first as `{ pinned: true, source: ACCESS|RISK, body }`; every PropertyNote follows with `pinned: false`.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -2210,7 +6922,10 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["PropertyNote"][];
+                        "application/json": (components["schemas"]["PinnedNote"] | (components["schemas"]["PropertyNote"] & {
+                            /** @enum {boolean} */
+                            pinned?: false;
+                        }))[];
                     };
                 };
                 401: components["responses"]["Unauthorized"];
@@ -2256,39 +6971,171 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/visits": {
+    "/properties/{id}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Property photo gallery (B4 · GAP-019)
+         * @description Photos of the property plus its visits' BEFORE/AFTER photos, newest first. `url`/`thumbnailUrl` are 1-hour signed read URLs (refetch on focus). `pageSize` default 24, max 100.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    type?: components["schemas"]["PhotoType"];
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Photo page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PhotoPage"];
+                    };
+                };
+                /** @description Bad `type` or paging params. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Property not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/complaints/{id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get Complaint — fetch a single complaint by ID */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Complaint detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Complaint"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         put?: never;
-        /**
-         * Add One-off Job — create a single ad-hoc visit outside the recurring schedule
-         * @description Creates a visit with `isOneOff: true`. `roundId: null` means the visit appears in Today's Work only; supply a `roundId` to also show it in the Round Planner for that round. `servicePlanId` is always `null`. `status` is always `SCHEDULED`.
-         */
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/complaints/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Messages — get the full message thread for a complaint */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Message thread. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintMessage"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /** Add Message — send an outbound reply on the complaint thread */
         post: {
             parameters: {
                 query?: never;
                 header?: never;
-                path?: never;
+                path: {
+                    id: string;
+                };
                 cookie?: never;
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["VisitCreateInput"];
+                    "application/json": components["schemas"]["AddMessageInput"];
                 };
             };
             responses: {
-                /** @description Created visit. */
+                /** @description Message created. */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Visit"];
+                        "application/json": components["schemas"]["ComplaintMessage"];
                     };
                 };
                 400: components["responses"]["BadRequest"];
@@ -2298,6 +7145,3556 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/complaints/{id}/mark-in-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark In Review — set complaint status to IN_REVIEW */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Updated complaint. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Complaint"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/complaints/{id}/schedule-revisit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Schedule Revisit — book a revisit date and set status to REVISIT_BOOKED
+         * @description GAP-029: also books a free (price 0) one-off SCHEDULED revisit visit on the property's round for that date, so it shows in the planner and the technician app. Technician = the complaint's technician when active and invite-accepted (pinned with technicianOverride), else whoever the round gives the property that day. Rebooking moves the complaint's open revisit visit instead of adding another. Response = the complaint plus `visitId` (null when the complaint has no property).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ScheduleRevisitInput"];
+                };
+            };
+            responses: {
+                /** @description Updated complaint + revisit visit id. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Complaint"] & {
+                            visitId: string | null;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/complaints/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve — mark complaint as RESOLVED
+         * @description Sets resolvedAt (now) and resolvedBy (the calling user's Profile — returned as `{ id, name }`). Optional `notes` and `upheld` (boolean) are persisted; an upheld complaint with a technician counts as a strike in technician KPIs.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ResolveComplaintInput"];
+                };
+            };
+            responses: {
+                /** @description Updated complaint. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Complaint"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/complaints/{id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen — reset a resolved complaint back to OPEN */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Updated complaint. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Complaint"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/complaints/{id}/assign-technician": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assign Technician — link a technician to a complaint
+         * @description Attribution only, so pending-invite technicians are allowed (GAP-029).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AssignTechnicianInput"];
+                };
+            };
+            responses: {
+                /** @description Updated complaint. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Complaint"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/emergencies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get emergency detail
+         * @description Returns full detail for one emergency. ADMIN/MANAGER only.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Emergency detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmergencyRow"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/emergencies/{id}/available-technicians": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * List available technicians for reassignment
+         * @description Returns all active technicians except the one who reported the emergency, each with their remaining job count for today and a derived availability status. Feed this into the reassignment picker. ADMIN/MANAGER only.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Available technicians. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AvailableTechnicianRow"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/emergencies/{id}/reassign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm reassignment
+         * @description Atomically: marks the emergency RESOLVED, sets `assignedTechnicianId`, and bulk-reassigns all remaining SCHEDULED/IN_PROGRESS visits on that round today from the original technician to the new one. 409 if the emergency is already resolved. ADMIN/MANAGER only.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description The technician taking over the remaining stops. */
+                        newTechnicianId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Resolved emergency. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmergencyRow"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Emergency or technician not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Emergency is already resolved. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/visits/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Mark a visit COMPLETED and create its Payment
+         * @description Shared with PATCH /mobile/visits/{id}/complete (D-2). Idempotent for already-COMPLETED visits (returns `payment: null`, no side effects); 409 for SKIPPED or CANCELLED. All payment input is validated (and any GoCardless charge created) before anything is written; the visit, Payment, cheque log and outbox events are then written in one transaction, so a 400 leaves the visit untouched. `payment.method` CASH → PAID payment; CHEQUE → PENDING payment with Payment.reference = chequeNumber; otherwise the effective method (visit → plan → customer) applies: CASH without confirmation is 400 PAYMENT_CONFIRMATION_REQUIRED, BACS/CHEQUE → PENDING, GOCARDLESS with an active mandate → PENDING charge, STRIPE/none → no payment. Queues GHL `visit.completed` and, unless the customer opted out, a `message.visit_completed` customer message.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["VisitCompleteInput"];
+                };
+            };
+            responses: {
+                /** @description Visit status + created payment. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VisitCompleteResult"];
+                    };
+                };
+                /** @description INVALID_PAYMENT, CHEQUE_NUMBER_REQUIRED or PAYMENT_CONFIRMATION_REQUIRED. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Visit was skipped or cancelled. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/visits/{id}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Before/after photos for a visit (B4)
+         * @description Oldest first; `url`/`thumbnailUrl` are 1-hour signed read URLs. Returned as a single page.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Photos. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VisitPhotosResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Visit not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/planner/occurrences/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Batched day stops (list/map view) across multiple rounds
+         * @description One call in place of one GET /rounds/{id}/planner/occurrences/{date} per round. `roundIds` is a required comma-separated list (max 50 ids). An id with no matching visits simply gets an empty `stops` array.
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description Comma-separated round IDs, max 50. */
+                    roundIds: string;
+                };
+                header?: never;
+                path: {
+                    date: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description One entry per requested round id. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DayStopsForRound"][];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get round detail
+         * @description Round plus its full technician list and property count.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Round detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RoundDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a round (partial)
+         * @description `frequency: null` clears it; `serviceAreaId` (if given) must exist (404 if not); `status` can be set directly (e.g. to ARCHIVED).
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RoundUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description Updated round. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RoundDetail"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
+    "/rounds/{id}/planner/occurrences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Occurrence list (calendar view)
+         * @description One aggregate-stats row per calendar date with ≥1 visit. At least one of `from`/`to` is required; the range must not exceed 90 days.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Occurrence summaries. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OccurrenceSummary"][];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/technicians": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the round's technicians and split its properties (A1 / GAP-012)
+         * @description Full replace semantics — send the complete list you want to keep (empty array clears). Every id must reference an active, invite-accepted technician (400 otherwise); unknown ids 404. `split.mode`: SINGLE (exactly one technician, 400 otherwise), AUTO (balanced by plan value), MANUAL (`allocations` of `{ propertyId, technicianId }`). Omitted = SINGLE for one technician, AUTO for more. Future SCHEDULED visits are restamped (except manually-overridden ones). `?dryRun=true` returns the same response without saving anything. BREAKING: the response is `{ roundId, allocation, visitsUpdated }` (was the RoundDetail). An invalid MANUAL allocation is 400 `INVALID_ALLOCATION` with a per-property `fields` map.
+         */
+        put: {
+            parameters: {
+                query?: {
+                    /** @description "true" = compute and return, roll everything back. */
+                    dryRun?: "true" | "false";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetRoundTechniciansInput"];
+                };
+            };
+            responses: {
+                /** @description Allocation result. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SetTechniciansResult"];
+                    };
+                };
+                /** @description Validation error, or code INVALID_ALLOCATION with `fields` (propertyId → reason). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fields?: {
+                                [key: string]: string;
+                            };
+                        } & components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/allocation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Current property split between the round's technicians */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Split mode + allocation. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RoundAllocation"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Today panel for this round (Screen 13) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Today panel. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TodayPanel"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/reassign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reassign one date's visits to another technician (M15, GAP-013)
+         * @description Moves the round's visits on `date` (default today) from `fromTechnicianId` (null = the date's unassigned visits) to `toTechnicianId`. `scope: REMAINING` only touches SCHEDULED/IN_PROGRESS visits; `ALL` also COMPLETED/SKIPPED (lowercase still accepted). A one-off reassign marks the visits as manual overrides; `permanent: true` also moves the properties' allocation so future visits follow. BREAKING: the response is `{ updated }` (was `{ updatedCount }`). 409 if the operational day has already been closed.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReassignTechnicianInput"];
+                };
+            };
+            responses: {
+                /** @description Reassignment result. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReassignResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Round or target technician not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Operational day has already been closed. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/push-missed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Push today's missed jobs to a new date (M22)
+         * @description Moves every SCHEDULED visit on this round, scheduled today, to `newDate` (must be strictly after today). Optionally reassigns `technicianId` at the same time and/or SMS-notifies the affected customers (best-effort — a per-customer send failure is logged, not surfaced). 409 if the operational day has already been closed.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PushMissedVisitsInput"];
+                };
+            };
+            responses: {
+                /** @description Push-missed result. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PushMissedResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Operational day has already been closed. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/generate-visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate due visits for this round now
+         * @description Runs the same per-round visit-generation logic as the nightly cron job, immediately, for just this round — useful for a round created after setup that would otherwise wait for the next nightly run. The round must be ACTIVE.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Generation result. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GenerateVisitsResult"];
+                    };
+                };
+                /** @description Round must be ACTIVE to generate visits. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technicians/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get technician detail
+         * @description Adds round names and a per-round breakdown of today's workload (total/completed/skipped/remaining per round).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Technician detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update a technician (partial) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TechnicianDirectoryUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description Updated technician. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianListItem"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
+    "/technicians/{id}/performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Technician KPIs for a period (B6 · GAP-025)
+         * @description UTC calendar ranges; `monthly`/`yearly` are aliases of thisMonth/thisYear; last30/last90 include today. timeOnJobMinutes / revenuePerHour are null when no completed visit in the period has start+complete timestamps. Strikes = STRIKE incidents + upheld complaints.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    period?: "thisMonth" | "lastMonth" | "thisYear" | "last30" | "last90" | "monthly" | "yearly";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Performance. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianPerformance"];
+                    };
+                };
+                /** @description Unknown period. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Technician not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technicians/{id}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Photos from the technician's visits (B4 · GAP-019)
+         * @description Newest first, 1-hour signed URLs. `pageSize` default 24, max 100.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Photo page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PhotoPage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Technician not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technicians/{id}/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** List the technician's incidents (strikes, damages, upsells) */
+        get: {
+            parameters: {
+                query?: {
+                    type?: components["schemas"]["IncidentType"];
+                    from?: string;
+                    /** @description Inclusive; must not be before `from`. */
+                    to?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Incident page, newest first. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            rows: components["schemas"]["TechnicianIncident"][];
+                            pagination: components["schemas"]["Pagination"];
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Technician not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Record an incident (STRIKE | DAMAGE | UPSELL)
+         * @description `createdById` = the acting Profile. `visitId`, when given, must exist (404).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        type: components["schemas"]["IncidentType"];
+                        note: string;
+                        /** @description Damage cost / upsell value. */
+                        amount?: number | null;
+                        visitId?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created incident. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianIncident"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Technician or visit not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technicians/{id}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** List leave / unavailability windows (newest first) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Windows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianAvailability"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Technician not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Add an unavailability window
+         * @description Visit generation and restamping skip the technician for dates inside [from, to] (inclusive). Future SCHEDULED visits on the technician's rounds are restamped immediately (`visitsRestamped`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: date */
+                        from: string;
+                        /**
+                         * Format: date
+                         * @description Must not be before `from`.
+                         */
+                        to: string;
+                        reason?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created window. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TechnicianAvailability"] & {
+                            visitsRestamped: number;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Technician not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technicians/{id}/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand the technician's SCHEDULED visits to a replacement
+         * @description Moves SCHEDULED visits dated [from, to] (inclusive; no `to` = open-ended) to `replacementTechnicianId` as manual overrides, and records an unavailability window for the original technician. `notify` (default true) sends the replacement a SCHEDULE notification.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        replacementTechnicianId: string;
+                        /** Format: date */
+                        from: string;
+                        /** Format: date */
+                        to?: string | null;
+                        /** @default true */
+                        notify?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Reassigned count. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            visitsReassigned: number;
+                        };
+                    };
+                };
+                /** @description Same technician, inactive replacement, or bad dates. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Technician or replacement not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technician-incidents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a technician incident */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Incident not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invoice id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Invoice detail for the debt detail panel
+         * @description Fields the board row doesn't carry: phone/email, round, next scheduled visit, GoCardless mandate, and the 5 most recent visits.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Invoice id. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Invoice detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DebtInvoiceDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt/{id}/remind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invoice id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a payment reminder via GHL (A5)
+         * @description Delivers the reminder through GoHighLevel and records an OUTBOUND Message, then queues a GHL `debt.overdue` event. Body: the tenant's "Payment Overdue Reminder" template (fallback if missing), or `message` when given. `channel` omitted/AUTO = SMS when the customer has a mobile, else EMAIL.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Invoice id. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["DebtRemindInput"];
+                };
+            };
+            responses: {
+                /** @description Reminder sent. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReminderResult"];
+                    };
+                };
+                /** @description Bad channel, or no contact detail for it (code NO_CONTACT_FOR_CHANNEL). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description GHL is not connected (code GHL_NOT_CONNECTED). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description GHL rejected the message (code GHL_SEND_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt/{id}/payment-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invoice id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a Stripe payment link via GHL (A5)
+         * @description Gets a Stripe Checkout link for the invoice (reusing an existing PENDING session) and delivers it through GoHighLevel, recording an OUTBOUND Message. Body: the "Payment Link" template or `message`; the URL is appended if the text doesn't contain it. The static pay.roundflow.app fallback is gone — Stripe must be connected. `channel` omitted/AUTO = SMS when the customer has a mobile, else EMAIL.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Invoice id. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["DebtPaymentLinkInput"];
+                };
+            };
+            responses: {
+                /** @description Payment link sent. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentLinkResult"];
+                    };
+                };
+                /** @description Bad channel, or no contact detail for it (code NO_CONTACT_FOR_CHANNEL). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description STRIPE_NOT_CONNECTED, GHL_NOT_CONNECTED, or INVOICE_NOT_PAYABLE (PAID/VOID). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description GHL rejected the message (code GHL_SEND_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt/{id}/bad-debt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invoice id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Flag/unflag the customer as bad debt */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Invoice id. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DebtBadDebtInput"];
+                };
+            };
+            responses: {
+                /** @description Updated flag. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BadDebtFlagResult"];
+                    };
+                };
+                /** @description flag (boolean) is required. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
+    "/debt/{id}/hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invoice id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Put/release the customer's next-clean hold
+         * @description `reason`/`date`/`notify`/`message` are only meaningful when `flag` is true. Holding marks the customer's upcoming SCHEDULED visits `paymentHold`; releasing clears them (`visitsUpdated`). `notify: true` sends an SMS (best-effort — a send failure is logged, not surfaced as an error).
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Invoice id. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DebtHoldInput"];
+                };
+            };
+            responses: {
+                /** @description Updated hold state. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HoldFlagResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
+    "/invoices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get invoice detail (JSON)
+         * @description Line items, technician, visit date, and a VAT/subtotal breakdown. Unlike GET /invoices/{id}/pdf, this degrades gracefully (nulls/empty lineItems) for a standalone invoice with no linked visit instead of 409ing.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Invoice detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoiceDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/{id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Rendered invoice PDF (download/print)
+         * @description 409 if the invoice has no linked visit — there's nothing to render (use GET /invoices/{id} for a visit-less invoice's plain JSON detail instead).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Inline PDF. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/pdf": string;
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Invoice has no linked visit to render. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an invoice to the customer via GHL (A5)
+         * @description Renders the tenant's "Invoice Ready" template (built-in fallback if missing) and delivers it through GoHighLevel on `channel` (omitted/AUTO = SMS when the customer has a mobile, else EMAIL), recording an OUTBOUND Message. Only once GHL accepts does the invoice flip to SENT (`sentToCustomer = true`, `sentAt = now`). An already-SENT invoice needs `resend: true`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @description Case-insensitive.
+                         * @enum {string}
+                         */
+                        channel?: "AUTO" | "SMS" | "EMAIL" | "WHATSAPP";
+                        /** @default false */
+                        resend?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Sent. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoiceSendResult"];
+                    };
+                };
+                /** @description Bad channel, or no contact detail for it (code NO_CONTACT_FOR_CHANNEL). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description INVOICE_ALREADY_SENT (send again with resend: true), INVOICE_NOT_SENDABLE (PAID/VOID), or GHL_NOT_CONNECTED. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description GHL rejected the message (code GHL_SEND_FAILED); the invoice stays unsent. */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/{id}/mark-paid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a manual (BACS / cheque / cash) payment (A7)
+         * @description Creates or updates the visit's Payment (PAID, `paidAt`, `reference` stored on Payment.reference), marks the invoice PAID, logs INVOICE_MARKED_PAID, queues payment.collected, then auto-releases the customer's payment hold if nothing else is outstanding. Part payments are not supported: a given `amount` must equal the invoice total.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        method: "BACS" | "CHEQUE" | "CASH";
+                        /** @description Cheque number / bank reference. */
+                        reference?: string | null;
+                        /**
+                         * Format: date
+                         * @description Default now.
+                         */
+                        paidAt?: string | null;
+                        /** @description Optional check — must equal the invoice total (400 AMOUNT_MISMATCH). */
+                        amount?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Paid invoice + payment. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MarkPaidResult"];
+                    };
+                };
+                /** @description Bad method/date, or AMOUNT_MISMATCH. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description INVOICE_ALREADY_PAID or INVOICE_VOID. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Payment id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Manually reconcile a BACS/cheque payment
+         * @description For methods with no settlement webhook. Only BACS and CHEQUE payments (409 otherwise — GoCardless/Stripe stay webhook-driven); 409 if already PAID. PAID stamps `paidAt` and marks the visit's invoice PAID; both outcomes queue a GHL payment.collected / payment.failed event.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Payment id. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PaymentStatusInput"];
+                };
+            };
+            responses: {
+                /** @description Updated payment. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Payment"];
+                    };
+                };
+                /** @description status must be PAID or FAILED. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Not a BACS/cheque payment, or already paid. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/service-plans/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a service plan (partial)
+         * @description Price, clean method, payment method, cleaning frequency. BREAKING: the response is `{ servicePlan, movedToRound }`. A frequency that differs from the round's moves the property to a matching ACTIVE round (B3); with none, 409 `NO_MATCHING_ROUND` carrying `suggestions` (rounds in the area) and `proposedName`, unless `createRoundIfMissing: true` creates `proposedName` ("<Area> <Day> <N>wk").
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ServicePlanUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description Updated plan + move outcome. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanUpdateResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description No ACTIVE round matches the new frequency (code NO_MATCHING_ROUND). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NoMatchingRoundError"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/service-plans/{id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause a service plan
+         * @description Mirrors POST /properties/{id}/pause (cancels SCHEDULED visits in the window with cancelReason PAUSED; a future start is stored as a scheduled pause). `reason` is required by the UI but not persisted (no column).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PauseServiceInput"];
+                };
+            };
+            responses: {
+                /** @description Paused service plan + outcome. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PauseResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Service plan is already paused. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-plans/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a paused service plan
+         * @description Mirrors POST /properties/{id}/resume (nextDueDate = the round's next defaultDay; also cancels a scheduled pause).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Resumed service plan. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ServicePlan"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Service plan is neither paused nor has a scheduled pause. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Mark one notification read
+         * @description Scoped to the caller's own notifications; an unknown id is a silent no-op (still 200).
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Done. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            read: true;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/mobile/devices/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The push token to remove. */
+                token: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Deregister a push token (sign-out)
+         * @description Only removes the token if it belongs to the caller; unknown tokens are a no-op (still 200).
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The push token to remove. */
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Done. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            unregistered: true;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/visits/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Job detail
+         * @description Full visit with debt-gate result (`canStart`/`blockReason`), outstanding invoices, last clean, round position, activity log and photos (each with a 1-hour `signedUrl`). `paymentMethod` is the effective method (visit → plan → customer). 403 NOT_YOUR_VISIT unless the visit is assigned to the caller.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Visit detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileVisitDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/visits/{id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Start a visit (SCHEDULED → IN_PROGRESS)
+         * @description 409 unless the visit is SCHEDULED. Enforces the debt gate: when `debtHoldEnabled`, a customer whose DRAFT/SENT invoices exceed `debtHoldMaxInvoices`/`debtHoldMaxAmount` (a null limit = any debt) gets 403 with the block reason.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Started. */
+                200: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileStatusResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description Blocked by the debt gate (or no Profile). */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Visit is not SCHEDULED. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/mobile/visits/{id}/arrive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Mark arrived (stamps arrivedAt)
+         * @description 409 unless the visit is IN_PROGRESS. Status is unchanged.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Arrived. */
+                200: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileStatusResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Visit is not IN_PROGRESS. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/mobile/visits/{id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Skip a visit
+         * @description 409 if COMPLETED; already-SKIPPED is a no-op.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileSkipInput"];
+                };
+            };
+            responses: {
+                /** @description Skipped. */
+                200: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileStatusResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Visit is completed. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/mobile/visits/{id}/price": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Adjust the visit price (partial service)
+         * @description Only for SCHEDULED/IN_PROGRESS visits (409 otherwise). The first adjustment remembers the full price in `originalPrice`.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobilePriceInput"];
+                };
+            };
+            responses: {
+                /** @description Adjusted. */
+                200: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            adjusted: true;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Visit is COMPLETED or SKIPPED. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/mobile/visits/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Complete a visit and create its Payment
+         * @description Same shared completion service as PATCH /visits/{id}/complete (D-2): `payment` { method: CASH | CHEQUE | NONE, amount?, chequeNumber? } is validated before anything is written, then visit + Payment + events are written in one transaction. CHEQUE stores `chequeNumber` on Payment.reference (PENDING). Optional `note` (≤2000 chars) is saved on the visit. Queues GHL `visit.completed` and (unless opted out) the visit-completed customer message. Already-COMPLETED returns `payment: null`; SKIPPED/CANCELLED → 409.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["VisitCompleteInput"] & {
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Visit status + created payment. */
+                200: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VisitCompleteResult"];
+                    };
+                };
+                /** @description INVALID_PAYMENT, CHEQUE_NUMBER_REQUIRED or PAYMENT_CONFIRMATION_REQUIRED. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Visit was skipped or cancelled. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/mobile/visits/{id}/access-issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report an access issue on the visit (optionally with photos)
+         * @description To attach photos: POST /mobile/visits/{id}/photos/upload-url with `type: ACCESS_ISSUE` → PUT bytes to `signedUrl` → send the `path`s here as `photoPaths`. 400 if a path isn't this visit's object or more than 10 are sent.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileAccessIssueInput"];
+                };
+            };
+            responses: {
+                /** @description Recorded. */
+                201: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileAccessIssueResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Key reused for a different request (code IDEMPOTENCY_KEY_REUSED). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/visits/{id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a note (stored as an INTERNAL PropertyNote on the visit's property) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileNoteInput"];
+                };
+            };
+            responses: {
+                /** @description Recorded. */
+                201: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            recorded: true;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Key reused for a different request (code IDEMPOTENCY_KEY_REUSED). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/visits/{id}/photos/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signed URL to upload a BEFORE/AFTER/ACCESS_ISSUE photo
+         * @description Step 1 of 3: get URL → PUT bytes to `signedUrl` → POST /mobile/visits/{id}/photos with `path` (BEFORE/AFTER), or POST /mobile/visits/{id}/access-issues `photoPaths` (ACCESS_ISSUE).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobilePhotoUploadUrlInput"];
+                };
+            };
+            responses: {
+                /** @description Signed upload URL. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SignedUploadUrl"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description `contentLength` over 10 MB. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/visits/{id}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record an uploaded photo */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobilePhotoInput"];
+                };
+            };
+            responses: {
+                /** @description Recorded. */
+                201: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            recorded: true;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Key reused for a different request (code IDEMPOTENCY_KEY_REUSED). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/visits/{id}/debt-payment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Collect the customer's outstanding debt on site (cash or cheque)
+         * @description `method: CASH` (or the deprecated `cashConfirmed: true`) marks all of the customer's DRAFT/SENT invoices PAID, records one CASH PAID payment for the total (not linked to a visit) and clears `badDebt`. `method: CHEQUE` + `chequeNumber` records one PENDING CHEQUE payment for the total with Payment.reference = chequeNumber (+ CHEQUE_RECEIVED activity) and leaves the invoices open until the office marks them paid (POST /invoices/{id}/mark-paid). With nothing outstanding it just clears `badDebt` (`cleared: true`, amounts 0).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MobileDebtPaymentInput"];
+                };
+            };
+            responses: {
+                /** @description Result. */
+                200: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileDebtPaymentResult"];
+                    };
+                };
+                /** @description No/unknown method (code INVALID_PAYMENT), or CHEQUE without chequeNumber. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Key reused for a different request (code IDEMPOTENCY_KEY_REUSED). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/visits/{id}/upsells": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record an upsell on the job (B6)
+         * @description Stored as an UPSELL TechnicianIncident for the caller (counts toward their KPIs).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        description: string;
+                        amount: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Recorded upsell. */
+                201: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileUpsell"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Key reused for a different request (code IDEMPOTENCY_KEY_REUSED). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/planner/occurrences/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Occurrence detail (list/map view)
+         * @description Every stop scheduled on this round for this calendar date, plus the same aggregate stats as the calendar view.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    date: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Occurrence detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OccurrenceDetail"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technicians/{id}/availability/{availabilityId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                availabilityId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an unavailability window
+         * @description Restamps the technician's future SCHEDULED visits.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    availabilityId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Removed. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Window not found for this technician. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -2317,10 +10714,13 @@ export interface components {
         DayOfWeek: "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN";
         /** @enum {string} */
         CleaningFrequency: "FOUR_WEEKLY" | "SIX_WEEKLY" | "EIGHT_WEEKLY" | "TWELVE_WEEKLY";
+        /**
+         * @description CANCELLED visits carry `cancelReason` (e.g. "PAUSED" when a plan pause cancels them) and are excluded from today/planner counts.
+         * @enum {string}
+         */
+        VisitStatus: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "SKIPPED" | "CANCELLED";
         /** @enum {string} */
-        VisitStatus: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "SKIPPED";
-        /** @enum {string} */
-        PaymentStatus: "NOT_DUE" | "PENDING" | "PAID" | "FAILED" | "OVERDUE";
+        PaymentStatus: "NOT_DUE" | "PENDING" | "PAID" | "FAILED" | "OVERDUE" | "CANCELLED";
         /** @enum {string} */
         PaymentMethod: "GOCARDLESS" | "CASH" | "CHEQUE" | "BACS" | "STRIPE";
         /** @enum {string} */
@@ -2334,22 +10734,51 @@ export interface components {
         /** @enum {string} */
         ServiceCategory: "DEFAULT" | "WINDOW_CLEANING" | "GUTTER_FASCIA" | "EXTERIOR_CLEANING" | "SPECIALIST";
         /** @enum {string} */
-        InvoiceStatus: "DRAFT" | "SENT" | "PAID";
+        InvoiceStatus: "DRAFT" | "SENT" | "PAID" | "VOID";
         /** @enum {string} */
-        IssueType: "ACCESS_PROBLEM" | "GATE_LOCKED" | "PAYMENT_ISSUE" | "OTHER";
+        IssueType: "ACCESS_PROBLEM" | "GATE_LOCKED" | "PAYMENT_ISSUE" | "DOG_LOOSE" | "NO_REAR_ACCESS" | "UNSAFE_CONDITIONS" | "WRONG_ADDRESS" | "OTHER";
+        /**
+         * @description ACCESS_ISSUE: photo attached to a technician's access-issue report (POST /mobile/visits/{id}/access-issues `photoPaths`).
+         * @enum {string}
+         */
+        PhotoType: "PROPERTY" | "BEFORE" | "AFTER" | "ACCESS_ISSUE";
         /** @enum {string} */
-        PhotoType: "PROPERTY" | "BEFORE" | "AFTER";
-        /** @enum {string} */
-        PaymentTiming: "COLLECT_AFTER_VISIT" | "COLLECT_BEFORE_VISIT" | "COLLECT_ON_DATE";
+        PaymentTiming: "COLLECT_AFTER_VISIT" | "COLLECT_BEFORE_VISIT" | "COLLECT_ON_DATE" | "COLLECT_DAILY_BATCH";
         /** @enum {string} */
         NoteType: "INTERNAL" | "RISK_WARNING" | "CUSTOMER";
         /**
+         * @description Pre-clean reminder timing, sent at BusinessSettings.reminderTime (tenant-local): the evening before, or the morning of, the visit.
+         * @enum {string}
+         */
+        ReminderMode: "EVENING_BEFORE" | "MORNING_OF" | "NONE";
+        /** @enum {string} */
+        CleanMethod: "TRADITIONAL" | "WATER_FED_POLE" | "BOTH";
+        /**
+         * @description What to do after a visit for a customer with no active Direct Debit mandate.
+         * @enum {string}
+         */
+        NoDirectDebitAction: "SEND_INVOICE" | "SEND_PAYMENT_LINK";
+        /** @enum {string} */
+        IncidentType: "STRIKE" | "DAMAGE" | "UPSELL";
+        /** @enum {string} */
+        KpiOperator: "GT" | "LT";
+        /**
+         * @description Derived customer payment status (uppercase, D-2).
+         * @enum {string}
+         */
+        CustomerPaymentStatus: "NONE" | "PAID" | "UNPAID" | "OVERDUE" | "ON_HOLD" | "FAILED";
+        /**
+         * @description Typed errors may carry extra fields, forwarded as-is by the central error handler (e.g. `fields` on INVALID_ALLOCATION, `suggestions` + `proposedName` on NO_MATCHING_ROUND).
          * @example {
          *       "error": "Unauthorized"
          *     }
          */
         Error: {
             error: string;
+            /** @description Machine-readable reason, present on some errors (e.g. INVITE_ACCEPTED, INVITE_EXPIRED, NO_MATCHING_ROUND). See the API description for the full list. */
+            code?: string;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * @description Public-schema mirror of a Supabase auth.users record.
@@ -2373,10 +10802,32 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        /** @description The single business config row (Phase 1 is single-tenant). */
+        /**
+         * @description Bank transfer payment details printed in the invoice footer.
+         * @example {
+         *       "accountName": "Northumberland Window Cleaning Ltd",
+         *       "bankName": "Lloyds Bank",
+         *       "accountNumber": "12345678",
+         *       "sortCode": "30-80-12"
+         *     }
+         */
+        BankDetails: {
+            /** @example Northumberland Window Cleaning Ltd */
+            accountName: string;
+            /** @example Lloyds Bank */
+            bankName?: string | null;
+            /** @example 12345678 */
+            accountNumber: string;
+            /** @example 30-80-12 */
+            sortCode: string;
+        };
+        /** @description The tenant's business config — one row per tenant schema. Every endpoint that returns it (GET/PATCH /settings/*, GET/POST /setup/step/1|2|4) strips the encrypted provider tokens/secrets (any `*Encrypted` column) and returns `vatRate` as a number. */
         BusinessSettings: {
             id?: string;
-            /** @example singleton */
+            /**
+             * @description Always "singleton" — unique within the tenant's own schema.
+             * @example singleton
+             */
             uniqueId?: string;
             businessName?: string | null;
             phone?: string | null;
@@ -2389,15 +10840,59 @@ export interface components {
             currency?: string | null;
             /** @description Cycle length in days. */
             defaultCycleLength?: number | null;
-            bankDetails?: {
-                [key: string]: unknown;
-            } | null;
+            /** @description Printed in the invoice footer for bank transfer customers. */
+            bankDetails?: components["schemas"]["BankDetails"] | null;
             paymentRule?: components["schemas"]["PaymentTiming"] | null;
             debtHoldEnabled?: boolean;
             vatInInvoices?: boolean;
+            debtHoldMaxInvoices?: number | null;
+            /**
+             * @description Decimal money value serialised as a string, e.g. "35".
+             * @example 35
+             */
+            debtHoldMaxAmount?: string | null;
             gocardlessConnected?: boolean;
+            gocardlessEnvironment?: string | null;
             stripeConnected?: boolean;
+            stripeConnectAccountId?: string | null;
+            stripePublishableKey?: string | null;
+            ghlConnected?: boolean;
+            ghlLocationId?: string | null;
+            /** Format: date-time */
+            ghlTokenExpiresAt?: string | null;
             setupCompleted?: boolean;
+            /** @description YYYY-MM-DD of the last closed operational day. */
+            lastClosedDate?: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated — superseded by reminderMode.
+             */
+            preCleanReminderTimings?: string[];
+            termsUrl?: string | null;
+            privacyUrl?: string | null;
+            addressLine1?: string | null;
+            addressLine2?: string | null;
+            town?: string | null;
+            postcode?: string | null;
+            /**
+             * @description VAT percentage (0–100) as a JSON number.
+             * @example 20
+             */
+            vatRate?: number;
+            reminderMode?: components["schemas"]["ReminderMode"];
+            /**
+             * @description HH:mm, tenant-local (timezone).
+             * @example 19:00
+             */
+            reminderTime?: string;
+            defaultCleanMethod?: components["schemas"]["CleanMethod"] | null;
+            autoCreateNextVisit?: boolean;
+            defaultPaymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** @example 7 */
+            invoiceDueDays?: number;
+            noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
+            /** @description Setup wizard steps saved at least once (drives GET /setup/status). */
+            completedSteps?: number[];
             /** Format: date-time */
             updatedAt?: string;
         };
@@ -2467,6 +10962,8 @@ export interface components {
             description?: string | null;
             status?: components["schemas"]["RoundStatus"];
             serviceAreaId?: string | null;
+            /** @description Fallback service for invoice line text (visit service → plan service → round default service → "Window cleaning"). No endpoint sets it yet. */
+            defaultServiceId?: string | null;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -2486,17 +10983,98 @@ export interface components {
             /** @enum {string} */
             appStatus?: "PENDING_INVITE" | "ACTIVE" | "INACTIVE";
         };
+        /** @description Result of a token-based provider connect (POST /settings/payment/gocardless/connect, POST /settings/ghl/connect-private). */
         ProviderConnectResponse: {
-            /** @example connected */
-            status: string;
-            /** @description Phase-1 stub returns no URL; a real URL comes from GHL in Phase 2. */
-            connectUrl?: string | null;
+            /**
+             * @example connected
+             * @enum {string}
+             */
+            status: "connected";
+            /**
+             * @description GHL private-integration connect only.
+             * @enum {string}
+             */
+            method?: "private";
+            /**
+             * @description `${PUBLIC_API_URL}/webhooks/<provider>?tenantId=…&secret=…` — the admin must register this URL in the provider's dashboard by hand. The `secret` query param is a fresh random route token generated on every connect.
+             * @example https://api.roundflow.app/webhooks/gocardless?tenantId=ten_123&secret=3f9a…
+             */
+            webhookUrl: string;
         };
-        MessageTemplateDeferred: {
+        OAuthAuthorizeUrl: {
+            /** @example https://connect.stripe.com/oauth/authorize?response_type=code&client_id=ca_…&scope=read_write&state=… */
+            url: string;
+        };
+        StripeCallbackResult: {
             /** @enum {string} */
-            status: "deferred";
-            /** @example ghl */
-            source: string;
+            status: "connected";
+            /** @example acct_1Abc */
+            stripeConnectAccountId: string;
+        };
+        GhlCallbackResult: {
+            /** @enum {string} */
+            status: "connected";
+            /** @enum {string} */
+            method: "oauth";
+            locationId: string;
+            /** @description Register this in GHL: `${PUBLIC_API_URL}/webhooks/ghl?tenantId=…&secret=…`. */
+            webhookUrl: string;
+        };
+        /**
+         * @example {
+         *       "connected": true,
+         *       "method": "oauth",
+         *       "locationId": "loc_123",
+         *       "locationName": "Acme Windows",
+         *       "webhookUrl": "https://api.roundflow.app/webhooks/ghl?tenantId=ten_1&secret=…",
+         *       "connectedAt": null
+         *     }
+         */
+        GhlStatus: {
+            connected: boolean;
+            /** @enum {string|null} */
+            method: "oauth" | "private" | null;
+            locationId: string | null;
+            locationName: string | null;
+            webhookUrl: string | null;
+            /**
+             * Format: date-time
+             * @description Not stored yet — always null.
+             */
+            connectedAt: string | null;
+        };
+        GhlTestResult: {
+            /** @enum {boolean} */
+            ok: true;
+            locationName: string | null;
+        };
+        /**
+         * @example {
+         *       "id": "kpi_1",
+         *       "metric": "revenuePerHour",
+         *       "operator": "LT",
+         *       "value": 30
+         *     }
+         */
+        KpiThreshold: {
+            id: string;
+            /** @enum {string} */
+            metric: "strikes" | "damages" | "upsells" | "revenuePerHour" | "timeOnJobMinutes";
+            operator: components["schemas"]["KpiOperator"];
+            value: number;
+        };
+        KpiThresholdInput: {
+            /** @enum {string} */
+            metric: "strikes" | "damages" | "upsells" | "revenuePerHour" | "timeOnJobMinutes";
+            operator: components["schemas"]["KpiOperator"];
+            value: number;
+        };
+        ProviderStatusResult: {
+            /**
+             * @example disconnected
+             * @enum {string}
+             */
+            status: "disconnected" | "saved";
         };
         MessageTemplateView: {
             id: string;
@@ -2521,13 +11099,25 @@ export interface components {
         StepStatus: {
             step: number;
             complete: boolean;
-            /** @description True for step 5 (SMS Templates). Step 2 (Payment Setup) is now a real step. */
+            /** @description True only for step 10 (Assign Technicians to Rounds) — `complete` still reflects reality, but it doesn't block POST /setup/complete. */
             deferred: boolean;
         };
         /**
          * @example {
          *       "setupCompleted": false,
          *       "allRequiredComplete": false,
+         *       "wizardSteps": [
+         *         {
+         *           "key": "business-profile",
+         *           "step": 1,
+         *           "complete": true
+         *         },
+         *         {
+         *           "key": "service-area",
+         *           "step": 7,
+         *           "complete": false
+         *         }
+         *       ],
          *       "steps": [
          *         {
          *           "step": 1,
@@ -2552,7 +11142,7 @@ export interface components {
          *         {
          *           "step": 5,
          *           "complete": false,
-         *           "deferred": true
+         *           "deferred": false
          *         },
          *         {
          *           "step": 6,
@@ -2568,26 +11158,52 @@ export interface components {
          *           "step": 8,
          *           "complete": false,
          *           "deferred": false
+         *         },
+         *         {
+         *           "step": 9,
+         *           "complete": false,
+         *           "deferred": false
+         *         },
+         *         {
+         *           "step": 10,
+         *           "complete": false,
+         *           "deferred": true
+         *         },
+         *         {
+         *           "step": 11,
+         *           "complete": false,
+         *           "deferred": false
+         *         },
+         *         {
+         *           "step": 12,
+         *           "complete": false,
+         *           "deferred": false
          *         }
          *       ]
          *     }
          */
         SetupStatus: {
             setupCompleted: boolean;
-            /** @description True when every non-deferred step (1,2,3,4,6,7,8) is complete. */
+            /** @description True when every non-deferred step before 12 (1–9 and 11) is complete. Step 12 is the completion action itself. */
             allRequiredComplete: boolean;
             steps: components["schemas"]["StepStatus"][];
-        };
-        DeferredStub: {
-            /** @enum {string} */
-            status: "deferred";
-            reason: string;
+            /** @description GAP-002: the web's 10-step wizard in display order. `complete` = that backend step was saved at least once (BusinessSettings.completedSteps), not a row count. key → step: business-profile 1, service-area 7, round-settings 4, first-round 8, service-catalogue 3, technician-management 6, payment-setup 2, sms-templates 5, add-property 9, generate-visits 11. */
+            wizardSteps: {
+                /** @example business-profile */
+                key: string;
+                step: number;
+                complete: boolean;
+            }[];
         };
         HealthStatus: {
             /** @example ok */
             status: string;
             /** Format: date-time */
             timestamp: string;
+        };
+        HealthMigrating: {
+            /** @enum {string} */
+            status: "migrating";
         };
         /**
          * @example {
@@ -2616,6 +11232,464 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description A message in a complaint thread. */
+        ComplaintMessage: {
+            id: string;
+            /**
+             * @example OUTBOUND
+             * @enum {string}
+             */
+            direction: "INBOUND" | "OUTBOUND";
+            /**
+             * @example EMAIL
+             * @enum {string}
+             */
+            channel: "SMS" | "WHATSAPP" | "EMAIL";
+            body: string;
+            complaintId: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /**
+         * @description A customer service complaint record. GET /complaints/{id} (and every mutation response) includes the derived propertyAddress/technicianName/messageCount fields alongside the stored columns.
+         * @example {
+         *       "id": "cmp1abc",
+         *       "status": "OPEN",
+         *       "severity": "MEDIUM",
+         *       "title": "Missed conservatory roof",
+         *       "description": "Second time this month the conservatory roof was not cleaned.",
+         *       "issueType": "Missed Clean",
+         *       "customerId": "cld123",
+         *       "customerName": "David Harris",
+         *       "propertyId": "prp456",
+         *       "propertyAddress": "12 Market Street",
+         *       "technicianId": null,
+         *       "technicianName": null,
+         *       "revisitDate": null,
+         *       "messageCount": 2,
+         *       "resolvedAt": null,
+         *       "resolvedBy": null,
+         *       "upheld": null,
+         *       "notes": null,
+         *       "createdAt": "2026-09-01T09:14:00.000Z"
+         *     }
+         */
+        Complaint: {
+            id: string;
+            /**
+             * @example OPEN
+             * @enum {string}
+             */
+            status: "OPEN" | "IN_REVIEW" | "REVISIT_BOOKED" | "RESOLVED";
+            /**
+             * @example MEDIUM
+             * @enum {string}
+             */
+            severity: "LOW" | "MEDIUM" | "HIGH";
+            /** @example Missed conservatory roof */
+            title: string;
+            description?: string | null;
+            /** @example Missed Clean */
+            issueType?: string | null;
+            customerId: string;
+            /** @example David Harris */
+            customerName: string;
+            propertyId?: string | null;
+            /** @description Derived from the linked Property, when there is one. */
+            propertyAddress?: string | null;
+            technicianId?: string | null;
+            /** @description Derived from the linked Technician, when there is one. */
+            technicianName?: string | null;
+            /**
+             * Format: date
+             * @example 2026-09-10
+             */
+            revisitDate?: string | null;
+            /** @description Total messages in this complaint's thread. */
+            messageCount: number;
+            /**
+             * Format: date-time
+             * @description Set by POST .../resolve; cleared by POST .../reopen.
+             */
+            resolvedAt?: string | null;
+            /** @description BREAKING (was a Profile id string): the Profile that resolved it. */
+            resolvedBy?: {
+                id: string;
+                name: string | null;
+            } | null;
+            /** @description Set by POST .../resolve; an upheld complaint with a technician counts as a strike. Cleared by reopen. */
+            upheld?: boolean | null;
+            /** @description Optional resolution notes, set via the `notes` field of POST .../resolve. */
+            notes?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description GET /complaints — paginated. */
+        ComplaintsListResult: {
+            rows: components["schemas"]["Complaint"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        /**
+         * @example {
+         *       "id": "emg1abc",
+         *       "technicianId": "t1",
+         *       "technicianName": "James Wilson",
+         *       "roundId": "r1",
+         *       "roundName": "Alnwick Monday",
+         *       "remainingStops": 3,
+         *       "lastLocation": "Alnwick High St Hub",
+         *       "scheduledWindowEnd": "2026-09-15T20:30:00.000Z",
+         *       "notes": null,
+         *       "status": "ACTIVE",
+         *       "assignedTechnicianId": null,
+         *       "assignedTechnicianName": null,
+         *       "resolvedAt": null,
+         *       "reportedAt": "2026-09-15T18:24:00.000Z"
+         *     }
+         */
+        EmergencyRow: {
+            id: string;
+            technicianId: string;
+            /** @example James Wilson */
+            technicianName?: string | null;
+            roundId: string;
+            /** @example Alnwick Monday */
+            roundName?: string;
+            /**
+             * @description Number of properties the technician could not reach.
+             * @example 3
+             */
+            remainingStops: number;
+            /**
+             * @description Free-text last known location.
+             * @example Alnwick High St Hub
+             */
+            lastLocation?: string | null;
+            /**
+             * Format: date-time
+             * @description When the service window closes.
+             * @example 2026-09-15T20:30:00.000Z
+             */
+            scheduledWindowEnd?: string | null;
+            notes?: string | null;
+            /**
+             * @example ACTIVE
+             * @enum {string}
+             */
+            status: "ACTIVE" | "RESOLVED";
+            /** @description Set when resolved — the technician who took over. */
+            assignedTechnicianId?: string | null;
+            /** @example Sarah Jenkins */
+            assignedTechnicianName?: string | null;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            /**
+             * Format: date-time
+             * @example 2026-09-15T18:24:00.000Z
+             */
+            reportedAt: string;
+        };
+        /**
+         * @example {
+         *       "technicianId": "t2",
+         *       "technicianName": "Sarah Jenkins",
+         *       "avatarUrl": null,
+         *       "jobsRemaining": 0,
+         *       "availability": "AVAILABLE"
+         *     }
+         */
+        AvailableTechnicianRow: {
+            technicianId: string;
+            /** @example Sarah Jenkins */
+            technicianName?: string | null;
+            avatarUrl?: string | null;
+            /**
+             * @description SCHEDULED or IN_PROGRESS visits for this technician today.
+             * @example 0
+             */
+            jobsRemaining: number;
+            /**
+             * @description AVAILABLE when jobsRemaining = 0, BUSY otherwise.
+             * @example AVAILABLE
+             * @enum {string}
+             */
+            availability: "AVAILABLE" | "BUSY";
+        };
+        /**
+         * @example {
+         *       "jobsScheduledToday": 48,
+         *       "openComplaints": 2,
+         *       "openComplaintsByPriority": {
+         *         "high": 1,
+         *         "medium": 1,
+         *         "low": 0
+         *       },
+         *       "cleanUnpaidAmount": 1240,
+         *       "cleanUnpaidCount": 18,
+         *       "monthlyRevenue": 12400
+         *     }
+         */
+        DashboardKpis: {
+            /**
+             * @description Visits scheduled for today (any non-cancelled status).
+             * @example 48
+             */
+            jobsScheduledToday: number;
+            /**
+             * @description Open complaints (not RESOLVED).
+             * @example 2
+             */
+            openComplaints: number;
+            openComplaintsByPriority: {
+                /** @example 1 */
+                high: number;
+                /** @example 1 */
+                medium: number;
+                /** @example 0 */
+                low: number;
+            };
+            /**
+             * @description Sum of price for completed-but-unpaid visits this month.
+             * @example 1240
+             */
+            cleanUnpaidAmount: number;
+            /**
+             * @description Distinct customers with unpaid visits this month.
+             * @example 18
+             */
+            cleanUnpaidCount: number;
+            /**
+             * @description Sum of price for all completed visits this calendar month.
+             * @example 12400
+             */
+            monthlyRevenue: number;
+        };
+        /**
+         * @example {
+         *       "skippedNeedingReview": 4,
+         *       "failedPayments": 7,
+         *       "complaintRevisitsDue": 2,
+         *       "kpiAlerts": []
+         *     }
+         */
+        DashboardAlerts: {
+            /**
+             * @description Visits skipped today.
+             * @example 4
+             */
+            skippedNeedingReview: number;
+            /**
+             * @description Payments with status FAILED or OVERDUE.
+             * @example 7
+             */
+            failedPayments: number;
+            /**
+             * @description Open complaints with a revisit date on or before end of this week.
+             * @example 2
+             */
+            complaintRevisitsDue: number;
+            /** @description KPI thresholds crossed this month (raised by the nightly KPI check, one per technician + metric + month), newest first. */
+            kpiAlerts: components["schemas"]["KpiThresholdAlert"][];
+        };
+        KpiThresholdAlert: {
+            /** @enum {string} */
+            type: "KPI_THRESHOLD";
+            id: string;
+            technicianId: string;
+            technicianName: string | null;
+            /** @example revenuePerHour */
+            metric: string;
+            /** @example 22.5 */
+            value: number;
+            /** @example 30 */
+            threshold: number;
+            operator: components["schemas"]["KpiOperator"];
+            /** @example 2026-10 */
+            periodKey: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        DashboardRoundRow: {
+            roundId: string;
+            /** @example Alnwick Monday */
+            roundName: string;
+            technicianId?: string | null;
+            /** @example James */
+            technicianName?: string | null;
+            /**
+             * @example in_progress
+             * @enum {string}
+             */
+            status: "not_started" | "in_progress" | "completed";
+            /**
+             * @description Total visits in this round today.
+             * @example 12
+             */
+            total: number;
+            /** @example 8 */
+            completed: number;
+            /** @example 1 */
+            skipped: number;
+            /** @example 1 */
+            issueCount: number;
+            /** @example 0 */
+            paymentHolds: number;
+            /**
+             * @description Sum of every non-cancelled stop's price today (GAP-035).
+             * @example 300
+             */
+            scheduledValue?: number;
+            /**
+             * @description Sum of COMPLETED stops' prices today.
+             * @example 220
+             */
+            completedValue?: number;
+            /**
+             * @deprecated
+             * @description Same as completedValue; kept for one release (GAP-035). Same row as GET /today (TodayRoundRow).
+             * @example 220
+             */
+            value: number;
+            /**
+             * @description Always null — no real estimate yet (the old remaining × 20 guess was removed).
+             * @example null
+             */
+            etaMinutes?: number | null;
+        };
+        /**
+         * @example {
+         *       "technicianId": "t1",
+         *       "technicianName": "James",
+         *       "jobsCompleted": 42,
+         *       "valueCompleted": 840,
+         *       "openComplaints": 1,
+         *       "issueCount": 3,
+         *       "timeOnJobMinutes": 1260,
+         *       "revenuePerHour": 40,
+         *       "strikes": 0,
+         *       "damages": 0,
+         *       "upsells": 2,
+         *       "upsellValue": 30
+         *     }
+         */
+        TechnicianKpi: {
+            technicianId: string;
+            /** @example James */
+            technicianName?: string | null;
+            /**
+             * @description Completed visits in the requested period.
+             * @example 42
+             */
+            jobsCompleted: number;
+            /**
+             * @description Sum of prices for completed visits in the period.
+             * @example 840
+             */
+            valueCompleted: number;
+            /**
+             * @description Non-resolved complaints linked to this technician.
+             * @example 1
+             */
+            openComplaints: number;
+            /**
+             * @description Issues raised on visits completed in the period.
+             * @example 3
+             */
+            issueCount: number;
+            /**
+             * @description Σ(completedAt − startedAt) over completed visits with both timestamps; null when none has timing data.
+             * @example 1260
+             */
+            timeOnJobMinutes?: number | null;
+            /**
+             * @description Value of the timed visits ÷ their hours; null without timing data.
+             * @example 40
+             */
+            revenuePerHour?: number | null;
+            /**
+             * @description STRIKE incidents + upheld complaints in the period.
+             * @example 0
+             */
+            strikes?: number;
+            /** @example 0 */
+            damages?: number;
+            /** @example 2 */
+            upsells?: number;
+            /** @example 30 */
+            upsellValue?: number;
+        };
+        /**
+         * @example {
+         *       "months": [
+         *         "Apr",
+         *         "May",
+         *         "Jun",
+         *         "Jul",
+         *         "Aug",
+         *         "Sep"
+         *       ],
+         *       "valueCompleted": [
+         *         1200,
+         *         1400,
+         *         980,
+         *         1100,
+         *         1600,
+         *         1340
+         *       ],
+         *       "issueCount": [
+         *         3,
+         *         5,
+         *         2,
+         *         4,
+         *         6,
+         *         3
+         *       ],
+         *       "revenuePerHour": null
+         *     }
+         */
+        DashboardChartData: {
+            /**
+             * @description Ordered month labels (e.g. 'Apr', 'May'). Same length as valueCompleted and issueCount.
+             * @example [
+             *       "Apr",
+             *       "May",
+             *       "Jun",
+             *       "Jul",
+             *       "Aug",
+             *       "Sep"
+             *     ]
+             */
+            months: string[];
+            /**
+             * @description Sum of completed-visit prices per month, parallel to months.
+             * @example [
+             *       1200,
+             *       1400,
+             *       980,
+             *       1100,
+             *       1600,
+             *       1340
+             *     ]
+             */
+            valueCompleted: number[];
+            /**
+             * @description Issue count per month, parallel to months.
+             * @example [
+             *       3,
+             *       5,
+             *       2,
+             *       4,
+             *       6,
+             *       3
+             *     ]
+             */
+            issueCount: number[];
+            /**
+             * @description Phase 2 stub — always null.
+             * @example null
+             */
+            revenuePerHour: number | null;
+        };
         /** @description A single ad-hoc (one-off) visit returned from POST /visits. */
         Visit: {
             id: string;
@@ -2628,7 +11702,9 @@ export interface components {
              * @example SCHEDULED
              * @enum {string}
              */
-            status: "SCHEDULED" | "COMPLETED" | "SKIPPED";
+            status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "SKIPPED" | "CANCELLED";
+            /** @description Set when status = CANCELLED, e.g. "PAUSED". */
+            cancelReason?: string | null;
             /** @example true */
             isOneOff: boolean;
             /** @example 45 */
@@ -2641,6 +11717,13 @@ export interface components {
             addressLine: string;
             /** @example NE66 1SS */
             postcode: string;
+            /**
+             * @description Null until the next geocoding backfill tick picks up the new postcode.
+             * @example 55.4042
+             */
+            latitude?: number | null;
+            /** @example -1.7073 */
+            longitude?: number | null;
             customerId: string;
             /** @example John Smith */
             customerName: string;
@@ -2650,6 +11733,1114 @@ export interface components {
             serviceName?: string | null;
             technicianId?: string | null;
             technicianName?: string | null;
+        };
+        /** @description Shared page-metadata shape returned alongside `rows` by every paginated list endpoint. */
+        Pagination: {
+            page: number;
+            pageSize: number;
+            total: number;
+            totalPages: number;
+        };
+        /** @description One row from GET /rounds — Round plus derived counts (no technician list; see RoundDetail for that). */
+        RoundSummary: {
+            id: string;
+            name: string;
+            frequency?: components["schemas"]["CleaningFrequency"] | null;
+            defaultDay?: components["schemas"]["DayOfWeek"] | null;
+            status: components["schemas"]["RoundStatus"];
+            serviceAreaId?: string | null;
+            serviceAreaName?: string | null;
+            technicianCount: number;
+            propertyCount: number;
+        };
+        /** @description Minimal technician reference embedded in RoundDetail.technicians. */
+        TechnicianRef: {
+            id: string;
+            name?: string | null;
+            active: boolean;
+        };
+        /** @description GET /rounds/{id}, and the create/update/set-technicians responses — adds the full technician list in place of RoundSummary's count. */
+        RoundDetail: {
+            id: string;
+            name: string;
+            frequency?: components["schemas"]["CleaningFrequency"] | null;
+            defaultDay?: components["schemas"]["DayOfWeek"] | null;
+            description?: string | null;
+            status: components["schemas"]["RoundStatus"];
+            serviceAreaId?: string | null;
+            serviceAreaName?: string | null;
+            technicians: components["schemas"]["TechnicianRef"][];
+            propertyCount: number;
+        };
+        OccurrenceTechnicianRef: {
+            id: string;
+            name?: string | null;
+        };
+        /** @description One calendar day's aggregate stats for a round (planner calendar view). */
+        OccurrenceSummary: {
+            /**
+             * Format: date
+             * @description UTC calendar date (YYYY-MM-DD).
+             */
+            date: string;
+            stopCount: number;
+            totalValue: number;
+            completedCount: number;
+            /** @description 0–100, rounded. 0 when stopCount is 0. */
+            completionPct: number;
+            holdCount: number;
+            issueCount: number;
+            /** @description Every distinct technician with ≥ 1 stop on this date, deduped by id. */
+            technicians: components["schemas"]["OccurrenceTechnicianRef"][];
+        };
+        PlannerStopIssue: {
+            id: string;
+            type: components["schemas"]["IssueType"];
+            note?: string | null;
+        };
+        /** @description One property stop within a planner occurrence (list/map view). */
+        PlannerStop: {
+            visitId: string;
+            propertyId: string;
+            propertyName?: string | null;
+            addressLine: string;
+            postcode: string;
+            /** @description Null until the next geocoding backfill tick picks up the new postcode. */
+            latitude?: number | null;
+            longitude?: number | null;
+            customerName?: string | null;
+            price: number;
+            status: components["schemas"]["VisitStatus"];
+            paymentHold: boolean;
+            technicianId?: string | null;
+            technicianName?: string | null;
+            issues: components["schemas"]["PlannerStopIssue"][];
+            /** Format: date-time */
+            completedAt?: string | null;
+        };
+        /** @description GET /rounds/{id}/planner/occurrences/{date} — every stop for one calendar day, plus the same aggregate stats as OccurrenceSummary (minus date, given separately here). */
+        OccurrenceDetail: {
+            roundId: string;
+            roundName: string;
+            /** Format: date */
+            date: string;
+            stops: components["schemas"]["PlannerStop"][];
+            summary: {
+                stopCount: number;
+                totalValue: number;
+                completedCount: number;
+                completionPct: number;
+                holdCount: number;
+                issueCount: number;
+                technicians: components["schemas"]["OccurrenceTechnicianRef"][];
+            };
+        };
+        /** @description One round's occurrence list within the batched GET /rounds/planner/occurrences response. An unknown/stale round id simply gets an empty occurrences array — the call never 404s because one id is invalid. */
+        RoundOccurrenceBatchItem: {
+            roundId: string;
+            occurrences: components["schemas"]["OccurrenceSummary"][];
+        };
+        /** @description One round's stops within the batched GET /rounds/planner/occurrences/{date} response. An unknown/stale round id gets an empty stops array. */
+        DayStopsForRound: {
+            roundId: string;
+            stops: components["schemas"]["PlannerStop"][];
+        };
+        GenerateVisitsResult: {
+            /** @description Visits created for this round right now, instead of waiting for the next nightly generation run. */
+            visitsGenerated: number;
+        };
+        TodayPanelStop: {
+            visitId: string;
+            customerName?: string | null;
+            addressLine: string;
+            /** @description Null until the next geocoding backfill tick picks up the new postcode. */
+            latitude?: number | null;
+            longitude?: number | null;
+            status: components["schemas"]["VisitStatus"];
+            paymentHold: boolean;
+            hasIssue: boolean;
+            /** @description First issue's note text; null when there's no note text or no issues. */
+            issueFlag?: string | null;
+        };
+        /** @description GET /rounds/{id}/today — a single round's Today panel (Screen 13). */
+        TodayPanel: {
+            roundId: string;
+            roundName: string;
+            technicianId?: string | null;
+            technicianName?: string | null;
+            /** @enum {string} */
+            status: "not_started" | "in_progress" | "completed";
+            progress: {
+                total: number;
+                completed: number;
+                skipped: number;
+                issues: number;
+            };
+            stops: components["schemas"]["TodayPanelStop"][];
+        };
+        ReassignResult: {
+            /** @description Visits whose technicianId was switched (BREAKING — was updatedCount). */
+            updated: number;
+        };
+        AllocationEntry: {
+            technicianId: string;
+            name: string | null;
+            propertyIds: string[];
+            stops: number;
+            /** @description Sum of the properties' ACTIVE plan prices, e.g. "37.00". */
+            value: string;
+        };
+        /**
+         * @example {
+         *       "roundId": "rnd_1",
+         *       "allocation": [
+         *         {
+         *           "technicianId": "t1",
+         *           "name": "James",
+         *           "propertyIds": [
+         *             "p1",
+         *             "p2"
+         *           ],
+         *           "stops": 2,
+         *           "value": "37.00"
+         *         }
+         *       ],
+         *       "visitsUpdated": 6
+         *     }
+         */
+        SetTechniciansResult: {
+            roundId: string;
+            allocation: components["schemas"]["AllocationEntry"][];
+            /** @description Future SCHEDULED visits restamped (or that would be, on a dry run). */
+            visitsUpdated: number;
+        };
+        RoundAllocation: {
+            /** @enum {string} */
+            mode: "SINGLE" | "AUTO" | "MANUAL";
+            allocation: components["schemas"]["AllocationEntry"][];
+        };
+        PushMissedResult: {
+            /** @description SCHEDULED visits moved to the new date. */
+            pushedCount: number;
+        };
+        TodayKpi: {
+            totalStops: number;
+            inProgress: number;
+            completed: number;
+            skipped: number;
+            /** @description Visits today with ≥ 1 issue. */
+            issues: number;
+            paymentHolds: number;
+            valueCompleted: number;
+        };
+        TodayRoundRow: {
+            roundId: string;
+            roundName: string;
+            technicianId?: string | null;
+            technicianName?: string | null;
+            /** @enum {string} */
+            status: "not_started" | "in_progress" | "completed";
+            total: number;
+            completed: number;
+            skipped: number;
+            issueCount: number;
+            paymentHolds: number;
+            /** @description Sum of every non-cancelled stop's price today (GAP-035). */
+            scheduledValue?: number;
+            /** @description Sum of COMPLETED stops' prices today. */
+            completedValue?: number;
+            /**
+             * @deprecated
+             * @description Same as completedValue; kept for one release (GAP-035).
+             */
+            value: number;
+            /** @description Always null — no real estimate yet. */
+            etaMinutes?: number | null;
+        };
+        TodayTechnicianCard: {
+            technicianId: string;
+            technicianName?: string | null;
+            completed: number;
+            remaining: number;
+            roundName?: string | null;
+            issueCount: number;
+            /** @description True when issueCount is 0. */
+            onTrack: boolean;
+        };
+        /** @description GET /today — Today's Work aggregate (Screen 12): KPI tiles, rounds table, technician workload cards. */
+        TodaysWorkAggregate: {
+            /** Format: date */
+            date: string;
+            /**
+             * Format: date-time
+             * @description When this aggregate was computed (for "Updated HH:mm").
+             */
+            generatedAt: string;
+            /** @description True once POST /today/close has run for this date. */
+            dayClosed: boolean;
+            kpi: components["schemas"]["TodayKpi"];
+            rounds: components["schemas"]["TodayRoundRow"][];
+            technicians: components["schemas"]["TodayTechnicianCard"][];
+        };
+        /** @description POST /today/close response — a snapshot of the day right before closing. */
+        CloseDaySummary: {
+            completedJobs: number;
+            /** @description Includes visits just marked SKIPPED by this call when unfinishedAction is mark_as_skipped. */
+            skippedJobs: number;
+            /** @description Visits pushed to the next working day; 0 when unfinishedAction is mark_as_skipped. */
+            outstanding: number;
+            issues: number;
+            paymentHolds: number;
+            /** @description Sum of completed-visit prices for the day. */
+            revenue: number;
+        };
+        TechnicianServiceAreaRow: {
+            serviceAreaId: string;
+            serviceAreaName: string;
+            /** Format: date-time */
+            assignedAt: string;
+        };
+        /** @description Base shape shared by GET /technicians/{id}, and the response of POST /technicians / PATCH /technicians/{id}. Distinct from the Settings → /settings/technicians directory (TechnicianWithDisplayName) — this router adds email/notes/serviceAreas and today/round derived data. */
+        TechnicianListItem: {
+            id: string;
+            name?: string | null;
+            phone?: string | null;
+            role?: string | null;
+            email?: string | null;
+            notes?: string | null;
+            active: boolean;
+            /** @enum {string} */
+            appStatus: "PENDING_INVITE" | "ACTIVE" | "INACTIVE";
+            serviceAreas: components["schemas"]["TechnicianServiceAreaRow"][];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        TodayStats: {
+            total: number;
+            completed: number;
+            skipped: number;
+            remaining: number;
+        };
+        /** @description GET /technicians row — TechnicianListItem plus round names and today's job stats, computed up front so the frontend doesn't have to fan out one GET /technicians/{id} call per row. */
+        TechnicianListRow: components["schemas"]["TechnicianListItem"] & {
+            roundNames: string[];
+            todayStats: components["schemas"]["TodayStats"];
+        };
+        WorkloadRoundRow: {
+            roundId: string;
+            roundName: string;
+            total: number;
+            completed: number;
+            skipped: number;
+            remaining: number;
+        };
+        /** @description GET /technicians/{id} — TechnicianListItem plus round names and a per-round breakdown of today's workload. */
+        TechnicianDetail: components["schemas"]["TechnicianListItem"] & {
+            roundNames: string[];
+            todayWorkload: components["schemas"]["WorkloadRoundRow"][];
+        };
+        MessageSendResult: {
+            /** @enum {string} */
+            status: "sent";
+            /** @description The recorded OUTBOUND Message id. */
+            messageId: string;
+            channel: components["schemas"]["MessageChannel"];
+        };
+        MessageBulkResult: {
+            /** @description Number of recipients the message was actually sent to. Best-effort: a per-recipient failure is logged and skipped, not surfaced as an error. */
+            queued: number;
+        };
+        /** @description Raw Customer row, as created by Setup step 9 (not the transformed CustomerListRow/CustomerDetail shapes used elsewhere). */
+        Customer: {
+            id?: string;
+            name?: string;
+            phone?: string | null;
+            landline?: string | null;
+            email?: string | null;
+            status?: components["schemas"]["LifecycleStatus"];
+            ghlContactId?: string | null;
+            stripeCustomerId?: string | null;
+            stripeDefaultPaymentMethodId?: string | null;
+            gocardlessCustomerId?: string | null;
+            gocardlessMandateId?: string | null;
+            gocardlessMandateStatus?: string | null;
+            paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            badDebt?: boolean;
+            holdNextClean?: boolean;
+            holdReason?: string | null;
+            /** Format: date-time */
+            holdSince?: string | null;
+            /** @description Opted out of automated messages (pre-clean reminders, visit-completed). */
+            messagesOptOut?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        /** @description Raw ServicePlan row (PATCH /service-plans/{id}, pause/resume, and the plans created by Setup step 9). */
+        ServicePlan: {
+            id?: string;
+            propertyId?: string;
+            serviceId?: string | null;
+            /**
+             * @description Decimal money value serialised as a string, e.g. "35".
+             * @example 35
+             */
+            price?: string;
+            cleanMethod?: string | null;
+            paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            cleaningFrequency?: components["schemas"]["CleaningFrequency"] | null;
+            status?: components["schemas"]["LifecycleStatus"];
+            /** Format: date-time */
+            nextDueDate?: string | null;
+            /** Format: date-time */
+            lastCompleted?: string | null;
+            /** Format: date-time */
+            pauseStartDate?: string | null;
+            /** Format: date-time */
+            pauseEndDate?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        /** @description One property added during Setup step 9 — the created Customer, Property, and its ServicePlan(s). */
+        SetupPropertyResult: {
+            customer: components["schemas"]["Customer"];
+            property: components["schemas"]["Property"];
+            servicePlan: components["schemas"]["ServicePlan"];
+            /** @description Every plan created for this row — length > 1 only when serviceIds had more than one entry. servicePlan above is always servicePlans[0] (kept for backward compatibility). */
+            servicePlans: components["schemas"]["ServicePlan"][];
+            /** @description GAP-010: true when the property was attached to an existing customer (explicit customerId, or matched by mobile/email) instead of creating one. */
+            customerMatched?: boolean;
+        };
+        SetupPropertyRowError: {
+            /** @description 0-based index into the submitted properties[] array. */
+            row: number;
+            field: string;
+            /** @description The contract field (GAP-009). */
+            error: string;
+            /**
+             * @deprecated
+             * @description Same text as `error`, kept for one release.
+             */
+            message: string;
+        };
+        BulkSetupPropertyResult: {
+            created: number;
+            failed: number;
+            results: components["schemas"]["SetupPropertyResult"][];
+            errors: components["schemas"]["SetupPropertyRowError"][];
+            /** @description True when this exact idempotencyKey was already processed by an earlier call. `results` is empty in that case (not reconstructed), but `created` reflects the original run's count. */
+            idempotent?: boolean;
+        };
+        RoundAssignmentResult: {
+            roundId: string;
+            roundName: string;
+            defaultDay?: string | null;
+            serviceAreaName?: string | null;
+            propertyCount: number;
+            technicianIds: string[];
+            technicians: {
+                id?: string;
+                name?: string | null;
+            }[];
+        };
+        WorkloadEntry: {
+            technicianId: string;
+            name?: string | null;
+            roundCount: number;
+        };
+        /** @description GET and POST /setup/step/10 share this shape — the full round/technician assignment board. */
+        Step10Result: {
+            totalRounds: number;
+            /** @description Active technicians only. */
+            technicianCount: number;
+            /** @description ACTIVE rounds with zero technicians assigned. */
+            unassignedCount: number;
+            assignments: components["schemas"]["RoundAssignmentResult"][];
+            workload: components["schemas"]["WorkloadEntry"][];
+        };
+        ActivationStatus: {
+            /** @description True once at least one SCHEDULED visit exists. */
+            activated: boolean;
+            visitsGenerated: number;
+        };
+        /**
+         * @example {
+         *       "rounds": [
+         *         {
+         *           "roundId": "rnd_1",
+         *           "name": "Alnwick Monday",
+         *           "firstVisit": "2026-11-02",
+         *           "visits": 42
+         *         }
+         *       ],
+         *       "total": 42
+         *     }
+         */
+        ActivationPreview: {
+            rounds: {
+                roundId: string;
+                name: string;
+                /** Format: date */
+                firstVisit: string | null;
+                visits: number;
+            }[];
+            total: number;
+        };
+        ActivationResult: {
+            visitsGenerated: number;
+        };
+        ReviewChecklistItem: {
+            label: string;
+            complete: boolean;
+        };
+        ReviewChecklist: {
+            checklist: components["schemas"]["ReviewChecklistItem"][];
+            allComplete: boolean;
+        };
+        DebtKpis: {
+            /** @description Sum of SENT invoice amounts, excluding bad-debt customers. */
+            totalOutstandings: number;
+            /** @description Non-bad-debt customers with at least one SENT invoice. */
+            totalOutstandingsCount: number;
+            /** @description Sum of SENT invoice amounts for customers flagged badDebt. */
+            badDebt: number;
+            /** @description Bad-debt customers with at least one SENT invoice. */
+            badDebtCount: number;
+            failedGoCardless: number;
+            dueBeforeClean: number;
+            /** @description Distinct customers currently on hold. */
+            holdNextClean: number;
+        };
+        /** @description One SENT invoice per row — except bucket ON_HOLD, which lists one row per held customer (matching its count, even without SENT invoices): there `invoiceId`/`invoiceNumber`/`dueDate` describe the customer's oldest SENT invoice (null when none) and `amount` is the customer's total outstanding; sorted by holdSince, then createdAt. */
+        DebtBoardRow: {
+            /** @description Null only in the ON_HOLD bucket (customer without a SENT invoice). */
+            invoiceId: string | null;
+            invoiceNumber: string | null;
+            amount: number;
+            /** Format: date-time */
+            dueDate?: string | null;
+            customerId: string;
+            customerName: string;
+            /** @description Empty string when the invoice has no linked visit. */
+            addressLine: string;
+            postcode?: string | null;
+            paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            /**
+             * Format: date-time
+             * @description Most recent OUTBOUND message to this customer, across any channel.
+             */
+            lastContactedAt?: string | null;
+            badDebt: boolean;
+            holdNextClean: boolean;
+        };
+        DebtBoardResult: {
+            rows: components["schemas"]["DebtBoardRow"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        /** @description All 7 bucket-tab counts in one call — replaces the old one-GET-/debt/board-per-tab pattern. */
+        DebtBucketCounts: {
+            BAD_DEBT: number;
+            ON_HOLD: number;
+            FAILED_GC: number;
+            DUE_BEFORE_CLEAN: number;
+            SEVEN_DAYS_OVER: number;
+            FOURTEEN_DAYS_OVER: number;
+            /** @description Catch-all bucket: everything not already in one of the other 6. */
+            ALL: number;
+        };
+        /** @description GET /debt/{id} — the fields the board row doesn't carry (phone/email/round/next visit/mandate/recent visits). */
+        DebtInvoiceDetail: {
+            invoiceId: string;
+            invoiceNumber: string;
+            amount: number;
+            /** Format: date-time */
+            dueDate?: string | null;
+            status: components["schemas"]["InvoiceStatus"];
+            customerId: string;
+            customerName: string;
+            phone?: string | null;
+            email?: string | null;
+            roundId?: string | null;
+            roundName?: string | null;
+            /**
+             * Format: date-time
+             * @description Next SCHEDULED/IN_PROGRESS visit for this customer.
+             */
+            nextVisitDate?: string | null;
+            mandateId?: string | null;
+            mandateStatus?: string | null;
+            /** @description Most recent 5 visits for this customer, newest first. */
+            recentVisits: {
+                visitId?: string;
+                /** Format: date-time */
+                date?: string;
+                status?: components["schemas"]["VisitStatus"];
+                amount?: number;
+            }[];
+        };
+        PaymentLinkResult: {
+            /** @description Stripe Checkout URL. */
+            url: string;
+            /** @description The recorded OUTBOUND Message. */
+            messageId: string;
+            channel: components["schemas"]["MessageChannel"];
+            /**
+             * @deprecated
+             * @description Same as messageId (kept for one release).
+             */
+            id: string;
+            /**
+             * @deprecated
+             * @description Same as url (kept for one release).
+             */
+            paymentUrl: string;
+            /**
+             * @deprecated
+             * @enum {string}
+             */
+            provider: "stripe";
+            /** Format: date-time */
+            expiresAt: string | null;
+        };
+        ReminderResult: {
+            /** @description The recorded OUTBOUND Message. */
+            messageId: string;
+            channel: components["schemas"]["MessageChannel"];
+            /**
+             * @deprecated
+             * @description Same as messageId.
+             */
+            id: string;
+        };
+        BadDebtFlagResult: {
+            customerId: string;
+            badDebt: boolean;
+        };
+        HoldFlagResult: {
+            customerId: string;
+            holdNextClean: boolean;
+            holdReason?: string | null;
+            /** Format: date-time */
+            holdSince?: string | null;
+            /** @description Upcoming SCHEDULED visits whose paymentHold was set (hold) or cleared (release). */
+            visitsUpdated?: number;
+        };
+        ActivityLogRow: {
+            id: string;
+            /** @example ROUND_UPDATED */
+            type: string;
+            message: string;
+            actorRole?: string | null;
+            /** @description Resolved from the public-schema Profile matching the log's actorId. */
+            actorName?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ReportsActivityResult: {
+            rows: components["schemas"]["ActivityLogRow"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        ReportsVisitRow: {
+            visitId: string;
+            /** Format: date-time */
+            date: string;
+            property: string;
+            postcode?: string | null;
+            round?: string | null;
+            technician?: string | null;
+            status: components["schemas"]["VisitStatus"];
+            amount: number;
+        };
+        ReportsVisitsResult: {
+            rows: components["schemas"]["ReportsVisitRow"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        ReportsTechnicianRow: {
+            technicianId: string;
+            name?: string | null;
+            email?: string | null;
+            completed: number;
+            skipped: number;
+            /** @description completed / (completed + skipped) × 100, rounded. 0 when there are no completed-or-skipped visits. */
+            efficiency: number;
+            /** @description Sum of completed-visit prices for this technician in the period. */
+            revenueImpact: number;
+        };
+        ReportsTechniciansResult: {
+            rows: components["schemas"]["ReportsTechnicianRow"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        ReportsRevenueRow: {
+            /** Format: date */
+            date: string;
+            amount: number;
+        };
+        ReportsSummary: {
+            /** @description Sum of completed-visit prices in the period. */
+            totalRevenue: number;
+            completedVisits: number;
+            /** @description Distinct rounds with ≥ 1 completed visit in the period. */
+            completedRounds: number;
+            /** @description Sum of SENT invoice amounts (all time, not period-scoped). */
+            undonePayments: number;
+        };
+        InvoiceLineItem: {
+            description: string;
+            technicianName?: string | null;
+            amount: number;
+        };
+        /** @description GET /invoices/preview and /invoices/preview/pdf — a not-yet-saved invoice computed live from a visit. 409 if the visit already has an invoice. */
+        InvoicePreview: {
+            invoiceNumber: string;
+            /** Format: date */
+            invoiceDate: string;
+            /** Format: date */
+            visitDate: string;
+            /**
+             * Format: date
+             * @description Always null for a preview — only set once created via POST /invoices.
+             */
+            dueDate?: string | null;
+            paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            customer?: {
+                name?: string;
+                addressLine?: string;
+                postcode?: string | null;
+                email?: string | null;
+                phone?: string | null;
+            };
+            lineItems: components["schemas"]["InvoiceLineItem"][];
+            subtotal: number;
+            /** @description 0 when BusinessSettings.vatInInvoices is false. */
+            vatAmount: number;
+            total: number;
+            /** @description Alias of total, for convenience. */
+            amount: number;
+            /**
+             * @description Business currency symbol, e.g. "£".
+             * @example £
+             */
+            currency: string;
+            business?: {
+                name?: string | null;
+                email?: string | null;
+            };
+        };
+        /** @description GET /invoices/{id} — the saved invoice with line items, technician, visit date, and a VAT/subtotal breakdown. Degrades gracefully (visitId/visitDate/technicianName/roundName all null, lineItems empty) when the invoice has no linked visit — unlike the PDF route, which 409s in that case. */
+        InvoiceDetail: {
+            id: string;
+            invoiceNumber: string;
+            status: components["schemas"]["InvoiceStatus"];
+            amount: number;
+            /** Format: date */
+            dueDate?: string | null;
+            notes?: string | null;
+            sentToCustomer: boolean;
+            /** Format: date-time */
+            sentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            customerId: string;
+            visitId?: string | null;
+            /** Format: date-time */
+            visitDate?: string | null;
+            technicianName?: string | null;
+            roundName?: string | null;
+            paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            customer?: {
+                name?: string;
+                email?: string | null;
+                phone?: string | null;
+                addressLine?: string | null;
+                postcode?: string | null;
+            };
+            lineItems: components["schemas"]["InvoiceLineItem"][];
+            subtotal: number;
+            vatAmount: number;
+        };
+        /** @description Shared response shape for POST /invoices (create) and POST /invoices/{id}/send. */
+        InvoiceActionResult: {
+            id: string;
+            invoiceNumber: string;
+            status: components["schemas"]["InvoiceStatus"];
+            sentToCustomer: boolean;
+            /** Format: date-time */
+            sentAt?: string | null;
+        };
+        StripeSessionResult: {
+            /** @description Hosted Stripe Checkout URL to redirect the customer to. */
+            url: string;
+            /** @description The persisted StripeSession row id (not Stripe's own session id). */
+            sessionId: string;
+        };
+        /** @description Raw Payment row (Decimal `amount` serialised as a string). */
+        Payment: {
+            id?: string;
+            customerId?: string;
+            visitId?: string | null;
+            /**
+             * @description Decimal money value serialised as a string, e.g. "35".
+             * @example 35
+             */
+            amount?: string;
+            method?: components["schemas"]["PaymentMethod"];
+            status?: components["schemas"]["PaymentStatus"];
+            gocardlessId?: string | null;
+            stripeId?: string | null;
+            stripeReceiptUrl?: string | null;
+            /** Format: date-time */
+            contactedAt?: string | null;
+            /** Format: date-time */
+            paidAt?: string | null;
+            /** @description Manual-payment reference: cheque number (mobile completion / debt payment) or the reference given to POST /invoices/{id}/mark-paid. */
+            reference?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        /**
+         * @example {
+         *       "id": "vis_example",
+         *       "status": "COMPLETED",
+         *       "payment": {
+         *         "id": "pay_1",
+         *         "method": "CASH",
+         *         "status": "PAID",
+         *         "amount": 18
+         *       }
+         *     }
+         */
+        VisitCompleteResult: {
+            id: string;
+            status: components["schemas"]["VisitStatus"];
+            /** @description The Payment created by this completion (null when none was created, e.g. already completed or STRIPE/no method). */
+            payment: {
+                id: string;
+                method: components["schemas"]["PaymentMethod"];
+                status: components["schemas"]["PaymentStatus"];
+                amount: number;
+            } | null;
+        };
+        /**
+         * @description What the technician collected on site. CASH → PAID payment; CHEQUE → PENDING payment with the cheque number on Payment.reference; NONE → fall back to the effective method.
+         * @example {
+         *       "method": "CHEQUE",
+         *       "chequeNumber": "000123"
+         *     }
+         */
+        CompletionPaymentInput: {
+            /** @enum {string} */
+            method: "CASH" | "CHEQUE" | "NONE";
+            /** @description Defaults to the visit price. */
+            amount?: number;
+            /** @description Required for CHEQUE (400 CHEQUE_NUMBER_REQUIRED). */
+            chequeNumber?: string;
+        };
+        VisitPhotosResult: {
+            rows: components["schemas"]["PhotoRow"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        CustomerInvoiceRow: {
+            id: string;
+            invoiceNumber: string;
+            status: components["schemas"]["InvoiceStatus"];
+            amount: number;
+            /** Format: date-time */
+            dueDate?: string | null;
+            /** Format: date-time */
+            paidAt?: string | null;
+            sentToCustomer: boolean;
+            /** Format: date-time */
+            sentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            visitId?: string | null;
+            /** @description The linked visit's Payment, if any. */
+            payment: {
+                id: string;
+                status: components["schemas"]["PaymentStatus"];
+                method: components["schemas"]["PaymentMethod"];
+            } | null;
+        };
+        CustomerPropertyAddResult: {
+            propertyId: string;
+            servicePlanId: string;
+            /** @description True when a `roundId` was supplied. */
+            assigned: boolean;
+        };
+        MandateRedirectResult: {
+            /** @description GoCardless hosted redirect-flow URL to send the customer to. */
+            url: string;
+        };
+        MandateCompleteResult: {
+            mandateId: string;
+            /** @enum {string} */
+            status: "pending_customer_approval";
+        };
+        /**
+         * @example {
+         *       "preferences": {
+         *         "rememberMe": true,
+         *         "debtBoardFilter": "overdue"
+         *       }
+         *     }
+         */
+        PreferencesResult: {
+            /** @description Free-form JSON blob owned by the frontend; `{}` when nothing is stored. */
+            preferences: {
+                [key: string]: unknown;
+            };
+        };
+        MobileMe: {
+            name: string;
+            /** @description From the JWT. */
+            email: string | null;
+            /** Format: date */
+            dateOfBirth: string | null;
+            /** @description Stored value (storage path from /mobile/me/avatar/upload-url) from the caller's Technician row; null if none. */
+            avatarUrl: string | null;
+            /** @description 1-hour signed read URL for `avatarUrl` — use this to display the image. External URLs pass through unchanged; null when no avatar, the path is outside the caller's tenant, or signing failed. */
+            avatarSignedUrl: string | null;
+            /** @description Name of the technician's first linked service area. */
+            areaName: string | null;
+        };
+        /** @description Supabase Storage signed upload URL. PUT the file bytes to `signedUrl`, then record the resulting URL with the matching POST endpoint. */
+        SignedUploadUrl: {
+            signedUrl: string;
+            /** @description Object path inside the storage bucket, e.g. `<tenantId>/visits/<visitId>/before-1696248000000.jpg`. */
+            path: string;
+        };
+        MobileNotification: {
+            id: string;
+            profileId: string;
+            /** @example ROUND_UPDATE */
+            type: string;
+            title: string;
+            body: string | null;
+            read: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        MobileNotificationPage: {
+            /** @description Newest first, 30 per page. */
+            notifications: components["schemas"]["MobileNotification"][];
+            unreadCount: number;
+            /** @description Pass as `?cursor=` for the next page; null on the last page. */
+            nextCursor: string | null;
+        };
+        MobileCompany: {
+            name: string | null;
+            phone: string | null;
+            email: string | null;
+            termsUrl: string | null;
+            privacyUrl: string | null;
+        };
+        MobileVisitRow: {
+            visitId: string;
+            status: components["schemas"]["VisitStatus"];
+            price: number;
+            /** @description Effective method: visit override → service plan → customer default; null only when none of those is set. */
+            paymentMethod: components["schemas"]["PaymentMethod"] | null;
+            customerName: string;
+            addressLine: string;
+            postcode: string;
+            latitude: number | null;
+            longitude: number | null;
+            roundId: string | null;
+            roundName: string | null;
+            serviceName: string | null;
+            notes: string | null;
+            issueCount: number;
+            propertyNotes: {
+                type: components["schemas"]["NoteType"];
+                body: string;
+            }[];
+            /**
+             * Format: date-time
+             * @description Set by PATCH /mobile/visits/{id}/start.
+             */
+            startedAt: string | null;
+            /**
+             * Format: date-time
+             * @description Set by PATCH /mobile/visits/{id}/arrive.
+             */
+            arrivedAt: string | null;
+            /** Format: date-time */
+            completedAt: string | null;
+            /** @description Customer.badDebt. */
+            hasDebt: boolean;
+            /** @description 1-based order within its round today (date asc, createdAt asc); null for visits with no round. */
+            position: number | null;
+        };
+        MobileRoundSummary: {
+            roundId: string;
+            roundName: string;
+            totalCount: number;
+            completedCount: number;
+            expectedRevenue: number;
+            earnedRevenue: number;
+            /** Format: date-time */
+            date: string;
+        };
+        MobileCompletions: {
+            revenueToday: number;
+            /** @description Split by the visit's own `paymentMethod` (CASH → cash, GOCARDLESS → directDebit, anything else incl. null → other). */
+            revenueByMethod: {
+                cash: number;
+                directDebit: number;
+                other: number;
+            };
+            /** @description vs the same day last week; null when last week's revenue was 0. */
+            revenueChangePercent: number | null;
+            completedCount: number;
+            skippedCount: number;
+            totalCount: number;
+            roundName: string | null;
+            /** @description Today's COMPLETED visits only. */
+            visits: components["schemas"]["MobileVisitRow"][];
+        };
+        /** @description The raw Visit row (Decimal fields as strings) with `property` (incl. customer + DRAFT/SENT invoices + notes), `round`, `service`, `technician`, `photos` and `_count.issues` included, plus the computed fields below. */
+        MobileVisitDetail: {
+            id?: string;
+            /** Format: date-time */
+            date?: string;
+            status?: components["schemas"]["VisitStatus"];
+            /**
+             * @description Decimal money value serialised as a string, e.g. "35".
+             * @example 35
+             */
+            price?: string;
+            /**
+             * @description Set once the price has been adjusted; null at full price.
+             * @example 35
+             */
+            originalPrice?: string | null;
+            priceAdjustmentReason?: string | null;
+            /** @description Effective method: visit override → service plan → customer default; null only when none of those is set. */
+            paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** @description Every photo recorded on the visit (BEFORE/AFTER/ACCESS_ISSUE), oldest first. */
+            photos?: components["schemas"]["MobileVisitPhoto"][];
+            /** Format: date-time */
+            startedAt?: string | null;
+            /** Format: date-time */
+            arrivedAt?: string | null;
+            /** Format: date-time */
+            completedAt?: string | null;
+            property?: {
+                [key: string]: unknown;
+            };
+            round?: {
+                id?: string;
+                name?: string;
+            } | null;
+            service?: {
+                id?: string;
+                name?: string;
+            } | null;
+            technician?: {
+                name?: string | null;
+                role?: string | null;
+            } | null;
+            /**
+             * Format: date-time
+             * @description completedAt of the property's previous COMPLETED visit.
+             */
+            lastClean?: string | null;
+            roundPosition?: {
+                position?: number;
+                total?: number;
+            } | null;
+            activityLog?: {
+                /** @enum {string} */
+                event?: "dispatched" | "started" | "arrived" | "completed";
+                /** Format: date-time */
+                timestamp?: string;
+            }[];
+            outstandingInvoices?: {
+                id?: string;
+                invoiceNumber?: string;
+                amount?: number;
+                /** Format: date-time */
+                dueDate?: string | null;
+            }[];
+            /** @description Sum of DRAFT/SENT invoice amounts. */
+            debtAmount?: number;
+            /** @description Debt-gate result (see PATCH /mobile/visits/{id}/start). */
+            canStart?: boolean;
+            blockReason?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        MobileVisitPhoto: {
+            id: string;
+            type: components["schemas"]["PhotoType"];
+            /** @description Stored value (storage path from the upload-url step). */
+            url: string;
+            /** @description 1-hour signed read URL — use this to display the photo. null if signing failed. */
+            signedUrl: string | null;
+            /** @description Set for ACCESS_ISSUE photos: the access-issue report they belong to. */
+            issueId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        MobileAccessIssueResult: {
+            /** @enum {boolean} */
+            recorded: true;
+            /** @description The new Issue id. */
+            id: string;
+            /** @description Number of ACCESS_ISSUE photos attached. */
+            photoCount: number;
+        };
+        MobileStatusResult: {
+            status: components["schemas"]["VisitStatus"];
+        };
+        MobileDebtPaymentResult: {
+            /** @description false for CHEQUE (invoices stay open until the cheque clears). */
+            cleared: boolean;
+            /** @description CASH total; 0 for CHEQUE or when nothing was outstanding. */
+            amountPaid: number;
+            /** @description CHEQUE total awaiting clearance; 0 otherwise. */
+            amountPending: number;
+            /** @enum {string} */
+            method: "CASH" | "CHEQUE";
+        };
+        MobileUpsell: {
+            id: string;
+            /** @enum {string} */
+            type: "UPSELL";
+            amount: number;
+            /** @description The description. */
+            note: string | null;
+            visitId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ChatMessage: {
+            id: string;
+            roundId: string;
+            /** @description The sender's Profile id (D-4). Rows written before that fix hold the sender's Supabase user id. */
+            senderProfileId: string;
+            /** @description Sent by the signed-in technician (matches either id form). */
+            isMine: boolean;
+            body: string | null;
+            /** @enum {string} */
+            type: "TEXT" | "WORK_PHOTOS" | "PHOTOS";
+            visitId: string | null;
+            /** @description Stored values (storage paths from /mobile/messages/attachments/upload-url). */
+            photoUrls: string[];
+            /** @description 1-hour signed read URLs, index-aligned with `photoUrls` — use these to display the images. An entry is null when the path is outside the caller's tenant or signing failed. */
+            photoSignedUrls: (string | null)[];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SupportReportResult: {
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         /**
          * @example {
@@ -2677,19 +12868,37 @@ export interface components {
             defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
             timezone?: string;
             currency?: string;
+            /** @description Pass null to clear. Omit to leave unchanged. */
+            bankDetails?: components["schemas"]["BankDetails"] | null;
+            addressLine1?: string | null;
+            addressLine2?: string | null;
+            town?: string | null;
+            postcode?: string | null;
+            /** @description VAT percentage; 400 outside 0–100. */
+            vatRate?: number;
         };
         /**
          * @example {
-         *       "defaultCycleLength": 28
+         *       "defaultCycleLength": 28,
+         *       "reminderMode": "EVENING_BEFORE",
+         *       "reminderTime": "19:00"
          *     }
          */
         RoundSettingsInput: {
             /** @description Cycle length in days. */
             defaultCycleLength: number;
             defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
+            reminderMode?: components["schemas"]["ReminderMode"];
+            /**
+             * @description 24-hour HH:mm (400 otherwise).
+             * @example 19:00
+             */
+            reminderTime?: string;
+            defaultCleanMethod?: components["schemas"]["CleanMethod"] | null;
+            autoCreateNextVisit?: boolean;
         };
         /**
-         * @description Setup step 2 (Payment Setup). All fields optional. Connect toggles are Phase-1 stubs (booleans; no real OAuth).
+         * @description Setup step 2 (Payment Setup). All fields optional. `gocardlessConnected`/`stripeConnected` were removed (A6): sending either is a 400 with code `FIELD_REMOVED`. Providers are connected through the real flows under /settings (GoCardless token, Stripe Connect, GHL), which the wizard may call before setup is complete.
          * @example {
          *       "paymentRule": "COLLECT_AFTER_VISIT",
          *       "debtHoldEnabled": true,
@@ -2697,19 +12906,14 @@ export interface components {
          *     }
          */
         PaymentSetupInput: {
-            /**
-             * @description Default payment collection rule.
-             * @enum {string}
-             */
-            paymentRule?: "COLLECT_AFTER_VISIT" | "COLLECT_BEFORE_VISIT" | "COLLECT_ON_DATE";
+            paymentRule?: components["schemas"]["PaymentTiming"];
             /** @description Block service if payment is overdue. */
             debtHoldEnabled?: boolean;
             /** @description Include VAT in invoices by default. */
             vatInInvoices?: boolean;
-            /** @description GoCardless connection flag (Phase-1 stub). */
-            gocardlessConnected?: boolean;
-            /** @description Stripe connection flag (Phase-1 stub). */
-            stripeConnected?: boolean;
+            defaultPaymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            invoiceDueDays?: number;
+            noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
         };
         /**
          * @example {
@@ -2785,22 +12989,39 @@ export interface components {
             timezone?: string | null;
             currency?: string | null;
             defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
+            /** @description Pass null to clear. Omit to leave unchanged. */
+            bankDetails?: components["schemas"]["BankDetails"] | null;
+            addressLine1?: string | null;
+            addressLine2?: string | null;
+            town?: string | null;
+            postcode?: string | null;
+            /** @description VAT percentage; 400 outside 0–100. */
+            vatRate?: number;
         };
         /**
          * @description Partial update — round-settings fields only.
          * @example {
          *       "defaultCycleLength": 28,
-         *       "preCleanReminderTimings": [
-         *         "EVENING_BEFORE",
-         *         "TWO_HOURS_BEFORE"
-         *       ]
+         *       "reminderMode": "EVENING_BEFORE",
+         *       "reminderTime": "19:00"
          *     }
          */
         RoundSettingsUpdateInput: {
             /** @description Cycle length in days. */
             defaultCycleLength?: number | null;
             defaultWorkingDays?: ("MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN")[];
-            /** @description Up to two reminder timings. Omit to leave unchanged. */
+            reminderMode?: components["schemas"]["ReminderMode"];
+            /**
+             * @description 24-hour HH:mm, tenant-local (400 otherwise).
+             * @example 19:00
+             */
+            reminderTime?: string;
+            defaultCleanMethod?: components["schemas"]["CleanMethod"] | null;
+            autoCreateNextVisit?: boolean;
+            /**
+             * @deprecated
+             * @description Deprecated (B2) — use reminderMode. Mapped onto reminderMode when reminderMode is omitted.
+             */
             preCleanReminderTimings?: ("EVENING_BEFORE" | "TWO_HOURS_BEFORE")[];
         };
         /**
@@ -2857,6 +13078,12 @@ export interface components {
             phone?: string | null;
             role?: string | null;
             active?: boolean;
+            serviceAreaIds?: string[];
+            /**
+             * @deprecated
+             * @description GAP-004: a singular id from older clients is folded into serviceAreaIds (deduped).
+             */
+            serviceAreaId?: string;
         };
         /** @description Partial update — all fields optional. */
         TechnicianUpdateInput: {
@@ -2864,18 +13091,32 @@ export interface components {
             phone?: string | null;
             role?: string | null;
             active?: boolean;
+            serviceAreaIds?: string[];
+            /**
+             * @deprecated
+             * @description GAP-004: folded into serviceAreaIds (deduped).
+             */
+            serviceAreaId?: string;
         };
         /**
          * @description Partial update of payment RULES only — does not touch the connect flags.
          * @example {
          *       "paymentRule": "COLLECT_AFTER_VISIT",
-         *       "vatInInvoices": true
+         *       "vatInInvoices": true,
+         *       "invoiceDueDays": 14
          *     }
          */
         PaymentRulesUpdateInput: {
             paymentRule?: components["schemas"]["PaymentTiming"] | null;
             vatInInvoices?: boolean;
             debtHoldEnabled?: boolean;
+            /** @description Mobile debt gate: max unpaid (DRAFT/SENT) invoices before Start is blocked. null = any unpaid invoice blocks (when debtHoldEnabled). */
+            debtHoldMaxInvoices?: number | null;
+            /** @description Mobile debt gate: max unpaid total before Start is blocked. null = any unpaid amount blocks (when debtHoldEnabled). */
+            debtHoldMaxAmount?: number | null;
+            defaultPaymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            invoiceDueDays?: number;
+            noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
         };
         Property: {
             id?: string;
@@ -2883,12 +13124,17 @@ export interface components {
             propertyName?: string | null;
             addressLine?: string;
             postcode?: string;
+            /** @description Geocoded from postcode; null until the next geocoding backfill tick. */
+            latitude?: number | null;
+            longitude?: number | null;
             serviceAreaId?: string | null;
             propertyType?: string | null;
             accessNotes?: string | null;
             riskNotes?: string | null;
             status?: components["schemas"]["LifecycleStatus"];
             roundId?: string | null;
+            /** @description A1: this property's technician within a multi-technician round (null = the round's sole technician / round-robin). */
+            assignedTechnicianId?: string | null;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -2931,6 +13177,9 @@ export interface components {
             propertyId?: string;
             addressLine?: string;
             postcode?: string;
+            /** @description Null until the next geocoding backfill tick picks up the new postcode. */
+            latitude?: number | null;
+            longitude?: number | null;
             roundId?: string | null;
             roundName?: string | null;
             frequency?: components["schemas"]["CleaningFrequency"] | null;
@@ -2940,12 +13189,14 @@ export interface components {
             /** Format: date-time */
             nextDueDate?: string | null;
             /**
-             * @description Payment badge. none = no payment history yet (new customer).
-             * @enum {string}
+             * Format: date-time
+             * @description GAP-021: the plan's nextDueDate, else the next open visit's date.
              */
-            paymentStatus?: "paid" | "hold" | "pending" | "overdue" | "failed" | "none";
+            nextDue?: string | null;
+            paymentStatus?: components["schemas"]["CustomerPaymentStatus"];
             onHold?: boolean;
-            /** @description Total outstanding for this customer. Omitted for TECHNICIAN viewers. */
+            badDebt?: boolean;
+            /** @description Sum of the customer's unpaid SENT invoices. Omitted for TECHNICIAN viewers. */
             amountDue?: number;
         };
         CustomerListResult: {
@@ -2953,10 +13204,11 @@ export interface components {
                 totalCustomers?: number;
                 active?: number;
                 paymentHolds?: number;
-                /** @description Total outstanding across all customers. Omitted for TECHNICIAN viewers. */
+                /** @description Sum of unpaid SENT invoices across ACTIVE customers. Omitted for TECHNICIAN viewers. */
                 amountDue?: number;
             };
             customers?: components["schemas"]["CustomerListRow"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         VisitHistoryRow: {
             visitId?: string;
@@ -2964,8 +13216,31 @@ export interface components {
             date?: string;
             roundName?: string | null;
             status?: components["schemas"]["VisitStatus"];
+            cancelReason?: string | null;
             paymentStatus?: components["schemas"]["PaymentStatus"] | null;
             notes?: string | null;
+        };
+        CustomerVisitsPage: {
+            rows: components["schemas"]["VisitHistoryRow"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        CustomerSearchRow: {
+            id: string;
+            name: string;
+            phone: string | null;
+            email: string | null;
+            /** @description Non-cancelled properties. */
+            propertyCount: number;
+            /** @description The first non-cancelled property's postcode. */
+            postcode: string | null;
+        };
+        /** @description GAP-022: the property's access/risk notes, listed ahead of PropertyNotes. */
+        PinnedNote: {
+            /** @enum {boolean} */
+            pinned: true;
+            /** @enum {string} */
+            source: "ACCESS" | "RISK";
+            body: string;
         };
         PaymentRow: {
             visitId?: string;
@@ -2983,7 +13258,7 @@ export interface components {
             canGenerate?: boolean;
             canDownload?: boolean;
         };
-        /** @description Full Customer Detail aggregate (Screen 15, all 6 tabs). Phase 1: one active property per customer; round/technician/next-visit fields are null when the property is unassigned (Property.roundId = null). */
+        /** @description Full Customer Detail aggregate (Screen 15, all 6 tabs). Surfaces ONE property — the first ACTIVE one (else the first) — even though POST /customers/{id}/properties can add more; round/technician/next-visit fields are null when that property is unassigned (Property.roundId = null). */
         CustomerDetail: {
             customer?: {
                 id?: string;
@@ -2992,11 +13267,15 @@ export interface components {
                 email?: string | null;
                 status?: components["schemas"]["LifecycleStatus"];
                 ghlContactId?: string | null;
+                badDebt?: boolean;
             };
             property?: {
                 id?: string;
                 addressLine?: string;
                 postcode?: string;
+                /** @description Null until the next geocoding backfill tick picks up the new postcode. */
+                latitude?: number | null;
+                longitude?: number | null;
                 propertyType?: string | null;
                 accessNotes?: string | null;
                 riskNotes?: string | null;
@@ -3005,18 +13284,24 @@ export interface components {
                 roundName?: string | null;
                 serviceAreaId?: string | null;
             } | null;
-            servicePlan?: components["schemas"]["ServicePlanView"] | null;
+            servicePlans?: components["schemas"]["ServicePlanView"][];
             standingInfo?: {
                 frequency?: components["schemas"]["CleaningFrequency"] | null;
                 assignedRound?: string | null;
                 technicianName?: string | null;
+                paymentStatus?: components["schemas"]["CustomerPaymentStatus"];
                 /**
-                 * @description Payment badge. none = no payment history yet (new customer).
-                 * @enum {string}
+                 * @deprecated
+                 * @description Same as amountDue (kept for existing clients). Omitted for TECHNICIAN viewers.
                  */
-                paymentStatus?: "paid" | "hold" | "pending" | "overdue" | "failed" | "none";
-                /** @description Total outstanding for this customer. Omitted for TECHNICIAN viewers. */
                 outstandingBalance?: number;
+                /** @description Sum of unpaid SENT invoices. Omitted for TECHNICIAN viewers. */
+                amountDue?: number;
+                /**
+                 * Format: date-time
+                 * @description Primary plan nextDueDate, else the next open visit date.
+                 */
+                nextDue?: string | null;
                 /** Format: date-time */
                 lastPaymentDate?: string | null;
                 issuesCount?: number;
@@ -3026,7 +13311,8 @@ export interface components {
                 overview?: {
                     [key: string]: unknown;
                 } | null;
-                servicePlan?: components["schemas"]["ServicePlanView"] | null;
+                servicePlans?: components["schemas"]["ServicePlanView"][];
+                /** @description Excludes CANCELLED visits — use GET /customers/{id}/visits for the full history. */
                 visitHistory?: components["schemas"]["VisitHistoryRow"][];
                 /** @description Full payment history including processor transaction IDs. Omitted for TECHNICIAN viewers. */
                 payments?: {
@@ -3044,6 +13330,7 @@ export interface components {
          *       "addressLine": "12 Market Street",
          *       "postcode": "NE66 1SS",
          *       "price": 35,
+         *       "serviceAreaId": "csa_example",
          *       "cleanMethod": "Water Fed Pole",
          *       "paymentMethod": "GOCARDLESS",
          *       "roundId": null
@@ -3068,13 +13355,21 @@ export interface components {
             paymentMethod?: components["schemas"]["PaymentMethod"] | null;
             /** Format: date */
             nextDueDate?: string | null;
+            /**
+             * Format: date
+             * @description When nextDueDate is omitted and a round is given: nextDueDate = one cycle after this, on the round day (else the round's next day).
+             */
+            lastCleanedDate?: string | null;
             accessNotes?: string | null;
             riskNotes?: string | null;
             /** @description null = Save & Assign Later (unassigned); an id must exist (404 if not). */
             roundId?: string | null;
         };
-        /** @description Partial update. roundId: null = unassign, an id = assign/reassign (Move Round). */
+        /** @description Partial update. roundId: null = unassign, an id = assign/reassign (Move Round). `cleaningFrequency` (without roundId) runs the same B3 move as PATCH /service-plans/{id}: the plan moves to a matching ACTIVE round, or 409 NO_MATCHING_ROUND (with `suggestions` + `proposedName`) unless `createRoundIfMissing: true`. A property with no service plan ignores the frequency. */
         PropertyUpdateInput: {
+            cleaningFrequency?: components["schemas"]["CleaningFrequency"] | null;
+            /** @description Defaults to false. */
+            createRoundIfMissing?: boolean;
             addressLine?: string;
             postcode?: string;
             propertyName?: string | null;
@@ -3101,6 +13396,8 @@ export interface components {
             price?: number;
             cleanMethod?: string | null;
             paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** @description Opt the customer out of automated messages (pre-clean reminders, visit-completed). 400 if not a boolean. */
+            messagesOptOut?: boolean;
         };
         /**
          * @example {
@@ -3162,6 +13459,20 @@ export interface components {
             /** @description If provided, links the invite to an existing invite-pending Technician row. On accept, that row's profileId is set to the new Profile's id. */
             technicianId?: string | null;
         };
+        /** @description An invite that hasn't been accepted yet (GET /invites). Token omitted. */
+        PendingInvite: {
+            id: string;
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["UserRole"];
+            technicianId?: string | null;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description True once expiresAt has passed — resend to revive it. */
+            expired: boolean;
+        };
         /** @description Public — returned before auth so the frontend can pre-fill the signup form. */
         InviteTokenInfo: {
             /** Format: email */
@@ -3179,6 +13490,51 @@ export interface components {
         InviteAcceptInput: {
             /** @description Display name for the new Profile. */
             name: string;
+        };
+        /**
+         * @example {
+         *       "customerId": "cld123abc",
+         *       "title": "Missed conservatory roof",
+         *       "description": "Second time this month the conservatory roof was not cleaned.",
+         *       "issueType": "Missed Clean",
+         *       "severity": "MEDIUM",
+         *       "propertyId": "prp456def",
+         *       "technicianId": null
+         *     }
+         */
+        ComplaintCreateInput: {
+            /** @description ID of an existing customer. */
+            customerId: string;
+            /** @example Missed conservatory roof */
+            title: string;
+            /** @example Second time this month the conservatory roof was not cleaned. */
+            description?: string | null;
+            /** @example Missed Clean */
+            issueType?: string | null;
+            /**
+             * @default LOW
+             * @enum {string|null}
+             */
+            severity: "LOW" | "MEDIUM" | "HIGH" | null;
+            propertyId?: string | null;
+            /** @description Must have accepted their invite. */
+            technicianId?: string | null;
+        };
+        ScheduleRevisitInput: {
+            /**
+             * Format: date
+             * @description Revisit date in YYYY-MM-DD format.
+             * @example 2026-09-10
+             */
+            revisitDate: string;
+        };
+        AssignTechnicianInput: {
+            /** @description Must have accepted their invite. */
+            technicianId: string;
+        };
+        AddMessageInput: {
+            /** @description The reply text to send. */
+            body: string;
         };
         /**
          * @example {
@@ -3213,6 +13569,843 @@ export interface components {
             /** @enum {string|null} */
             paymentMethod?: "GOCARDLESS" | "STRIPE" | "CASH" | "BACS" | "CHEQUE" | null;
         };
+        /**
+         * @example {
+         *       "name": "Alnwick Monday",
+         *       "frequency": "FOUR_WEEKLY",
+         *       "serviceAreaId": "csa_example",
+         *       "defaultDay": "MON"
+         *     }
+         */
+        RoundCreateInput: {
+            name: string;
+            frequency: components["schemas"]["CleaningFrequency"];
+            /** @description Must exist (404 if not). */
+            serviceAreaId: string;
+            defaultDay?: components["schemas"]["DayOfWeek"] | null;
+            description?: string | null;
+        };
+        /** @description Partial update. frequency: null clears it. serviceAreaId: null unassigns the area. Omitted fields are left unchanged. */
+        RoundUpdateInput: {
+            name?: string;
+            frequency?: components["schemas"]["CleaningFrequency"] | null;
+            serviceAreaId?: string | null;
+            defaultDay?: components["schemas"]["DayOfWeek"] | null;
+            description?: string | null;
+            status?: components["schemas"]["RoundStatus"];
+        };
+        /**
+         * @example {
+         *       "technicianIds": [
+         *         "t1",
+         *         "t2"
+         *       ],
+         *       "split": {
+         *         "mode": "AUTO"
+         *       }
+         *     }
+         */
+        SetRoundTechniciansInput: {
+            /** @description Replaces the round's technician list wholesale (empty array clears it). Every id must reference an active, invite-accepted technician. */
+            technicianIds: string[];
+            split?: {
+                /** @enum {string} */
+                mode: "SINGLE" | "AUTO" | "MANUAL";
+                /** @description MANUAL only. */
+                allocations?: {
+                    propertyId: string;
+                    technicianId: string;
+                }[];
+            };
+        };
+        /**
+         * @example {
+         *       "date": "2026-10-30",
+         *       "fromTechnicianId": "t1",
+         *       "toTechnicianId": "t2",
+         *       "scope": "REMAINING",
+         *       "notify": false
+         *     }
+         */
+        ReassignTechnicianInput: {
+            /**
+             * Format: date
+             * @description Visit date to reassign; default today.
+             */
+            date?: string;
+            /** @description null/omitted = the date's unassigned visits. */
+            fromTechnicianId?: string | null;
+            /** @description Must be an active, invite-accepted technician. */
+            toTechnicianId: string;
+            /**
+             * @description REMAINING = SCHEDULED/IN_PROGRESS visits only; ALL = also COMPLETED/SKIPPED. Lowercase accepted.
+             * @enum {string}
+             */
+            scope: "REMAINING" | "ALL";
+            /**
+             * @description Also move the properties' allocation (future visits follow).
+             * @default false
+             */
+            permanent: boolean;
+            note?: string | null;
+            /** @default false */
+            notify: boolean;
+        };
+        /**
+         * @example {
+         *       "newDate": "2026-09-20",
+         *       "reason": "Heavy rain",
+         *       "notifyCustomers": true
+         *     }
+         */
+        PushMissedVisitsInput: {
+            /**
+             * Format: date
+             * @description Must be strictly after today.
+             */
+            newDate: string;
+            reason: string;
+            /** @description Reassign the pushed visits to this technician. Omit to leave the technician unchanged. */
+            technicianId?: string | null;
+            /** @default false */
+            notifyCustomers: boolean;
+            /** @description Custom SMS text. Falls back to a default rescheduled-clean message mentioning reason. */
+            message?: string | null;
+        };
+        /**
+         * @description POST /technicians — distinct from TechnicianCreateInput (used by /settings/technicians): adds email/notes/serviceAreaId and an optional invite send.
+         * @example {
+         *       "name": "James Fisher",
+         *       "role": "Senior",
+         *       "phone": "+44 7700 900111",
+         *       "email": "james@example.com",
+         *       "sendInvite": true
+         *     }
+         */
+        TechnicianDirectoryCreateInput: {
+            name?: string | null;
+            phone?: string | null;
+            role?: string | null;
+            /** @description Required when sendInvite is true. */
+            email?: string | null;
+            notes?: string | null;
+            /** @description Every id must exist (404 if not). */
+            serviceAreaIds?: string[];
+            /**
+             * @deprecated
+             * @description Singular form from older clients — appended to serviceAreaIds.
+             */
+            serviceAreaId?: string | null;
+            /**
+             * @description When true, also creates a TenantInvite and emails it. 409 if a pending invite for this email already exists; 503 if the email fails to send.
+             * @default false
+             */
+            sendInvite: boolean;
+        };
+        /** @description PATCH /technicians/{id} — partial update, all fields optional. Email is re-validated and lower-cased. */
+        TechnicianDirectoryUpdateInput: {
+            name?: string | null;
+            phone?: string | null;
+            role?: string | null;
+            email?: string | null;
+            notes?: string | null;
+            active?: boolean;
+            /** @description Replaces the technician's service areas ([] clears). Every id must exist (404 if not). */
+            serviceAreaIds?: string[];
+            /**
+             * @deprecated
+             * @description Singular form from older clients — appended to serviceAreaIds.
+             */
+            serviceAreaId?: string | null;
+        };
+        /**
+         * @description Either propertyId or customerId is required (a property resolves to its customer).
+         * @example {
+         *       "customerId": "cld123",
+         *       "channel": "sms",
+         *       "body": "Reminder: your clean is scheduled for tomorrow."
+         *     }
+         */
+        MessageSendInput: {
+            propertyId?: string | null;
+            customerId?: string | null;
+            /**
+             * @description Case-insensitive. Omitted/null/AUTO = SMS when the customer has a mobile, else EMAIL.
+             * @enum {string}
+             */
+            channel?: "AUTO" | "SMS" | "EMAIL" | "WHATSAPP";
+            body: string;
+        };
+        /**
+         * @example {
+         *       "roundId": "r1",
+         *       "channel": "sms",
+         *       "body": "Your clean has been rescheduled due to weather.",
+         *       "excludePaymentHold": true
+         *     }
+         */
+        MessageBulkInput: {
+            roundId: string;
+            /**
+             * @description Case-insensitive.
+             * @enum {string}
+             */
+            channel: "sms" | "email" | "whatsapp";
+            body: string;
+            /**
+             * @description Drop any customer whose round properties all have a payment-hold visit.
+             * @default false
+             */
+            excludePaymentHold: boolean;
+        };
+        /**
+         * @description Setup step 9 — one-time property creation during the wizard. Does not reuse POST /properties.
+         * @example {
+         *       "customerName": "John Smith",
+         *       "fullAddress": "12 Market Street",
+         *       "postcode": "NE66 1SS",
+         *       "serviceAreaId": "csa_example",
+         *       "price": 35,
+         *       "roundId": "rnd_example"
+         *     }
+         */
+        SetupPropertyInput: {
+            customerName: string;
+            propertyName?: string | null;
+            phone?: string | null;
+            landline?: string | null;
+            email?: string | null;
+            fullAddress: string;
+            postcode: string;
+            serviceAreaId: string;
+            propertyType?: string | null;
+            /** @description Combined/total price across whichever service(s) this row represents. */
+            price: number;
+            cleaningFrequency?: components["schemas"]["CleaningFrequency"];
+            paymentMethod?: components["schemas"]["PaymentMethod"];
+            serviceId?: string | null;
+            /** @description When given (non-empty), one ServicePlan is created per id instead of a single plan for serviceId, splitting price evenly across them (remainder pence on the last plan). */
+            serviceIds?: string[] | null;
+            accessNotes?: string | null;
+            riskNotes?: string | null;
+            /** @description Required during setup so the property is schedulable. Must reference an ACTIVE round. */
+            roundId: string;
+            /** @description GAP-010: attach to this existing customer (404 / row error if unknown). Omitted = match by mobile/email, else create. */
+            customerId?: string | null;
+            /**
+             * Format: date
+             * @description ISO date; seeds nextDueDate = one cycle later on the round day. 400 / row error if invalid.
+             */
+            lastCleanedDate?: string | null;
+        };
+        /** @description Setup step 9 bulk import. Accepts up to 1000 rows, processed in batches of 100 (each batch its own transaction) — a row or batch that fails is reported in `errors[]` by its original row index and does not abort the others. */
+        SetupPropertyBulkInput: {
+            properties: components["schemas"]["SetupPropertyInput"][];
+            /** @description Pass to make a retried call (e.g. after a client timeout) safe: a repeat call with the same key returns the original result (created count) instead of re-creating the same rows. Sent in the JSON body — not an Idempotency-Key header. */
+            idempotencyKey?: string | null;
+            /**
+             * @description Import rows whose cleaningFrequency differs from the round's frequency (row error otherwise).
+             * @default false
+             */
+            allowFrequencyMismatch: boolean;
+        };
+        /**
+         * @example {
+         *       "roundId": "rnd_example",
+         *       "technicianIds": [
+         *         "t1",
+         *         "t2"
+         *       ]
+         *     }
+         */
+        RoundTechnicianAssignmentInput: {
+            /** @description Must reference an ACTIVE round. */
+            roundId: string;
+            /** @description Every id must reference an active technician. Replaces this round's assignments; a round not included in the request is left untouched. */
+            technicianIds: string[];
+        };
+        /**
+         * @description Setup step 11 — generates the initial batch of SCHEDULED visits. roundIds is required (and must be non-empty) when generateAll is false.
+         * @example {
+         *       "generateAll": true,
+         *       "startDate": "2026-10-01",
+         *       "cycleWeeks": 4
+         *     }
+         */
+        ActivationInput: {
+            /**
+             * @description true = every ACTIVE round; false = only roundIds.
+             * @default true
+             */
+            generateAll: boolean;
+            /**
+             * Format: date
+             * @description Must be today or in the future.
+             */
+            startDate: string;
+            /** @description How many weeks of visits to generate up front. */
+            cycleWeeks: number;
+            /** @description Required when generateAll is false. */
+            roundIds?: string[];
+        };
+        /**
+         * @description All optional. Empty/blank `message` = use the template.
+         * @example {
+         *       "channel": "SMS"
+         *     }
+         */
+        DebtRemindInput: {
+            /**
+             * @description Case-insensitive; omitted = AUTO.
+             * @enum {string}
+             */
+            channel?: "AUTO" | "SMS" | "EMAIL" | "WHATSAPP";
+            /** @description Overrides the template body ({{var}} placeholders still render). */
+            message?: string;
+        };
+        /**
+         * @description All optional. Empty/blank `message` = use the "Payment Link" template.
+         * @example {
+         *       "channel": "AUTO"
+         *     }
+         */
+        DebtPaymentLinkInput: {
+            /**
+             * @description Case-insensitive; omitted = AUTO.
+             * @enum {string}
+             */
+            channel?: "AUTO" | "SMS" | "EMAIL" | "WHATSAPP";
+            message?: string;
+        };
+        /**
+         * @example {
+         *       "flag": true
+         *     }
+         */
+        DebtBadDebtInput: {
+            flag: boolean;
+        };
+        /**
+         * @example {
+         *       "flag": true,
+         *       "reason": "2 payments overdue",
+         *       "notify": true
+         *     }
+         */
+        DebtHoldInput: {
+            flag: boolean;
+            /** @description Only applied when flag is true. */
+            reason?: string | null;
+            /**
+             * Format: date
+             * @description holdSince. Defaults to now when flag is true and omitted.
+             */
+            date?: string | null;
+            /** @description Send an SMS to the customer. Only applies when flag is true. */
+            notify?: boolean;
+            /** @description Custom SMS text when notify is true. Falls back to a default hold message. */
+            message?: string | null;
+        };
+        /**
+         * @example {
+         *       "unfinishedAction": "push_to_tomorrow"
+         *     }
+         */
+        CloseDayInput: {
+            /**
+             * @description What to do with today's still-SCHEDULED/IN_PROGRESS visits.
+             * @enum {string}
+             */
+            unfinishedAction: "push_to_tomorrow" | "mark_as_skipped";
+        };
+        /**
+         * @example {
+         *       "visitId": "vis_example",
+         *       "dueDate": "2026-10-15"
+         *     }
+         */
+        InvoiceCreateInput: {
+            /** @description The visit must not already have an invoice (409 if it does). */
+            visitId: string;
+            notes?: string | null;
+            /** Format: date */
+            dueDate?: string | null;
+            /**
+             * @description Accepted but ignored — no delivery is performed (invoice email delivery is not implemented).
+             * @default false
+             */
+            sendEmail: boolean;
+        };
+        /**
+         * @description Creates a one-time Stripe Checkout session for an invoice. Returns the existing PENDING session's URL instead of creating a duplicate if one already exists.
+         * @example {
+         *       "invoiceId": "inv_example"
+         *     }
+         */
+        StripeCheckoutInput: {
+            invoiceId: string;
+        };
+        /**
+         * @description Creates a Stripe Checkout Session in 'setup' mode to save a card for future automatic charges.
+         * @example {
+         *       "customerId": "cld123"
+         *     }
+         */
+        StripeSetupInput: {
+            customerId: string;
+        };
+        /**
+         * @description PATCH /service-plans/{id} — partial update, all fields optional. Targets one ServicePlan directly by id (a property with 2+ plans can have each edited independently).
+         * @example {
+         *       "price": 40,
+         *       "cleaningFrequency": "SIX_WEEKLY"
+         *     }
+         */
+        ServicePlanUpdateInput: {
+            price?: number;
+            cleanMethod?: string | null;
+            paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            cleaningFrequency?: components["schemas"]["CleaningFrequency"] | null;
+            /** @description Defaults to false. Create the proposed round instead of answering 409 NO_MATCHING_ROUND. */
+            createRoundIfMissing?: boolean;
+        };
+        InvoiceListRow: {
+            id: string;
+            invoiceNumber: string;
+            customer: {
+                id?: string;
+                name?: string;
+            };
+            total: number;
+            status: components["schemas"]["InvoiceStatus"];
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            dueDate: string | null;
+            /** Format: date-time */
+            paidAt: string | null;
+            paymentMethod: components["schemas"]["PaymentMethod"] | null;
+            visitId: string | null;
+        };
+        /**
+         * @example {
+         *       "date": "2026-10-30",
+         *       "excludeVisitIds": []
+         *     }
+         */
+        InvoiceBulkInput: {
+            /** Format: date */
+            date: string;
+            excludeVisitIds?: string[];
+        };
+        InvoiceBulkPreview: {
+            items: {
+                visitId?: string;
+                customerName?: string;
+                address?: string;
+                amount?: number;
+                vat?: number;
+                total?: number;
+                paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            }[];
+            skipped: {
+                visitId?: string;
+                customerName?: string;
+                /** @enum {string} */
+                reason?: "ALREADY_INVOICED" | "NOT_COMPLETED" | "ON_HOLD";
+            }[];
+            totals: {
+                count?: number;
+                /** @example 126.00 */
+                amount?: string;
+            };
+        };
+        InvoiceBulkResult: {
+            created: {
+                visitId?: string;
+                invoiceId?: string;
+                invoiceNumber?: string;
+                total?: number;
+                /** @description Present only with sendNow. */
+                sent?: boolean;
+            }[];
+            failed: {
+                visitId?: string;
+                /** @description Set when created but not sent. */
+                invoiceId?: string;
+                error?: string;
+            }[];
+            totals: {
+                count?: number;
+                amount?: string;
+            };
+        };
+        InvoiceSendResult: {
+            id: string;
+            invoiceNumber: string;
+            status: components["schemas"]["InvoiceStatus"];
+            sentToCustomer: boolean;
+            /** Format: date-time */
+            sentAt: string | null;
+            /** @description The recorded OUTBOUND Message id. */
+            messageId: string;
+            channel: components["schemas"]["MessageChannel"];
+        };
+        MarkPaidResult: {
+            invoice: {
+                id?: string;
+                invoiceNumber?: string;
+                status?: components["schemas"]["InvoiceStatus"];
+                /** Format: date-time */
+                paidAt?: string | null;
+                amount?: number;
+            };
+            payment: {
+                id?: string;
+                status?: components["schemas"]["PaymentStatus"];
+                method?: components["schemas"]["PaymentMethod"];
+                amount?: number;
+                /** Format: date-time */
+                paidAt?: string | null;
+                reference?: string | null;
+            };
+        };
+        PaymentListRow: {
+            id: string;
+            customer: {
+                id?: string;
+                name?: string;
+            };
+            amount: number;
+            method: components["schemas"]["PaymentMethod"];
+            status: components["schemas"]["PaymentStatus"];
+            /** Format: date-time */
+            paidAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            visitId: string | null;
+            /** Format: date-time */
+            visitDate: string | null;
+            invoiceId: string | null;
+            invoiceNumber: string | null;
+        };
+        TechnicianPerformance: {
+            technicianId: string;
+            period: string;
+            /**
+             * Format: date-time
+             * @description Inclusive.
+             */
+            from: string;
+            /**
+             * Format: date-time
+             * @description Exclusive.
+             */
+            to: string;
+            visitsCompleted: number;
+            revenue: number;
+            timeOnJobMinutes: number | null;
+            revenuePerHour: number | null;
+            strikes: number;
+            damages: number;
+            upsells: number;
+            upsellValue: number;
+            /** @description Complaints logged in the period. */
+            complaints: number;
+        };
+        TechnicianIncident: {
+            id: string;
+            technicianId: string;
+            visitId: string | null;
+            type: components["schemas"]["IncidentType"];
+            amount: number | null;
+            note: string | null;
+            /** @description Profile id. */
+            createdById: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        TechnicianAvailability: {
+            id: string;
+            technicianId: string;
+            /** Format: date-time */
+            from: string;
+            /**
+             * Format: date-time
+             * @description Inclusive; 2099-12-31 = open-ended (from POST /technicians/{id}/replace without `to`).
+             */
+            to: string;
+            reason?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        PauseResult: components["schemas"]["ServicePlan"] & {
+            /** @description SCHEDULED visits in the pause window that were CANCELLED (cancelReason PAUSED). */
+            cancelledVisits: number;
+            /** @description true = start date is in the future; the plan stays ACTIVE until then. */
+            pauseScheduled: boolean;
+        };
+        MovedToRound: {
+            id: string;
+            name: string;
+            /** @description true when the round was created by createRoundIfMissing. */
+            created: boolean;
+        } | null;
+        PlanUpdateResult: {
+            servicePlan: components["schemas"]["ServicePlan"];
+            movedToRound: components["schemas"]["MovedToRound"];
+        };
+        PropertyUpdateResult: components["schemas"]["Property"] & {
+            movedToRound: components["schemas"]["MovedToRound"];
+        };
+        NoMatchingRoundError: {
+            error: string;
+            /** @enum {string} */
+            code: "NO_MATCHING_ROUND";
+            suggestions: {
+                id?: string;
+                name?: string;
+                frequency?: components["schemas"]["CleaningFrequency"] | null;
+                defaultDay?: components["schemas"]["DayOfWeek"] | null;
+            }[];
+            /** @example Alnwick Mon 6wk */
+            proposedName: string;
+        };
+        PhotoRow: {
+            id: string;
+            type: components["schemas"]["PhotoType"];
+            /** @description 1-hour signed read URL (null if signing failed). */
+            url: string | null;
+            /** @description Same signed URL — no server-side thumbnails yet. */
+            thumbnailUrl: string | null;
+            /** Format: date-time */
+            takenAt: string;
+            visitId: string | null;
+            /** Format: date-time */
+            visitDate: string | null;
+            technician: {
+                id?: string;
+                name?: string | null;
+            } | null;
+        };
+        PhotoPage: {
+            rows: components["schemas"]["PhotoRow"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        /**
+         * @description Optional resolution notes and outcome, persisted alongside resolvedAt/resolvedBy.
+         * @example {
+         *       "notes": "Returned next day; customer confirmed satisfied.",
+         *       "upheld": true
+         *     }
+         */
+        ResolveComplaintInput: {
+            notes?: string | null;
+            /** @description Was the complaint upheld? 400 if not a boolean. */
+            upheld?: boolean;
+        };
+        /** @description Partial update — omitted fields are untouched; `subject: null` clears it. */
+        MessageTemplateUpdateInput: {
+            name?: string;
+            /** @enum {string} */
+            channel?: "SMS" | "WHATSAPP" | "EMAIL";
+            body?: string;
+            subject?: string | null;
+        };
+        /**
+         * @description Adds a Property + ServicePlan to an existing customer (atomic). Same fields as PropertyCreateInput minus the customer fields.
+         * @example {
+         *       "addressLine": "3 Bondgate Within",
+         *       "postcode": "NE66 1SX",
+         *       "price": 30,
+         *       "serviceAreaId": "csa_example",
+         *       "roundId": null
+         *     }
+         */
+        CustomerPropertyAddInput: {
+            addressLine: string;
+            postcode: string;
+            propertyName?: string | null;
+            /** @enum {string|null} */
+            propertyType?: "HOUSE" | "FLAT_APARTMENT" | "COMMERCIAL" | "OFFICE" | "CONSERVATORY" | null;
+            /** @description Must exist (404 if not). */
+            serviceAreaId: string;
+            serviceId?: string | null;
+            price: number;
+            cleanMethod?: string | null;
+            paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** Format: date */
+            nextDueDate?: string | null;
+            accessNotes?: string | null;
+            riskNotes?: string | null;
+            /** @description null = unassigned; an id must exist (404 if not). The plan inherits the round's frequency. */
+            roundId?: string | null;
+        };
+        MandateCompleteInput: {
+            /** @description The GoCardless redirect flow id returned to the success URL. */
+            redirectFlowId: string;
+        };
+        /**
+         * @example {
+         *       "status": "PAID"
+         *     }
+         */
+        PaymentStatusInput: {
+            /** @enum {string} */
+            status: "PAID" | "FAILED";
+        };
+        VisitCompleteInput: {
+            payment?: components["schemas"]["CompletionPaymentInput"];
+            /**
+             * @deprecated
+             * @description Deprecated alias for payment { method: "CASH" }.
+             */
+            cashConfirmed?: boolean;
+        };
+        GoCardlessConnectInput: {
+            /** @description GoCardless access token — verified by listing creditors before it is stored (encrypted). */
+            accessToken: string;
+            /** @enum {string} */
+            environment: "sandbox" | "live";
+        };
+        GoCardlessWebhookSecretInput: {
+            /** @description The signing secret GoCardless shows for the webhook endpoint the admin created. */
+            secret: string;
+        };
+        GhlPrivateConnectInput: {
+            /** @description Sub-account Location API key (Settings → Integrations → API Keys). Never expires. */
+            apiKey: string;
+            locationId: string;
+        };
+        /** @description Partial update. `name`/`dateOfBirth` go to the public Profile; `avatarUrl` to the caller's Technician row. */
+        MobileMeUpdateInput: {
+            name?: string;
+            /**
+             * Format: date
+             * @description YYYY-MM-DD, a real date between 1900-01-01 and today. null clears.
+             */
+            dateOfBirth?: string | null;
+            avatarUrl?: string | null;
+        };
+        MobileUploadUrlInput: {
+            /**
+             * @default image/jpeg
+             * @enum {string}
+             */
+            mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/heic";
+        };
+        MobileChatAttachmentUploadInput: {
+            roundId: string;
+            /**
+             * @default image/jpeg
+             * @enum {string}
+             */
+            mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/heic";
+        };
+        MobileDeviceInput: {
+            pushToken: string;
+            /** @enum {string} */
+            platform: "ios" | "android";
+        };
+        MobileSupportReportInput: {
+            description: string;
+            appVersion?: string | null;
+            device?: string | null;
+        };
+        MobileSkipInput: {
+            reason: string;
+            /** @description Appended to the stored skipReason as `<reason>: <description>`. */
+            description?: string | null;
+        };
+        MobilePriceInput: {
+            /** @description New price (number or numeric string), ≥ 0. Setting it back to the original price clears the adjustment. */
+            price: number | string;
+            /** @example Front only */
+            reason?: string | null;
+        };
+        /**
+         * @example {
+         *       "type": "GATE_LOCKED",
+         *       "description": "Side gate padlocked",
+         *       "photoPaths": [
+         *         "tenant_1/visits/vis_1/access_issue-1696248000000.jpg"
+         *       ]
+         *     }
+         */
+        MobileAccessIssueInput: {
+            type: components["schemas"]["IssueType"];
+            description: string;
+            /** @description Optional storage paths from POST /mobile/visits/{id}/photos/upload-url with `type: ACCESS_ISSUE` (must start with `<tenantId>/visits/<visitId>/`). Stored as ACCESS_ISSUE photos linked to the issue. */
+            photoPaths?: string[];
+        };
+        MobileNoteInput: {
+            text: string;
+        };
+        MobilePhotoUploadUrlInput: {
+            /**
+             * @description ACCESS_ISSUE: send the returned `path` in POST /mobile/visits/{id}/access-issues `photoPaths` (not POST /photos).
+             * @enum {string}
+             */
+            type: "BEFORE" | "AFTER" | "ACCESS_ISSUE";
+            /**
+             * @default image/jpeg
+             * @enum {string}
+             */
+            mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/heic";
+            /** @description Optional byte size; 413 if over 10 MB. */
+            contentLength?: number;
+        };
+        /** @description Send `path` (the storage path returned by the upload-url step — preferred) or the legacy `url`; one is required. ACCESS_ISSUE photos are recorded via POST /mobile/visits/{id}/access-issues instead. */
+        MobilePhotoInput: {
+            /** @enum {string} */
+            type: "BEFORE" | "AFTER";
+            url?: string;
+            path?: string;
+        };
+        /**
+         * @example {
+         *       "method": "CHEQUE",
+         *       "chequeNumber": "000123"
+         *     }
+         */
+        MobileDebtPaymentInput: {
+            /** @enum {string} */
+            method?: "CASH" | "CHEQUE";
+            /** @description Required for CHEQUE. */
+            chequeNumber?: string;
+            /**
+             * @deprecated
+             * @description Alias for method CASH when method is omitted.
+             */
+            cashConfirmed?: boolean;
+        };
+        /**
+         * @example {
+         *       "cashConfirmed": true
+         *     }
+         */
+        MobileCashConfirmInput: {
+            /** @description Must be true (400 otherwise). */
+            cashConfirmed?: boolean;
+        };
+        /**
+         * @description `type` TEXT (default) needs `text`; WORK_PHOTOS needs `visitId`; PHOTOS needs a non-empty `photoUrls` (optional `text` caption).
+         * @example {
+         *       "roundId": "rnd_example",
+         *       "text": "Running 10 mins late"
+         *     }
+         */
+        MobileChatMessageInput: {
+            roundId: string;
+            /**
+             * @default TEXT
+             * @enum {string}
+             */
+            type: "TEXT" | "WORK_PHOTOS" | "PHOTOS";
+            text?: string;
+            visitId?: string;
+            photoUrls?: string[];
+        };
     };
     responses: {
         /** @description Validation error, or POST /setup/complete with required steps missing. */
@@ -3233,7 +14426,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description A mutating setup step was called after setup is already complete. */
+        /** @description Caller's role is not allowed (admin routers need ADMIN/MANAGER), no Profile exists for the user (`code: NO_PROFILE`), or a setup-state lock applies: a wizard mutation after setup is complete, or a Settings mutation before it is. */
         Forbidden: {
             headers: {
                 [name: string]: unknown;
@@ -3260,7 +14453,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Invite has expired or has already been accepted. */
+        /** @description Invite has expired or has already been accepted. `code` is INVITE_EXPIRED or INVITE_ACCEPTED. */
         Gone: {
             headers: {
                 [name: string]: unknown;

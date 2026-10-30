@@ -18,6 +18,7 @@ import {
 } from '@/components/complaints/LogComplaintModal'
 import { AssignTechnicianModal } from '@/components/complaints/AssignTechnicianModal'
 import { ResolveComplaintModal } from '@/components/complaints/ResolveComplaintModal'
+import { RevisitBookedNotice } from '@/components/complaints/RevisitBookedNotice'
 import { Input } from '@/components/ui'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Pager } from '@/components/ui/pager'
@@ -38,6 +39,7 @@ import {
 import { useCustomer } from '@/features/customers/hooks/useCustomers'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { resolvedByLabel, upheldLabel } from '@/features/complaints/lib/format'
 import { ApiError, errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
@@ -92,6 +94,7 @@ export function ComplaintsScreen() {
   const [modalOpen, setModalOpen] = useState(false)
   const [assignModalOpen, setAssignModalOpen] = useState(false)
   const [resolveModalOpen, setResolveModalOpen] = useState(false)
+  const [revisitBooked, setRevisitBooked] = useState<{ complaintId: string; visitId: string | null } | null>(null)
   const [detailTab, setDetailTab] = useState<DetailTab>('messages')
   const [reply, setReply] = useState('')
 
@@ -172,7 +175,8 @@ export function ComplaintsScreen() {
   async function handleScheduleRevisit(date: string) {
     if (!selected || !canMutate) return
     try {
-      await scheduleRevisit.mutateAsync({ id: selected.id, revisitDate: date })
+      const booked = await scheduleRevisit.mutateAsync({ id: selected.id, revisitDate: date })
+      setRevisitBooked({ complaintId: selected.id, visitId: booked.visitId })
       showToast(complaintsContent.toasts.revisitScheduled)
     } catch (error) {
       if (error instanceof ApiError && error.status === 400) {
@@ -183,10 +187,10 @@ export function ComplaintsScreen() {
     }
   }
 
-  async function handleResolve(notes: string) {
+  async function handleResolve(notes: string, upheld: boolean) {
     if (!selected || !canMutate) return
     try {
-      await resolveComplaint.mutateAsync({ id: selected.id, notes: notes || undefined })
+      await resolveComplaint.mutateAsync({ id: selected.id, notes: notes || undefined, upheld })
       setResolveModalOpen(false)
       showToast(complaintsContent.toasts.resolved)
     } catch (error) {
@@ -230,6 +234,9 @@ export function ComplaintsScreen() {
   return (
     <>
       <div className="space-y-5">
+        {selected && revisitBooked?.complaintId === selected.id ? (
+          <RevisitBookedNotice visitId={revisitBooked.visitId} onDismiss={() => setRevisitBooked(null)} />
+        ) : null}
         {!selected ? (
           <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -335,7 +342,7 @@ export function ComplaintsScreen() {
                 selected.status === 'RESOLVED' && selected.resolvedAt
                   ? [
                       complaintsContent.resolvedSummary(
-                        selected.resolvedBy ?? '—',
+                        resolvedByLabel(selected.resolvedBy),
                         formatDateTime(selected.resolvedAt),
                       ),
                       selected.notes,
@@ -378,7 +385,7 @@ export function ComplaintsScreen() {
       <ResolveComplaintModal
         open={resolveModalOpen}
         onClose={() => setResolveModalOpen(false)}
-        onConfirm={(notes) => void handleResolve(notes)}
+        onConfirm={(notes, upheld) => void handleResolve(notes, upheld)}
         resolving={resolveComplaint.isPending}
       />
     </>
@@ -828,8 +835,9 @@ function ComplaintDetails({
     },
     ...(record.resolvedAt
       ? [
-          { label: detail.fields.resolvedBy, value: record.resolvedBy ?? '—' },
+          { label: detail.fields.resolvedBy, value: resolvedByLabel(record.resolvedBy) },
           { label: detail.fields.resolvedAt, value: formatDate(record.resolvedAt) },
+          { label: detail.fields.upheld, value: upheldLabel(record.upheld) },
         ]
       : []),
     ...(record.notes ? [{ label: detail.fields.notes, value: record.notes, className: 'sm:col-span-2' }] : []),

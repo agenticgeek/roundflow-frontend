@@ -18,6 +18,9 @@ interface TodaysWorkHeaderProps {
   /** Technician-only: self-report an emergency mid-round. */
   reportEmergencyLabel?: string
   onReportEmergency?: () => void
+  /** GAP-014: opens "Create invoices for today" (admins only). */
+  createInvoicesLabel?: string
+  onCreateInvoices?: () => void
 }
 
 /** Page header with live status and close-day action. */
@@ -35,6 +38,8 @@ export function TodaysWorkHeader({
   closeDayDisabled = false,
   reportEmergencyLabel,
   onReportEmergency,
+  createInvoicesLabel,
+  onCreateInvoices,
 }: TodaysWorkHeaderProps) {
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -76,6 +81,17 @@ export function TodaysWorkHeader({
           >
             <DashboardIcon name="alert" className="h-4 w-4" />
             {reportEmergencyLabel}
+          </button>
+        ) : null}
+
+        {onCreateInvoices && createInvoicesLabel ? (
+          <button
+            type="button"
+            onClick={onCreateInvoices}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface"
+          >
+            <DashboardIcon name="file" className="h-4 w-4" />
+            {createInvoicesLabel}
           </button>
         ) : null}
 

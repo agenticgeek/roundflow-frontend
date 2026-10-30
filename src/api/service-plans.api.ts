@@ -1,5 +1,10 @@
 import { api } from '@/api/client'
-import type { CleaningFrequency, PaymentMethod, ServicePlanView } from '@/api/types'
+import type { PauseResult, ServicePlan } from '@/api/properties.api'
+import type { components } from '@/api/types.gen'
+import type { CleaningFrequency, PaymentMethod } from '@/api/types'
+
+/** PATCH /service-plans/:id → `{ servicePlan, movedToRound }` (BREAKING, B3 · GAP-018). */
+export type PlanUpdateResult = components['schemas']['PlanUpdateResult']
 
 /**
  * Per-plan writes (audit follow-up 2026-10-22). On a property with several plans, the
@@ -11,6 +16,8 @@ export type ServicePlanUpdateInput = {
   cleanMethod?: string
   paymentMethod?: PaymentMethod
   cleaningFrequency?: CleaningFrequency
+  /** Create the proposed round instead of answering 409 NO_MATCHING_ROUND. */
+  createRoundIfMissing?: boolean
 }
 
 export type ServicePlanPauseInput = {
@@ -30,11 +37,11 @@ function jsonRequest(method: 'POST' | 'PATCH', body?: unknown): RequestInit {
 
 export const servicePlansApi = {
   update: (id: string, input: ServicePlanUpdateInput) =>
-    api<ServicePlanView>(`/service-plans/${id}`, jsonRequest('PATCH', input)),
+    api<PlanUpdateResult>(`/service-plans/${id}`, jsonRequest('PATCH', input)),
 
   pause: (id: string, input: ServicePlanPauseInput) =>
-    api<ServicePlanView>(`/service-plans/${id}/pause`, jsonRequest('POST', input)),
+    api<PauseResult>(`/service-plans/${id}/pause`, jsonRequest('POST', input)),
 
   resume: (id: string) =>
-    api<ServicePlanView>(`/service-plans/${id}/resume`, jsonRequest('POST')),
+    api<ServicePlan>(`/service-plans/${id}/resume`, jsonRequest('POST')),
 }

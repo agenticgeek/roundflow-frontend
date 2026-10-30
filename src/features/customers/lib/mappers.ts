@@ -2,14 +2,12 @@ import type {
   CleaningFrequency,
   CustomerDetail,
   CustomerListRow,
-  CustomerListRowPaymentStatus,
   LifecycleStatus,
   NoteType,
   PaymentMethod,
   ServicePlanView,
 } from '@/api/types'
 import type {
-  CustomerPaymentStatus,
   CustomerPropertyRecord,
   CustomerStatus,
 } from '@/content/customers'
@@ -28,6 +26,10 @@ import type {
   VisitPaymentStatus,
   VisitStatus,
 } from '@/content/property-detail'
+import { NO_ACCESS_NOTES, NO_RISK_NOTES } from '@/content/property-detail'
+import { reconcilablePaymentId } from '@/features/payments/lib/mark-paid'
+import { exhaustiveFallback, type VisitStatus as VisitStatusValue } from '@/lib/visit-status'
+import { mapCustomerPaymentBadge, mapPaymentStanding } from '@/features/customers/lib/payment-status'
 
 const FREQUENCY_LABELS: Record<CleaningFrequency, string> = {
   FOUR_WEEKLY: 'Every 4 weeks',
@@ -70,14 +72,6 @@ function mapListStatus(
   return 'active'
 }
 
-function mapPaymentStatus(
-  status: CustomerListRowPaymentStatus | string | undefined,
-): CustomerPaymentStatus {
-  if (status === 'hold') return 'hold'
-  if (status === 'pending' || status === 'overdue' || status === 'failed') return 'pending'
-  return 'paid'
-}
-
 export function customerListRowToRecord(row: CustomerListRow): CustomerPropertyRecord {
   const customerId = row.customerId ?? ''
   const propertyId = row.propertyId ?? customerId
@@ -95,8 +89,9 @@ export function customerListRowToRecord(row: CustomerListRow): CustomerPropertyR
     frequency: row.frequency ? FREQUENCY_LABELS[row.frequency] : '—',
     price: formatMoney(row.price) ?? '—',
     technician: row.technicianName ?? '—',
-    nextDue: formatDate(row.nextDueDate),
-    paymentStatus: mapPaymentStatus(row.paymentStatus),
+    // GAP-021: `nextDue` falls back to the next open visit server-side.
+    nextDue: formatDate(row.nextDue ?? row.nextDueDate),
+    paymentStatus: mapCustomerPaymentBadge(row.paymentStatus),
     amountDue,
     needsAssignment: !row.roundId,
   }
@@ -128,12 +123,7 @@ function mapPlanStatus(
 function mapDetailPaymentStatus(
   status: string | undefined,
 ): PropertyPaymentStatus {
-  const normalized = (status ?? '').toLowerCase()
-  if (normalized === 'hold') return 'hold'
-  if (normalized === 'pending' || normalized === 'overdue' || normalized === 'failed') {
-    return 'pending'
-  }
-  return 'paid'
+  return mapPaymentStanding(status)
 }
 
 /**
@@ -208,7 +198,7 @@ export function customerDetailToPropertyRecord(
   if (!customer?.id) return null
 
   const hasRound = Boolean(property?.roundId)
-  const onHold = (standing?.paymentStatus ?? '').toLowerCase() === 'hold'
+  const onHold = mapPaymentStanding(standing?.paymentStatus) === 'hold'
   const addressLine = property?.addressLine ?? ''
   const postcode = property?.postcode ?? ''
   const fullAddress = [addressLine, postcode].filter(Boolean).join(', ') || '—'
@@ -226,23 +216,21 @@ export function customerDetailToPropertyRecord(
       : '—',
     price: formatMoney(plan?.price) ?? '—',
     cleanMethod: plan?.cleanMethod ?? '—',
-    nextDue: formatDate(plan?.nextDueDate),
+    nextDue: formatDate(standing?.nextDue ?? plan?.nextDueDate),
     lastCompleted: formatDate(plan?.lastCompleted),
     assignedRound: standing?.assignedRound ?? property?.roundName ?? 'Not Assigned',
     technician: standing?.technicianName ?? '—',
     paymentStatus: mapDetailPaymentStatus(standing?.paymentStatus),
-    outstandingBalance:
-      standing?.outstandingBalance != null
-        ? (formatMoney(standing.outstandingBalance) ?? '£0')
-        : '—',
+    // GAP-021: `amountDue` (unpaid SENT invoices); `outstandingBalance` is its deprecated alias.
+    outstandingBalance: formatMoney(standing?.amountDue ?? standing?.outstandingBalance) ?? '—',
     paymentMethod: plan?.paymentMethod
       ? PAYMENT_METHOD_LABELS[plan.paymentMethod]
       : '—',
     lastPayment: formatDate(standing?.lastPaymentDate),
     issuesCount: standing?.issuesCount ?? 0,
     nextVisitStatus: standing?.nextVisitStatus ?? '—',
-    accessNotes: property?.accessNotes?.trim() || 'No access notes',
-    riskNotes: property?.riskNotes?.trim() || 'No risk notes',
+    accessNotes: property?.accessNotes?.trim() || NO_ACCESS_NOTES,
+    riskNotes: property?.riskNotes?.trim() || NO_RISK_NOTES,
     phone: customer.phone ?? '',
     // CONTRACT-DIFF: the generated CustomerDetail.customer response type hasn't caught up
     // with landline yet, even though the Create/Update Customer input schemas already have it.
@@ -266,8 +254,23 @@ function serviceTypeLabel(plans: readonly ServicePlanView[]): string | undefined
   return names.length > 0 ? [...new Set(names)].join(', ') : undefined
 }
 
-function mapVisitStatus(status: string | undefined): VisitStatus {
-  return status === 'COMPLETED' ? 'completed' : 'scheduled'
+export function mapVisitStatus(status: string | undefined, cancelReason?: string | null): VisitStatus {
+  const visitStatus = (status ?? 'SCHEDULED') as VisitStatusValue
+  switch (visitStatus) {
+    case 'COMPLETED':
+      return 'completed'
+    case 'SCHEDULED':
+      return 'scheduled'
+    case 'IN_PROGRESS':
+      return 'in-progress'
+    case 'SKIPPED':
+      return 'skipped'
+    case 'CANCELLED':
+      // Visit History shows pause-cancelled visits as a grey "Cancelled (paused)" chip (A4).
+      return cancelReason === 'PAUSED' ? 'cancelled-paused' : 'cancelled'
+    default:
+      return exhaustiveFallback(visitStatus, 'scheduled')
+  }
 }
 
 function mapVisitPayment(status: string | null | undefined): VisitPaymentStatus {
@@ -279,6 +282,8 @@ export function customerDetailToVisits(detail: CustomerDetail): PropertyVisitRec
     const extra = row as typeof row & {
       invoiceId?: string | null
       invoiceStatus?: string | null
+      /** A4: why a CANCELLED visit was cancelled. */
+      cancelReason?: string | null
     }
     const invoiceStatus = extra.invoiceStatus
     const invoice: VisitInvoiceAction =
@@ -295,7 +300,7 @@ export function customerDetailToVisits(detail: CustomerDetail): PropertyVisitRec
       visitDate: formatDate(row.date),
       round: row.roundName ?? '—',
       technician: '—',
-      status: mapVisitStatus(row.status),
+      status: mapVisitStatus(row.status, extra.cancelReason),
       payment: mapVisitPayment(row.paymentStatus),
       price: '—',
       invoice,
@@ -309,6 +314,7 @@ export function customerDetailToPayments(
 ): PropertyPaymentRecord[] | undefined {
   const payments = detail.tabs?.payments
   if (payments === undefined) return undefined
+  const planMethod = primaryServicePlan(customerServicePlans(detail))?.paymentMethod
 
   return (payments.rows ?? []).map((row, index) => ({
     id: row.paymentId ?? row.visitId ?? `payment-${index}`,
@@ -329,6 +335,7 @@ export function customerDetailToPayments(
           ? 'sent'
           : 'none',
     action: row.canGenerate ? 'generate' : row.invoiceId || row.canDownload ? 'download' : 'generate',
+    markPaidPaymentId: reconcilablePaymentId(row, planMethod),
   }))
 }
 

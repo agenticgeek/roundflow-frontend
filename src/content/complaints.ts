@@ -53,6 +53,7 @@ export const complaintsContent = {
       propertyAddress: 'Property address',
       resolvedBy: 'Resolved by',
       resolvedAt: 'Resolved on',
+      upheld: 'Upheld',
       notes: 'Resolution notes',
     },
     unassigned: 'Unassigned',
@@ -107,6 +108,24 @@ export const complaintsContent = {
     notesPlaceholder: 'e.g. Revisited and re-cleaned the back windows',
   },
   resolvedSummary: (resolvedBy: string, when: string) => `Resolved by ${resolvedBy} · ${when}`,
+  /** Until the API names the resolver (GAP-029), a raw profile id shows as this. */
+  resolvedByFallback: 'Admin',
+  /** Pending-invite technicians can be picked too (GAP-029 part 2). */
+  invitePending: '(invite pending)',
+  unnamedTechnician: 'Unnamed technician',
+  upheld: {
+    label: 'Upheld',
+    description: 'An upheld complaint counts as a strike against the technician.',
+    yes: 'Yes — counts as a strike',
+    no: 'No',
+  },
+  revisitBooked: {
+    title: 'Revisit booked',
+    body: 'A free revisit visit was added to the planner.',
+    link: 'Open round planner',
+    noProperty: 'No visit was created because the complaint has no property.',
+  },
+  noTechnicians: 'No technicians yet — add them on the Technicians page.',
   toasts: {
     logged: 'Complaint logged successfully',
     markedInReview: 'Marked for in-review!',

@@ -81,7 +81,7 @@ function toBaseRecord(item: TechnicianListItem): TechnicianRecord {
     phone: item.phone?.trim() || '—',
     email: item.email?.trim() || '—',
     areas: item.serviceAreas.map((area) => area.serviceAreaName),
-    serviceAreaId: item.serviceAreas[0]?.serviceAreaId ?? null,
+    serviceAreaIds: item.serviceAreas.map((area) => area.serviceAreaId),
     notes: item.notes?.trim() || '',
     status: mapAppStatusToUi(item.appStatus, undefined, item.todayStats),
     appStatus: item.appStatus,

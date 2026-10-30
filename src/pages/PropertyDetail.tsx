@@ -18,6 +18,7 @@ import {
   customerDetailToVisits,
   customerListRowToRecord,
 } from '@/features/customers/lib/mappers'
+import { mapCustomerPaymentBadge } from '@/features/customers/lib/payment-status'
 import { useCustomerInvoices } from '@/features/invoices/hooks/useInvoices'
 import {
   applyCustomerInvoicesToPayments,
@@ -92,7 +93,7 @@ export default function PropertyDetail() {
       price: property.price,
       technician: property.technician,
       nextDue: property.nextDue,
-      paymentStatus: property.paymentStatus,
+      paymentStatus: mapCustomerPaymentBadge(detailQuery.data.standingInfo?.paymentStatus),
       needsAssignment: property.needsAssignment,
     }
   }, [detailQuery.data, listQuery.data?.customers, property])
@@ -144,6 +145,7 @@ export default function PropertyDetail() {
           customerRecord={customerRecordForModal}
           customerId={customerId}
           tabData={tabData}
+          badDebt={Boolean(detailQuery.data?.customer?.badDebt)}
           onBack={handleBack}
         />
       ) : (

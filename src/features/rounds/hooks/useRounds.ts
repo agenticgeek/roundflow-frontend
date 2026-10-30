@@ -10,6 +10,7 @@ import {
   type RoundDetail,
   type RoundStatus,
   type RoundUpdateInput,
+  type SetRoundTechniciansInput,
 } from '@/api/rounds.api'
 import { ApiError } from '@/lib/errors'
 import { invalidateCustomers, invalidateRounds, queryKeys } from '@/lib/query-keys'
@@ -55,19 +56,16 @@ export function useUpdateRound() {
   })
 }
 
+/** PUT /rounds/:id/technicians with an optional split (GAP-012); returns the allocation. */
 export function useSetRoundTechnicians() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({
-      id,
-      technicianIds,
-    }: {
-      id: string
-      technicianIds: string[]
-    }) => roundsApi.setTechnicians(id, technicianIds),
-    onSuccess: (_data, { id }) => {
+    mutationFn: ({ id, input }: { id: string; input: SetRoundTechniciansInput }) =>
+      roundsApi.setTechnicians(id, input),
+    onSuccess: () => {
+      // Round detail + allocation (both under `rounds`), and restamped visits on Today's Work.
       void invalidateRounds(queryClient)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.rounds.detail(id) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today.all })
       // Every property assigned to this round shows its technician on Customers / Property Detail.
       void invalidateCustomers(queryClient)
     },

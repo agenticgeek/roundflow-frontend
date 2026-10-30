@@ -9,6 +9,7 @@ import type {
 import {
   invalidateCustomers,
   invalidateRounds,
+  invalidateServiceChange,
   queryKeys,
 } from '@/lib/query-keys'
 
@@ -31,10 +32,11 @@ export function useUpdateProperty() {
     mutationFn: ({ id, input }: { id: string; input: PropertyUpdateInput }) =>
       propertiesApi.updateProperty(id, input),
     onSuccess: (_data, { input }) => {
-      void invalidateCustomers(queryClient)
+      // A round / frequency move changes the header, Today's Work and the planner (GAP-018).
       if (input.roundId !== undefined || input.cleaningFrequency !== undefined) {
-        void invalidateRounds(queryClient)
+        return invalidateServiceChange(queryClient)
       }
+      return invalidateCustomers(queryClient)
     },
   })
 }
@@ -44,7 +46,8 @@ export function usePauseProperty() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: PauseServiceInput }) =>
       propertiesApi.pause(id, input),
-    onSuccess: () => invalidateCustomers(queryClient),
+    // Pause cancels visits: the header, Today's Work and the planner all change (GAP-020).
+    onSuccess: () => invalidateServiceChange(queryClient),
   })
 }
 
@@ -52,7 +55,7 @@ export function useResumeProperty() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => propertiesApi.resume(id),
-    onSuccess: () => invalidateCustomers(queryClient),
+    onSuccess: () => invalidateServiceChange(queryClient),
   })
 }
 

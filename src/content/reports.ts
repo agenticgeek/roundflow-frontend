@@ -1,6 +1,6 @@
 export type ReportsPeriod = 'Daily' | 'Weekly' | 'Monthly'
 
-export type VisitStatus = 'completed' | 'skipped' | 'in-progress' | 'pending' | 'scheduled'
+export type VisitStatus = 'completed' | 'skipped' | 'in-progress' | 'pending' | 'scheduled' | 'cancelled'
 
 export type ActivityIcon = 'calendar' | 'home' | 'technicians' | 'refresh'
 
@@ -56,6 +56,7 @@ export const reportsContent = {
       { value: 'completed', label: 'Completed' },
       { value: 'skipped', label: 'Skipped' },
       { value: 'scheduled', label: 'Scheduled' },
+      { value: 'cancelled', label: 'Cancelled' },
     ],
   },
   exportLabel: 'Export',
@@ -78,6 +79,7 @@ export const reportsContent = {
     'in-progress': 'In Progress',
     pending: 'Pending',
     scheduled: 'Scheduled',
+    cancelled: 'Cancelled',
   } as const satisfies Record<VisitStatus, string>,
   metrics: [
     {

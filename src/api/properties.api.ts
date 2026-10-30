@@ -1,14 +1,23 @@
 import { api } from '@/api/client'
+import type { components, paths } from '@/api/types.gen'
 import type {
   NoteCreateInput,
   PauseServiceInput,
-  Property,
   PropertyCreateInput,
   PropertyCreateResult,
   PropertyNote,
   PropertyUpdateInput,
-  ServicePlanView,
 } from '@/api/types'
+
+/** PATCH /properties/:id — the Property plus where a frequency change moved it (B3 · GAP-018). */
+export type PropertyUpdateResult = components['schemas']['PropertyUpdateResult']
+/** POST …/pause — the plan plus `cancelledVisits` and `pauseScheduled` (A4 · GAP-020). */
+export type PauseResult = components['schemas']['PauseResult']
+export type ServicePlan = components['schemas']['ServicePlan']
+/** GET /properties/:id/notes — pinned access/risk entries first, then the notes (GAP-022). */
+export type PropertyNotesListItem =
+  paths['/properties/{id}/notes']['get']['responses'][200]['content']['application/json'][number]
+export type PinnedNote = components['schemas']['PinnedNote']
 
 function jsonRequest(method: 'POST' | 'PATCH', body?: unknown): RequestInit {
   return {
@@ -22,16 +31,16 @@ export const propertiesApi = {
     api<PropertyCreateResult>('/properties', jsonRequest('POST', input)),
 
   updateProperty: (id: string, input: PropertyUpdateInput) =>
-    api<Property>(`/properties/${id}`, jsonRequest('PATCH', input)),
+    api<PropertyUpdateResult>(`/properties/${id}`, jsonRequest('PATCH', input)),
 
   pause: (id: string, input: PauseServiceInput) =>
-    api<ServicePlanView>(`/properties/${id}/pause`, jsonRequest('POST', input)),
+    api<PauseResult>(`/properties/${id}/pause`, jsonRequest('POST', input)),
 
   resume: (id: string) =>
-    api<ServicePlanView>(`/properties/${id}/resume`, jsonRequest('POST')),
+    api<ServicePlan>(`/properties/${id}/resume`, jsonRequest('POST')),
 
   listNotes: (id: string, signal?: AbortSignal) =>
-    api<PropertyNote[]>(`/properties/${id}/notes`, { signal }),
+    api<PropertyNotesListItem[]>(`/properties/${id}/notes`, { signal }),
 
   addNote: (id: string, input: NoteCreateInput) =>
     api<PropertyNote>(`/properties/${id}/notes`, jsonRequest('POST', input)),

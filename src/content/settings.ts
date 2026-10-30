@@ -16,6 +16,8 @@ export type SettingsSectionId =
   | 'technician-management'
   | 'service-area'
   | 'service-catalogue'
+  | 'integrations'
+  | 'kpi-thresholds'
 
 export interface SettingsSectionDefinition {
   id: SettingsSectionId
@@ -35,15 +37,36 @@ export const settingsContent = {
     { id: 'technician-management', label: 'Technician Mgmt', icon: 'technicians' },
     { id: 'service-area', label: 'Service Areas', icon: 'map-pin' },
     { id: 'service-catalogue', label: 'Service Catalogue', icon: 'briefcase' },
+    { id: 'integrations', label: 'Integrations', icon: 'message' },
+    { id: 'kpi-thresholds', label: 'KPI Thresholds', icon: 'alert' },
   ] satisfies SettingsSectionDefinition[],
   businessProfile: {
     heading: 'Business Profile',
     subheading: 'Set up your business information',
+    /** GAP-001: printed on invoices. */
+    address: {
+      line1: 'Address line 1',
+      line2: 'Address line 2',
+      town: 'Town',
+      postcode: 'Postcode',
+    },
+    vatRate: 'VAT rate',
   },
   paymentSetup: {
     heading: 'Payment Setup',
     subheading: 'Connect your payment providers',
     stripeConnected: 'Stripe connected',
+    stripeConnectFailed: 'Stripe wasn’t connected: {message}',
+    /** GAP-008 payment defaults. */
+    defaults: {
+      method: 'Default payment method',
+      methodHint: 'Direct Debit and card link need GoCardless / Stripe connected.',
+      dueDays: 'Invoice due after (days)',
+      dueDaysInvalid: 'Enter a number of days (0–90).',
+      noDirectDebit: 'Customers without a Direct Debit',
+    },
+    stripeCallbackFailed: 'Couldn\'t connect Stripe',
+    stripeCallbackBack: 'Back to settings',
     disconnect: 'Disconnect',
     disconnecting: 'Disconnecting…',
     disconnected: '{provider} disconnected',
@@ -90,6 +113,11 @@ export const settingsContent = {
   roundSettings: {
     heading: 'Round Settings',
     subheading: 'Configure your cleaning round preferences',
+    /** GAP-003. */
+    cleanMethod: 'Default clean method',
+    reminder: 'Pre-clean reminder',
+    reminderDescription: 'Visits don’t have time slots, so reminders go out at a fixed time.',
+    reminderTime: 'Reminder time',
   },
   smsTemplates: {
     heading: 'SMS / WhatsApp Templates',
@@ -104,7 +132,90 @@ export const settingsContent = {
     saved: 'Template saved',
     bodyRequired: 'The message can’t be empty.',
     sendingNote:
-      'Messages are sent through your GHL account. Until it’s connected, they’re saved and shown to you instead of being sent.',
+      'Messages are sent through your GoHighLevel account (Settings › Integrations). Until it’s connected, they’re saved and shown to you instead of being sent.',
+    /** GAP-017: shown when GoHighLevel isn't connected. */
+    notConnectedNote: 'GoHighLevel isn’t connected yet, so these messages aren’t being sent.',
+    connectMessaging: 'Connect messaging',
+  },
+  integrations: {
+    heading: 'Integrations',
+    subheading: 'Connect the services RoundFlow sends messages through',
+  },
+  /** Settings › Integrations › Messaging (GoHighLevel) — private-integration connect (GAP-017). */
+  ghl: {
+    title: 'Messaging (GoHighLevel)',
+    description:
+      'SMS, WhatsApp and email reminders go out through your GoHighLevel sub-account. Connect it with GoHighLevel sign-in, or with a Private Integration token.',
+    connected: 'Connected',
+    notConnected: 'Not connected',
+    loading: 'Checking connection…',
+    loadError: 'Couldn’t check the GoHighLevel connection.',
+    retry: 'Retry',
+    /** GAP-017 part 2: connected details. */
+    location: 'Location',
+    method: 'Connected with',
+    methods: { oauth: 'GoHighLevel sign-in', private: 'Private Integration token' } as Record<string, string>,
+    test: 'Test connection',
+    testing: 'Testing…',
+    testOk: 'GoHighLevel connection works',
+    testOkLocation: 'GoHighLevel connection works — {location}',
+    oauthConnect: 'Sign in with GoHighLevel',
+    oauthRedirecting: 'Opening GoHighLevel…',
+    oauthOr: 'Or connect with a Private Integration token',
+    connectedReturn: 'GoHighLevel connected',
+    connectFailedReturn: 'GoHighLevel wasn’t connected: {message}',
+    connectFailedFallback: 'GoHighLevel wasn’t connected. Try again.',
+    locationLabel: 'Location ID',
+    locationPlaceholder: 'e.g. ve9EPM428h8vShlRW1KT',
+    locationHint: 'GoHighLevel › Settings › Business Profile — the sub-account’s Location ID.',
+    tokenLabel: 'Private Integration token',
+    tokenPlaceholder: 'pit-…',
+    tokenHint: 'GoHighLevel › Settings › Private Integrations › Create — give it contacts and conversations access.',
+    tokenRequired: 'Paste the Private Integration token.',
+    locationRequired: 'Enter the Location ID.',
+    connect: 'Connect GoHighLevel',
+    connecting: 'Verifying…',
+    connectedToast: 'GoHighLevel connected',
+    webhookTitle: 'Add the webhook in GoHighLevel',
+    webhookIntro:
+      'Paste this URL into a GoHighLevel workflow “Webhook” action so replies and delivery updates reach RoundFlow.',
+    webhookLabel: 'Webhook URL',
+    copy: 'Copy',
+    copied: 'Copied',
+    disconnect: 'Disconnect',
+    disconnecting: 'Disconnecting…',
+    disconnectConfirm: 'Messages will stop sending until you reconnect. Disconnect GoHighLevel?',
+    disconnectYes: 'Yes, disconnect',
+    cancel: 'Cancel',
+    disconnectedToast: 'GoHighLevel disconnected',
+    readOnly: 'Only admins and managers can change integrations.',
+  },
+  /** GAP-025: Settings › KPI thresholds — a breach raises a technician alert (once a month). */
+  kpiThresholds: {
+    heading: 'KPI Thresholds',
+    subheading: 'Get an alert when a technician’s monthly KPI crosses a limit',
+    loadError: 'Could not load KPI thresholds.',
+    retry: 'Retry',
+    empty: 'No thresholds yet — add one to start getting KPI alerts.',
+    add: 'Add threshold',
+    remove: 'Remove threshold',
+    save: 'Save thresholds',
+    saving: 'Saving…',
+    saved: 'KPI thresholds saved',
+    readOnly: 'Only admins and managers can change thresholds.',
+    columns: { metric: 'Metric', operator: 'Alert when', value: 'Value' },
+    valueInvalid: 'Each threshold needs a value of 0 or more.',
+    metrics: [
+      { value: 'strikes', label: 'Strikes' },
+      { value: 'damages', label: 'Damages' },
+      { value: 'upsells', label: 'Upsells' },
+      { value: 'revenuePerHour', label: 'Revenue per hour (£)' },
+      { value: 'timeOnJobMinutes', label: 'Time on job (minutes)' },
+    ],
+    operators: [
+      { value: 'GT', label: 'is above' },
+      { value: 'LT', label: 'is below' },
+    ],
   },
   technicianManagement: {
     heading: 'Technician Management',

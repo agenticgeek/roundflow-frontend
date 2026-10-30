@@ -1,11 +1,8 @@
 import { api } from '@/api/client'
-import { apiBaseUrl } from '@/lib/env'
-import { getCachedAccessToken } from '@/lib/supabase'
+import { beginStripeConnect } from '@/lib/stripe-connect'
 import type { components } from '@/api/types.gen'
-import type { BankDetailsPayload } from '@/lib/bank-details'
 import type {
   BusinessSettings,
-  PaymentConnectResponse,
   Service,
   ServiceArea,
   ServiceAreaInput,
@@ -14,18 +11,25 @@ import type {
   TechnicianInput,
 } from '@/api/types'
 
-// CONTRACT-DIFF: `bankDetails` isn't in the generated business-profile input schema yet.
-// Per the Bank Details handoff: omit to leave unchanged, `null` to clear, an object to save/overwrite.
-export type BusinessProfilePatch = components['schemas']['BusinessProfileUpdateInput'] & {
-  bankDetails?: BankDetailsPayload | null
-}
+/** `bankDetails`: omit to leave unchanged, `null` to clear. GAP-001 adds the address + `vatRate`. */
+export type BusinessProfilePatch = components['schemas']['BusinessProfileUpdateInput']
 export type RoundSettingsPatch = components['schemas']['RoundSettingsUpdateInput']
 export type PaymentSettingsPatch = components['schemas']['PaymentRulesUpdateInput']
 export type MessageTemplateView = components['schemas']['MessageTemplateView']
 
-// CONTRACT-DIFF: the generated connect response has no `webhookUrl`; GoCardless returns one —
-// the endpoint the admin adds in their GoCardless dashboard (Developers → Webhooks).
-export type GoCardlessConnectResponse = PaymentConnectResponse & { webhookUrl?: string | null }
+/** `webhookUrl` is the endpoint the admin adds in their GoCardless dashboard (Developers → Webhooks). */
+export type GoCardlessConnectResponse = components['schemas']['ProviderConnectResponse']
+
+/** GoHighLevel private-integration connect (GAP-017): sub-account API key + location id. */
+export type GhlPrivateConnectInput = components['schemas']['GhlPrivateConnectInput']
+export type GhlConnectResponse = components['schemas']['ProviderConnectResponse']
+/** GAP-017 part 2. `connectedAt` is always null for now (not stored). */
+export type GhlStatus = components['schemas']['GhlStatus']
+export type GhlTestResult = components['schemas']['GhlTestResult']
+export type StripeCallbackResult = components['schemas']['StripeCallbackResult']
+/** GAP-025: technician KPI alert thresholds. */
+export type KpiThreshold = components['schemas']['KpiThreshold']
+export type KpiThresholdInput = components['schemas']['KpiThresholdInput']
 
 function jsonRequest(method: 'POST' | 'PATCH', body?: unknown): RequestInit {
   return {
@@ -55,16 +59,18 @@ export const settingsApi = {
     api<BusinessSettings | null>('/settings/payment', { signal }),
   updatePayment: (input: PaymentSettingsPatch) =>
     api<BusinessSettings>('/settings/payment', jsonRequest('PATCH', input)),
-  // Stripe uses a real OAuth redirect: the browser navigates to this endpoint,
-  // which 302s to Stripe and sends the user back to the configured callback.
-  // CAVEAT: this is a top-level navigation, so the bearer token can't ride in a
-  // header — it's passed as a query param, which the authorize endpoint must
-  // accept. Confirm with backend; otherwise this will 401.
-  stripeAuthorizeUrl: (): string => {
-    const url = `${apiBaseUrl()}/settings/stripe/authorize`
-    const token = getCachedAccessToken()
-    return token ? `${url}?access_token=${encodeURIComponent(token)}` : url
-  },
+  // Stripe Connect OAuth (see lib/stripe-connect.ts): the consent URL is built client-side so no
+  // token goes in a URL; Stripe returns to ROUTES.stripeCallback, which finishes the exchange here
+  // with the bearer header. api() sends `Accept: application/json`, so the API answers
+  // `200 { status: "connected", stripeConnectAccountId }`. An older API answers with a 302 back to
+  // the app instead — `redirect: 'manual'` stops fetch following it cross-origin, and api() treats
+  // the opaque redirect as success (resolves undefined).
+  stripeAuthorizeUrl: (): string => beginStripeConnect(),
+  completeStripeConnect: (code: string, state: string) =>
+    api<StripeCallbackResult | undefined>(
+      `/settings/stripe/callback?${new URLSearchParams({ code, state }).toString()}`,
+      { redirect: 'manual' },
+    ),
 
   // GoCardless is token-based (not an OAuth redirect): the user pastes an access
   // token, we validate + store it server-side.
@@ -86,6 +92,28 @@ export const settingsApi = {
       '/settings/payment/gocardless/disconnect',
       jsonRequest('POST'),
     ),
+
+  // GoHighLevel messaging (GAP-017). All of these work before setup is complete. The private key
+  // is verified against GHL before it's stored; a rejected key is a 400 with the reason.
+  getGhlStatus: (signal?: AbortSignal) => api<GhlStatus>('/settings/ghl/status', { signal }),
+  /** 409 GHL_NOT_CONNECTED · 502 GHL_SEND_FAILED (GHL rejected the stored token). */
+  testGhl: () => api<GhlTestResult>('/settings/ghl/test', jsonRequest('POST')),
+  /**
+   * GHL OAuth consent URL, fetched with the bearer header (never a token in a URL). No
+   * `redirectUri`: GHL returns to the API's public callback, which 302s back to
+   * /settings/integrations?ghl=connected&webhookUrl=… (or ?ghl=error&message=…).
+   */
+  ghlAuthorizeUrl: () => api<{ url: string }>('/settings/ghl/authorize'),
+  connectGhlPrivate: (input: GhlPrivateConnectInput) =>
+    api<GhlConnectResponse>('/settings/ghl/connect-private', jsonRequest('POST', input)),
+  disconnectGhl: () =>
+    api<{ status: 'disconnected' }>('/settings/ghl/disconnect', jsonRequest('POST')),
+
+  getKpiThresholds: (signal?: AbortSignal) =>
+    api<KpiThreshold[]>('/settings/kpi-thresholds', { signal }),
+  /** Replaces every threshold. 400 on a duplicate metric + operator. */
+  saveKpiThresholds: (thresholds: KpiThresholdInput[]) =>
+    api<KpiThreshold[]>('/settings/kpi-thresholds', { method: 'PUT', body: JSON.stringify(thresholds) }),
 
   saveGoCardlessWebhookSecret: (secret: string) =>
     api<{ status: 'saved' }>(

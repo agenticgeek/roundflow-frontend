@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
 import { technicianRoleLabel } from '@/lib/technician-roles'
@@ -52,10 +52,15 @@ import {
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError, errorMessage } from '@/lib/errors'
 import { GoCardlessTokenForm, GoCardlessWebhookSetup } from '@/components/payments/GoCardlessConnect'
+import { GhlConnectionCard } from '@/features/settings/components/GhlConnectionCard'
+import { useGhlStatus } from '@/features/settings/hooks/useGhl'
+import { readIntegrationReturn, useIntegrationReturn } from '@/features/settings/hooks/useIntegrationReturn'
+import { parseInvoiceDueDays } from '@/features/settings/lib/business-rules'
+import { KpiThresholdsPanel } from '@/components/settings/KpiThresholdsPanel'
 import { isValidPostcodeSector } from '@/lib/postcode'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
-import { Field, FieldError, Input, MultiSelect, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
+import { Field, FieldError, Input, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
 import { useToast } from '@/components/ui/toast'
@@ -70,6 +75,7 @@ import {
 import { cn, formatCurrency } from '@/lib/utils'
 
 const cardClass = 'rounded-lg border border-border bg-card shadow-sm'
+const noop = () => {}
 const settingsSelectClass = 'rounded-lg border-accent/25 bg-accent-surface'
 
 function SectionError({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -107,14 +113,16 @@ function MutationGate({
 /** Settings module — sidebar navigation and section panels backed by the API. */
 export function SettingsScreen() {
   const location = useLocation()
-  // Stripe's OAuth return (/settings/integrations?stripe=connected) opens the Payment section,
-  // where the connection is confirmed.
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(() =>
-    location.pathname === ROUTES.settingsIntegrations || new URLSearchParams(location.search).has('stripe')
-      ? 'payment-setup'
-      : 'business-profile',
-  )
+  // OAuth returns land on /settings/integrations: `?ghl=` opens Integrations (the GHL card),
+  // Stripe's `?stripe=` (and the bare path) opens Payment Setup.
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => {
+    const returned = readIntegrationReturn(location.search)
+    if (returned?.provider === 'ghl') return 'integrations'
+    return returned || location.pathname === ROUTES.settingsIntegrations ? 'payment-setup' : 'business-profile'
+  })
   const { canMutate } = useAppBootstrap()
+  // Toasts the ?stripe= / ?ghl= result, refreshes the connection status and cleans the URL.
+  useIntegrationReturn()
 
   return (
     <div className="space-y-6">
@@ -144,11 +152,25 @@ export function SettingsScreen() {
           ) : activeSection === 'round-settings' ? (
             <RoundSettingsPanel canMutate={canMutate} />
           ) : activeSection === 'sms-templates' ? (
-            <SmsTemplatesPanel canMutate={canMutate} />
+            <SmsTemplatesPanel canMutate={canMutate} onConnectMessaging={() => setActiveSection('integrations')} />
           ) : activeSection === 'technician-management' ? (
             <TechnicianManagementPanel canMutate={canMutate} />
           ) : activeSection === 'service-area' ? (
             <ServiceAreasPanel canMutate={canMutate} />
+          ) : activeSection === 'integrations' ? (
+            <article className={cn(cardClass, 'space-y-5 p-6')}>
+              <PanelHeader
+                icon="message"
+                heading={settingsContent.integrations.heading}
+                subheading={settingsContent.integrations.subheading}
+                editing={false}
+                canMutate={false}
+                onEdit={noop}
+              />
+              <GhlConnectionCard canMutate={canMutate} />
+            </article>
+          ) : activeSection === 'kpi-thresholds' ? (
+            <KpiThresholdsPanel canMutate={canMutate} />
           ) : (
             <ServiceCataloguePanel canMutate={canMutate} />
           )}
@@ -329,8 +351,15 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
     }
   }
 
-  const { fields, currencies, timezoneSearch } = setupWizardContent.businessProfile
+  const { fields, currencies, timezoneSearch, vatRates } = setupWizardContent.businessProfile
+  const addressCopy = settingsContent.businessProfile.address
   const timezones = timezoneOptions(values.timezone)
+  const addressFields = [
+    ['addressLine1', addressCopy.line1, fields.businessAddress.placeholder],
+    ['addressLine2', addressCopy.line2, fields.addressLine2.placeholder],
+    ['town', addressCopy.town, fields.town.placeholder],
+    ['postcode', addressCopy.postcode, fields.postcode.placeholder],
+  ] as const
 
   return (
     <article className={cn(cardClass, 'p-6')}>
@@ -393,6 +422,32 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
               placeholder={fields.vatNumber.placeholder}
               readOnly={!editing}
               className={cn(!editing && 'bg-surface')}
+            />
+          </Field>
+        </div>
+
+        {/* GAP-001: the business address and VAT rate are stored (and printed on invoices). */}
+        <div className="grid gap-5 sm:grid-cols-2">
+          {addressFields.map(([key, label, placeholder]) => (
+            <Field key={key} label={label} labelWeight="medium">
+              <Input
+                aria-label={label}
+                value={values[key]}
+                onChange={(e) => updateField(key, e.target.value)}
+                placeholder={placeholder}
+                readOnly={!editing}
+                className={cn(!editing && 'bg-surface')}
+              />
+            </Field>
+          ))}
+          <Field label={settingsContent.businessProfile.vatRate} labelWeight="medium">
+            <Select
+              aria-label={settingsContent.businessProfile.vatRate}
+              value={values.vatRate}
+              onChange={(e) => updateField('vatRate', e.target.value)}
+              options={vatRates}
+              disabled={!editing}
+              className={settingsSelectClass}
             />
           </Field>
         </div>
@@ -464,25 +519,6 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   const [gcWebhook, setGcWebhook] = useState<{ url: string | null } | null>(null)
   const [gcSecretSaved, setGcSecretSaved] = useState(false)
 
-  // Stripe sends the user back to /settings/integrations?stripe=connected after its OAuth flow.
-  // Webhooks are now set up platform-wide, so there's nothing else to show (no webhook URL).
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('stripe') === 'connected') {
-      showToast(settingsContent.paymentSetup.stripeConnected)
-      void query.refetch()
-      params.delete('stripe')
-      const next = params.toString()
-      window.history.replaceState(
-        {},
-        '',
-        `${window.location.pathname}${next ? `?${next}` : ''}`,
-      )
-    }
-    // Run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   if (query.isPending) return <SettingsPaymentSkeleton />
   if (query.isError) {
     return (
@@ -518,6 +554,10 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   async function save() {
     if (!canMutate) return
     setFormError(null)
+    if (parseInvoiceDueDays(values.invoiceDueDays) === null) {
+      setFormError(settingsContent.paymentSetup.defaults.dueDaysInvalid)
+      return
+    }
     try {
       await update.mutateAsync(settingsPaymentFromForm(values))
       setDraft(null)
@@ -535,8 +575,12 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   function handleConnect(providerId: 'gocardless' | 'stripe') {
     if (!canMutate) return
     if (providerId === 'stripe') {
-      // Full-page redirect into Stripe's OAuth; it returns to /settings/integrations?stripe=connected.
-      window.location.assign(settingsApi.stripeAuthorizeUrl())
+      // Full-page redirect into Stripe's OAuth; it returns via ROUTES.stripeCallback.
+      try {
+        window.location.assign(settingsApi.stripeAuthorizeUrl())
+      } catch (error) {
+        setDisconnectError({ provider: providerId, message: errorMessage(error) })
+      }
       return
     }
     setGcFormOpen(true)
@@ -562,6 +606,19 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
     gocardless: values.goCardlessConnected,
     stripe: values.stripeConnected,
   } as const
+  const defaultsCopy = settingsContent.paymentSetup.defaults
+  const wizardPayments = setupWizardContent.payments
+  // Direct Debit / card link need their provider connected (GAP-008).
+  const methodOptions = wizardPayments.methods.map((method) => ({
+    value: method.value,
+    label: method.label,
+    disabled: method.requires ? !connectionMap[method.requires] : false,
+  }))
+  const noDirectDebitOptions = wizardPayments.noDirectDebitActions.map((action) => ({
+    value: action.value,
+    label: action.label,
+    disabled: action.requiresStripe ? !values.stripeConnected : false,
+  }))
 
   return (
     <article className={cn(cardClass, 'p-6')}>
@@ -669,6 +726,40 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
           />
         </Field>
 
+        <div className="grid gap-5 sm:grid-cols-3">
+          <Field label={defaultsCopy.method} labelWeight="medium">
+            <Select
+              aria-label={defaultsCopy.method}
+              value={values.defaultPaymentMethod}
+              onChange={(e) => updateField('defaultPaymentMethod', e.target.value)}
+              options={methodOptions}
+              disabled={!editing}
+              className={settingsSelectClass}
+            />
+            <p className="mt-1 text-xs text-muted">{defaultsCopy.methodHint}</p>
+          </Field>
+          <Field label={defaultsCopy.dueDays} labelWeight="medium">
+            <Input
+              aria-label={defaultsCopy.dueDays}
+              inputMode="numeric"
+              value={values.invoiceDueDays}
+              onChange={(e) => updateField('invoiceDueDays', e.target.value.replace(/\D/g, '').slice(0, 2))}
+              readOnly={!editing}
+              className={cn(!editing && 'bg-surface')}
+            />
+          </Field>
+          <Field label={defaultsCopy.noDirectDebit} labelWeight="medium">
+            <Select
+              aria-label={defaultsCopy.noDirectDebit}
+              value={values.noDirectDebitAction}
+              onChange={(e) => updateField('noDirectDebitAction', e.target.value as SettingsPaymentForm['noDirectDebitAction'])}
+              options={noDirectDebitOptions}
+              disabled={!editing}
+              className={settingsSelectClass}
+            />
+          </Field>
+        </div>
+
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-foreground">{settings.vatApplicable.label}</p>
@@ -722,13 +813,13 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
   }
 
   const values = draft ?? settingsRoundToForm(query.data)
-  const { fields, recurringCycles, reminderTimings, reminderTimingPlaceholder, days } = {
-    fields: setupWizardContent.roundSettings.fields,
-    recurringCycles: setupWizardContent.roundSettings.recurringCycles,
-    reminderTimings: setupWizardContent.roundSettings.reminderTimings,
-    reminderTimingPlaceholder: setupWizardContent.roundSettings.reminderTimingPlaceholder,
-    days: setupWizardContent.businessProfile.days,
-  }
+  const wizardRounds = setupWizardContent.roundSettings
+  const { fields, recurringCycles } = wizardRounds
+  const days = setupWizardContent.businessProfile.days
+  const roundCopy = settingsContent.roundSettings
+  // GAP-003: one reminder mode + time (preCleanReminderTimings is deprecated and no longer read).
+  const reminderTimeKey =
+    values.reminderSchedule === 'morning-of' ? 'morningReminderTime' : 'eveningReminderTime'
 
   function startEdit() {
     setDraft(settingsRoundToForm(query.data))
@@ -809,18 +900,57 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
           />
         </Field>
 
+        <Field label={roundCopy.cleanMethod} labelWeight="medium">
+          <Select
+            aria-label={roundCopy.cleanMethod}
+            value={values.cleanMethod}
+            onChange={(e) => setDraft({ ...values, cleanMethod: e.target.value as SettingsRoundForm['cleanMethod'] })}
+            options={wizardRounds.cleanMethods.map((method) => ({ value: method.id, label: method.label }))}
+            disabled={!editing}
+            className={settingsSelectClass}
+          />
+        </Field>
+
         <div>
-          <p className="text-sm font-medium text-foreground">{fields.reminderTiming.label}</p>
-          <p className="mt-0.5 text-sm text-muted">{fields.reminderTiming.description}</p>
-          <MultiSelect
-            className="mt-3"
-            displayMode="values"
-            showAllOption={false}
-            label={fields.reminderTiming.label}
-            placeholder={reminderTimingPlaceholder}
-            value={values.reminderTiming}
-            onChange={(reminderTiming) => setDraft({ ...values, reminderTiming })}
-            options={reminderTimings}
+          <p className="text-sm font-medium text-foreground">{roundCopy.reminder}</p>
+          <p className="mt-0.5 text-sm text-muted">{roundCopy.reminderDescription}</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Select
+              aria-label={roundCopy.reminder}
+              value={values.reminderSchedule}
+              onChange={(e) =>
+                setDraft({ ...values, reminderSchedule: e.target.value as SettingsRoundForm['reminderSchedule'] })
+              }
+              options={wizardRounds.reminderOptions.map((option) => ({ value: option.id, label: option.label }))}
+              disabled={!editing}
+              className={settingsSelectClass}
+            />
+            {values.reminderSchedule === 'none' ? null : (
+              <Select
+                aria-label={roundCopy.reminderTime}
+                value={values[reminderTimeKey]}
+                onChange={(e) => setDraft({ ...values, [reminderTimeKey]: e.target.value })}
+                options={
+                  values.reminderSchedule === 'morning-of'
+                    ? wizardRounds.morningReminderTimes
+                    : wizardRounds.eveningReminderTimes
+                }
+                disabled={!editing}
+                className={settingsSelectClass}
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-foreground">{fields.autoGenerateVisits.label}</p>
+            <p className="mt-0.5 text-sm text-muted">{fields.autoGenerateVisits.description}</p>
+          </div>
+          <Toggle
+            checked={values.autoGenerateVisits}
+            onChange={(autoGenerateVisits) => setDraft({ ...values, autoGenerateVisits })}
+            ariaLabel={fields.autoGenerateVisits.label}
           />
         </div>
 
@@ -835,8 +965,15 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
 }
 
 /** Settings → Templates — the tenant's real templates (GET/PATCH /settings/message-templates). */
-function SmsTemplatesPanel({ canMutate }: { canMutate: boolean }) {
+function SmsTemplatesPanel({
+  canMutate,
+  onConnectMessaging,
+}: {
+  canMutate: boolean
+  onConnectMessaging: () => void
+}) {
   const query = useMessageTemplates()
+  const ghlStatus = useGhlStatus()
   const update = useUpdateMessageTemplate()
   const { showToast } = useToast()
   const copy = settingsContent.smsTemplates
@@ -879,6 +1016,19 @@ function SmsTemplatesPanel({ canMutate }: { canMutate: boolean }) {
 
       <div className="mt-6 rounded-xl border border-primary/20 bg-accent-surface px-4 py-3 text-sm text-foreground">
         {copy.sendingNote}
+        {/* GAP-017: until GoHighLevel is connected, point straight at the Integrations card. */}
+        {ghlStatus.data && !ghlStatus.data.connected ? (
+          <p className="mt-2">
+            {copy.notConnectedNote}{' '}
+            <button
+              type="button"
+              onClick={onConnectMessaging}
+              className="font-semibold text-primary underline underline-offset-2"
+            >
+              {copy.connectMessaging}
+            </button>
+          </p>
+        ) : null}
       </div>
 
       {templates.length === 0 ? (

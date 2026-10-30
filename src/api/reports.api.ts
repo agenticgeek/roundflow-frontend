@@ -1,11 +1,12 @@
 import { api, apiBlob } from '@/api/client'
 import { toPaginated, type PageParams, type Paginated } from '@/api/pagination'
+import type { VisitStatus } from '@/lib/visit-status'
 
 /** CONTRACT-DIFF: `/reports/*` not in generated OpenAPI yet — live per REPORTS_HANDOFF. */
 
 export type ReportsPeriodParam = 'today' | 'last7' | 'last30'
 
-export type ReportsVisitStatusParam = 'COMPLETED' | 'SKIPPED' | 'SCHEDULED'
+export type ReportsVisitStatusParam = 'COMPLETED' | 'SKIPPED' | 'SCHEDULED' | 'CANCELLED'
 
 export type ReportsSummary = {
   totalRevenue: number
@@ -36,7 +37,7 @@ export type ReportsVisitRow = {
   postcode: string | null
   round: string | null
   technician: string | null
-  status: 'COMPLETED' | 'SKIPPED' | 'SCHEDULED' | 'IN_PROGRESS'
+  status: VisitStatus
   amount: number | null
 }
 
@@ -45,6 +46,8 @@ export type ReportsActivityRow = {
   type: string
   message: string
   actorRole: string | null
+  /** Resolved server-side from the actor's profile. */
+  actorName?: string | null
   createdAt: string
 }
 
@@ -138,10 +141,16 @@ export const reportsApi = {
       ),
     ),
 
-  activity: (params: ReportsActivityParams = {}, signal?: AbortSignal) =>
-    api<ReportsActivityRow[]>(
-      `/reports/activity${toQuery({ type: params.type })}`,
-      { signal },
+  /** Paginated `{ rows, pagination }` like visits/technicians (GAP-024: it was read as an array). */
+  activity: async (
+    params: ReportsActivityParams = {},
+    signal?: AbortSignal,
+  ): Promise<Paginated<ReportsActivityRow>> =>
+    toPaginated(
+      await api<Paginated<ReportsActivityRow> | ReportsActivityRow[]>(
+        `/reports/activity${toQuery({ type: params.type })}`,
+        { signal },
+      ),
     ),
 
   /** Streams a CSV download — unpaginated on purpose. `type` defaults to `visits` server-side. */

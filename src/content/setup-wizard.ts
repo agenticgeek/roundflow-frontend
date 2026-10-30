@@ -31,6 +31,9 @@ export interface SelectOption {
   label: string
 }
 
+/** Business Profile form (step 1) — the address is stored as line 1 / line 2 / town / postcode (GAP-001). */
+export type BusinessProfileForm = BusinessProfileData & { addressLine2: string; town: string }
+
 export interface SetupWizardContent {
   title: string
   subtitle: string
@@ -86,6 +89,8 @@ export interface SetupWizardContent {
       businessEmail: { label: string; placeholder: string; required: true }
       companyNumber: { label: string; placeholder: string; required: false }
       businessAddress: { label: string; placeholder: string }
+      addressLine2: { label: string; placeholder: string }
+      town: { label: string; placeholder: string }
       postcode: { label: string; placeholder: string; invalid: string }
       vatNumber: { label: string; placeholder: string; required: false }
       vatRegistered: { label: string; description: string }
@@ -120,7 +125,7 @@ export interface SetupWizardContent {
         sortCodeInvalid: string
       }
     }
-    defaults: BusinessProfileData
+    defaults: BusinessProfileForm
   }
   paymentSetup: {
     heading: string
@@ -597,7 +602,7 @@ export interface SetupWizardContent {
       skippedTitle: string
       importButton: string
       importing: string
-      progress: { title: string; detail: string; hint: string }
+      progress: { title: string; detail: string; starting: string; hint: string }
       done: string
       partial: string
       failedTitle: string
@@ -932,8 +937,16 @@ export const setupWizardContent = {
         required: false,
       },
       businessAddress: {
-        label: 'Business address',
-        placeholder: 'e.g. 12 Bondgate Within, Alnwick',
+        label: 'Address line 1',
+        placeholder: 'e.g. 12 Bondgate Within',
+      },
+      addressLine2: {
+        label: 'Address line 2 (optional)',
+        placeholder: 'e.g. Unit 3',
+      },
+      town: {
+        label: 'Town',
+        placeholder: 'e.g. Alnwick',
       },
       postcode: {
         label: 'Postcode',
@@ -1011,6 +1024,8 @@ export const setupWizardContent = {
       businessEmail: '',
       companyNumber: '',
       businessAddress: '',
+      addressLine2: '',
+      town: '',
       postcode: '',
       vatNumber: '',
       vatRegistered: null,
@@ -1059,6 +1074,7 @@ export const setupWizardContent = {
       { value: 'collect-after-visit', label: 'Collect after Visit' },
       { value: 'collect-before-visit', label: 'Collect before Visit' },
       { value: 'monthly-invoice', label: 'Monthly Invoice' },
+      { value: 'daily-batch', label: 'Once a day (all completed visits)' },
     ],
     defaults: {
       goCardlessConnected: false,
@@ -1614,7 +1630,7 @@ export const setupWizardContent = {
     details: { mode: 'Mode', sandbox: 'Test mode (sandbox)', live: 'Live' },
     stripeRedirecting: 'Opening Stripe…',
     connectAfterSetup:
-      'Connect {provider} from Settings → Payment once setup is finished — the payment accounts open up then.',
+      'Only admins and managers can connect {provider}.',
     providers: {
       gocardless: {
         name: 'GoCardless',
@@ -1920,6 +1936,8 @@ export const setupWizardContent = {
       progress: {
         title: 'Adding properties…',
         detail: '{done} of {total} saved',
+        /** Before the first chunk returns there's no count yet (GAP-009). */
+        starting: 'Starting {total}…',
         hint: 'Keep this page open until it finishes.',
       },
       done: 'Imported {added} properties.',

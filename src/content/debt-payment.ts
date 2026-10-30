@@ -38,6 +38,8 @@ export interface DebtCustomerRecord {
   amountOwed: string
   amountValue: number
   paymentMethod: DebtPaymentMethod
+  /** The API method (BACS, CHEQUE, …) — pre-selects "Mark as paid". */
+  paymentMethodCode?: string | null
   round: string
   status: DebtStatusTab
   contactStatus: DebtContactStatus
@@ -74,6 +76,9 @@ export const debtPaymentContent = {
       ],
     },
   },
+  /** ON_HOLD rows can be a held customer with no unpaid invoice (GAP-026). */
+  onHoldChip: 'On hold',
+  noInvoice: 'No unpaid invoice — invoice actions are unavailable for this customer.',
   menu: {
     flagBadDebt: 'Flag Bad Debt',
     clearBadDebt: 'Clear Bad Debt',
@@ -133,6 +138,7 @@ export const debtPaymentContent = {
   actions: {
     sendReminder: 'Send Reminder',
     viewInvoice: 'View Invoice',
+    markPaid: 'Mark as paid',
     moreOptions: 'More options',
   },
   contactLabels: {
@@ -184,6 +190,7 @@ export const debtPaymentContent = {
       pauseService: 'Pause Service',
       resumeService: 'Resume Service',
       exportInvoice: 'Export Invoice or Download PDF',
+      markPaid: 'Mark as paid',
     },
     toasts: {
       paymentLink: 'Payment link sent to {customer}',
@@ -196,11 +203,6 @@ export const debtPaymentContent = {
     title: 'Send Payment Reminder',
     toLabel: 'To',
     sendVia: 'Send via',
-    channels: [
-      { id: 'sms', label: 'SMS' },
-      { id: 'whatsapp', label: 'WhatsApp' },
-      { id: 'email', label: 'EMAIL' },
-    ] as const,
     templateLabel: 'Template',
     messageLabel: 'Message',
     characterCount: '{count} characters',
@@ -224,7 +226,9 @@ export const debtPaymentContent = {
     actions: {
       cancel: 'Cancel',
       send: 'Send Reminder',
+      sending: 'Sending…',
     },
+    messageRequired: 'Enter a reminder message',
     successToast: 'Reminder sent to {customer}',
   },
   paymentLinkModal: {
@@ -232,31 +236,19 @@ export const debtPaymentContent = {
     fields: {
       customer: 'Customer',
       amount: 'Amount to collect',
-      method: 'Payment Method',
-      expiry: 'Link Expiry',
       message: 'Message to customer',
     },
-    helper: 'A unique payment link will be generated and appended to the message automatically.',
-    methods: [
-      { value: 'stripe-link', label: 'Stripe Link' },
-      { value: 'gocardless', label: 'GoCardless' },
-      { value: 'bank-transfer', label: 'Bank Transfer' },
-    ],
-    expiryOptions: [
-      { value: '3', label: '3 days' },
-      { value: '7', label: '7 days' },
-      { value: '14', label: '14 days' },
-      { value: '30', label: '30 days' },
-    ],
+    helper: 'A secure Stripe checkout link is appended to the message automatically.',
     defaultMessage:
       'Hi {firstName}, here is your secure payment link for {amount}. Please pay at your earliest convenience. Thank you.',
     actions: {
       cancel: 'Cancel',
       send: 'Generate & Send Link',
+      sending: 'Sending…',
     },
+    messageRequired: 'Enter a message',
     successToast: 'Payment link sent to {customer}',
     stripeLinkNote: 'Secure Stripe checkout link — expires {when}',
-    staticLinkNote: 'Stripe isn’t connected, so the standard pay link was sent'
   },
   pauseModal: {
     title: 'Pause Service',

@@ -21,6 +21,8 @@ interface TechnicianKpisProps {
   onRangeChange: (range: DashboardChartRange) => void
   valueChart: readonly ChartBar[]
   issueChart: readonly ChartBar[]
+  /** GET /dashboard/charts `revenuePerHour` for the range. */
+  revenuePerHour?: number | null
   chartsLoading: boolean
 }
 
@@ -59,6 +61,7 @@ export function TechnicianKpis({
   onRangeChange,
   valueChart,
   issueChart,
+  revenuePerHour = null,
   chartsLoading,
 }: TechnicianKpisProps) {
   const { kpis } = dashboardContent
@@ -90,7 +93,7 @@ export function TechnicianKpis({
               technicians.map((technician, index) => (
                 <FilterChip
                   key={technician.technicianId}
-                  label={technician.technicianName}
+                  label={technician.technicianName ?? '—'}
                   active={selectedTechnicianIds.size === 0 || selectedTechnicianIds.has(technician.technicianId)}
                   dotClass={dotClasses[index % dotClasses.length]}
                   onClick={() => onToggleTechnician(technician.technicianId)}
@@ -148,10 +151,12 @@ export function TechnicianKpis({
           </div>
           <div>
             <h3 className="text-base font-medium text-foreground">{kpis.charts.revenueTitle}</h3>
-            {/* revenuePerHour is always null until time tracking exists (Phase 2). */}
+            {/* One computed figure for the range; null = no timed visits yet (GAP-025). */}
             <p className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted">
               <DashboardIcon name="info" className="h-4 w-4 shrink-0" />
-              {kpis.charts.revenueUnavailable}
+              {revenuePerHour == null
+                ? kpis.charts.revenueUnavailable
+                : kpis.charts.revenuePerHourValue.replace('{value}', formatMoney(revenuePerHour))}
             </p>
           </div>
         </div>

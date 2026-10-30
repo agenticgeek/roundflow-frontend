@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { usePauseProperty } from '@/features/properties/hooks/useProperties'
+import { pauseOutcomeToast } from '@/features/properties/lib/pause-outcome'
 import { usePauseServicePlan } from '@/features/service-plans/hooks/useServicePlans'
 import { useSendMessage } from '@/features/messages/hooks/useMessages'
 import { addDays, todayIsoDate } from '@/features/rounds/lib/planner'
@@ -42,7 +43,7 @@ function applyMessageTemplate(template: string, property: PropertyDetailRecord) 
 
 /** Pause an active service — opened from property detail header. */
 export function PauseServiceModal({ open, property, planId, planName, onClose }: PauseServiceModalProps) {
-  const { pauseServiceModal, pauseServiceToast } = propertyDetailContent
+  const { pauseServiceModal } = propertyDetailContent
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const pausePropertyMutation = usePauseProperty()
@@ -83,9 +84,10 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
       return
     }
 
+    let result: Awaited<ReturnType<typeof pausePlan.mutateAsync>>
     try {
       if (planId) {
-        await pausePlan.mutateAsync({
+        result = await pausePlan.mutateAsync({
           id: planId,
           input: {
             reason: reasonLabel,
@@ -94,7 +96,7 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
           },
         })
       } else {
-        await pausePropertyMutation.mutateAsync({
+        result = await pausePropertyMutation.mutateAsync({
           id: property.id,
           input: {
             reason: reasonLabel,
@@ -128,8 +130,10 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
       }
     }
 
+    // GAP-020: say what the pause did — paused now or scheduled, and how many visits were cancelled.
+    const outcome = pauseOutcomeToast(result, startDate)
     onClose()
-    showToast(pauseServiceToast.title, { description: pauseServiceToast.description })
+    showToast(outcome.title, { description: outcome.description })
   }
 
   return (

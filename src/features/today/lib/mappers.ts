@@ -1,3 +1,4 @@
+import { exhaustiveFallback } from '@/lib/visit-status'
 import type { TodayAggregate, TodayRoundSummary, TodayTechnicianWorkload } from '@/api/today.api'
 import type {
   RoundTodayResult,
@@ -36,7 +37,7 @@ function formatEta(minutes: number | null | undefined) {
   return rem === 0 ? `~${hours}h` : `~${hours}h ${rem}m`
 }
 
-function mapJobStatus(status: RoundTodayStop['status']): TodaysWorkJobStatus {
+export function mapJobStatus(status: RoundTodayStop['status']): TodaysWorkJobStatus {
   switch (status) {
     case 'COMPLETED':
       return 'completed'
@@ -44,8 +45,12 @@ function mapJobStatus(status: RoundTodayStop['status']): TodaysWorkJobStatus {
       return 'skipped'
     case 'IN_PROGRESS':
       return 'in-progress'
-    default:
+    case 'SCHEDULED':
       return 'scheduled'
+    case 'CANCELLED':
+      return 'cancelled'
+    default:
+      return exhaustiveFallback(status, 'scheduled')
   }
 }
 
@@ -93,7 +98,9 @@ export function todayRoundToUi(round: TodayRoundSummary): TodaysWorkRound {
     skipped: round.skipped,
     issues: round.issueCount,
     paymentHolds: round.paymentHolds,
-    value: formatMoney(round.value),
+    // GAP-035: the day's scheduled value, with the completed value as progress.
+    value: formatMoney(round.scheduledValue ?? round.value),
+    valueCompleted: formatMoney(round.completedValue ?? round.value),
     eta: formatEta(round.etaMinutes),
     jobs: [],
   }
@@ -103,6 +110,7 @@ export function todayTechniciansToWorkload(
   rows: TodayTechnicianWorkload[] | undefined,
 ): TechnicianWorkloadItem[] {
   return (rows ?? []).map((row) => {
+    const name = row.technicianName ?? '—'
     const status: TechnicianWorkloadItem['status'] = row.onTrack
       ? row.remaining === 0
         ? 'completed'
@@ -110,8 +118,8 @@ export function todayTechniciansToWorkload(
       : 'attention'
     return {
       id: row.technicianId,
-      name: row.technicianName,
-      initial: initialOf(row.technicianName),
+      name,
+      initial: initialOf(name),
       summary: `${row.completed} done · ${row.remaining} left`,
       roundLabel: row.roundName ?? '—',
       statusLabel:

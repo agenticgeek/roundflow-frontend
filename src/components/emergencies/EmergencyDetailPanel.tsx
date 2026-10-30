@@ -12,7 +12,7 @@ import {
   useReassignEmergency,
 } from '@/features/emergencies/hooks/useEmergencies'
 import { formatDateTime, formatWindowEnd, initialsOf } from '@/features/emergencies/lib/format'
-import { ApiError } from '@/lib/errors'
+import { ApiError, errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface EmergencyDetailPanelProps {
@@ -62,11 +62,12 @@ export function EmergencyDetailPanel({ emergencyId, onClose }: EmergencyDetailPa
       onClose()
     } catch (caught) {
       if (caught instanceof ApiError) {
-        if (caught.status === 409) return showToast(toasts.alreadyResolved, { tone: 'error' })
-        if (caught.status === 404) return showToast(toasts.notFound, { tone: 'error' })
+        if (caught.status === 409) return showToast(caught.message || toasts.alreadyResolved, { tone: 'error' })
+        if (caught.status === 404) return showToast(caught.message || toasts.notFound, { tone: 'error' })
         if (caught.status === 400) return setError(caught.message)
       }
-      showToast(toasts.genericError, { tone: 'error' })
+      // Error-display rule: the server's message, never a generic one.
+      showToast(errorMessage(caught), { tone: 'error' })
     }
   }
 

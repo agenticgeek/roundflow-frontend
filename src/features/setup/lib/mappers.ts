@@ -7,13 +7,18 @@ import type {
   ServiceInput,
   SetupStep9Bundle,
   SetupStep9BulkItem,
-  SetupStep9Input,
 } from '@/api/types'
-import type { SetupStep2Input, SetupStep5Input, SetupStep5Template } from '@/api/setup.api'
+import type {
+  SetupStep1Input,
+  SetupStep2Input,
+  SetupStep4Input,
+  SetupStep5Input,
+  SetupStep5Template,
+  SetupStep9PropertyInput,
+} from '@/api/setup.api'
 import { daysToCycleLength, cycleLengthToDays } from '@/lib/cycle-length'
 import { bankDetailsFromForm, bankDetailsToForm } from '@/lib/bank-details'
 import type {
-  BusinessProfileData,
   CatalogueService,
   MessageChannel,
   WizardPaymentData,
@@ -27,7 +32,17 @@ import type {
   ServiceAreaData,
   ServiceCatalogueData,
 } from '@/types/setup-wizard'
-import { setupWizardContent } from '@/content/setup-wizard'
+import { setupWizardContent, type BusinessProfileForm } from '@/content/setup-wizard'
+import {
+  cleanMethodFromForm,
+  cleanMethodToForm,
+  noDirectDebitFromForm,
+  noDirectDebitToForm,
+  paymentTimingFromForm,
+  paymentTimingToForm,
+  reminderFromForm,
+  reminderToForm,
+} from '@/features/settings/lib/business-rules'
 
 type DayOfWeek = components['schemas']['DayOfWeek']
 
@@ -56,18 +71,8 @@ const CATEGORY_API_TO_UI: Record<string, string> = Object.fromEntries(
   Object.entries(CATEGORY_UI_TO_API).map(([ui, api]) => [api, ui]),
 )
 
-// CONTRACT-DIFF: business address, postcode and VAT rate are frontend-only until the
-// step-1 endpoint accepts them. Read them if the API starts returning them; they are not
-// sent in businessProfileFromForm yet.
-type BusinessSettingsWithPendingFields = BusinessSettings & {
-  businessAddress?: string | null
-  postcode?: string | null
-  vatRate?: number | string | null
-}
-
-export function businessProfileToForm(
-  data: BusinessSettingsWithPendingFields | null | undefined,
-): BusinessProfileData {
+/** GET /setup/step/1 → the form. GAP-001: the address and VAT rate are stored server-side. */
+export function businessProfileToForm(data: BusinessSettings | null | undefined): BusinessProfileForm {
   const defaults = setupWizardContent.businessProfile.defaults
   if (!data) return defaults
 
@@ -76,7 +81,9 @@ export function businessProfileToForm(
     businessPhone: data.phone ?? defaults.businessPhone,
     businessEmail: data.email ?? defaults.businessEmail,
     companyNumber: data.companyNumber ?? defaults.companyNumber,
-    businessAddress: data.businessAddress ?? defaults.businessAddress,
+    businessAddress: data.addressLine1 ?? defaults.businessAddress,
+    addressLine2: data.addressLine2 ?? defaults.addressLine2,
+    town: data.town ?? defaults.town,
     postcode: data.postcode ?? defaults.postcode,
     vatNumber: data.vatRegistration ?? defaults.vatNumber,
     vatRegistered: data.vatRegistered ?? defaults.vatRegistered,
@@ -91,7 +98,12 @@ export function businessProfileToForm(
   }
 }
 
-export function businessProfileFromForm(values: BusinessProfileData) {
+/** Blank optional text → null, so clearing a field clears it server-side. */
+function optionalText(value: string): string | null {
+  return value.trim() || null
+}
+
+export function businessProfileFromForm(values: BusinessProfileForm): SetupStep1Input {
   return {
     businessName: values.businessName.trim(),
     phone: values.businessPhone.trim(),
@@ -99,6 +111,12 @@ export function businessProfileFromForm(values: BusinessProfileData) {
     companyNumber: values.companyNumber.trim() || undefined,
     vatRegistered: values.vatRegistered ?? undefined,
     vatRegistration: values.vatNumber.trim() || undefined,
+    // The VAT rate select holds a string; the API takes a number (0–100).
+    vatRate: Number(values.vatRate),
+    addressLine1: optionalText(values.businessAddress),
+    addressLine2: optionalText(values.addressLine2),
+    town: optionalText(values.town),
+    postcode: optionalText(values.postcode),
     defaultWorkingDays: values.workingDays.map(
       (day) => DAY_UI_TO_API[day] ?? (day.toUpperCase() as DayOfWeek),
     ),
@@ -109,21 +127,20 @@ export function businessProfileFromForm(values: BusinessProfileData) {
   }
 }
 
-// CONTRACT-DIFF: step 2 stores provider flags, debt hold, VAT and a payment rule. The default
-// payment method, invoice due days and the no-Direct-Debit action are frontend-only for now;
-// "once a day" timing is sent as COLLECT_ON_DATE until the API has a daily option.
+/** GET /setup/step/2 → the Payments step. GAP-008: the payment defaults are stored server-side. */
 export function wizardPaymentToForm(data: BusinessSettings | null | undefined): WizardPaymentData {
   const defaults = setupWizardContent.payments.formDefaults
   if (!data) return defaults
   const goCardlessConnected = data.gocardlessConnected ?? defaults.goCardlessConnected
   const stripeConnected = data.stripeConnected ?? defaults.stripeConnected
   return {
-    ...defaults,
     goCardlessConnected,
     stripeConnected,
-    defaultPaymentMethod: goCardlessConnected ? 'GOCARDLESS' : defaults.defaultPaymentMethod,
-    paymentTiming: data.paymentRule === 'COLLECT_ON_DATE' ? 'daily' : 'after-visit',
-    noDirectDebitAction: stripeConnected ? 'card-link' : 'invoice',
+    defaultPaymentMethod:
+      data.defaultPaymentMethod ?? (goCardlessConnected ? 'GOCARDLESS' : defaults.defaultPaymentMethod),
+    paymentTiming: paymentTimingToForm(data.paymentRule),
+    invoiceDueDays: data.invoiceDueDays != null ? String(data.invoiceDueDays) : defaults.invoiceDueDays,
+    noDirectDebitAction: noDirectDebitToForm(data.noDirectDebitAction, defaults.noDirectDebitAction),
     debtHoldEnabled: data.debtHoldEnabled ?? defaults.debtHoldEnabled,
   }
 }
@@ -131,16 +148,19 @@ export function wizardPaymentToForm(data: BusinessSettings | null | undefined): 
 /**
  * VAT lives in Business Profile — `vatRegistered` comes from step 1 so invoices follow it.
  * The connect flags aren't sent: providers connect through the real Stripe / GoCardless
- * flows, and echoing the flags back could overwrite a connection made since the step loaded.
+ * flows (A6 rejects them with FIELD_REMOVED).
  */
 export function wizardPaymentFromForm(
   values: WizardPaymentData,
   vatRegistered: boolean,
 ): SetupStep2Input {
   return {
-    paymentRule: values.paymentTiming === 'daily' ? 'COLLECT_ON_DATE' : 'COLLECT_AFTER_VISIT',
+    paymentRule: paymentTimingFromForm(values.paymentTiming),
     debtHoldEnabled: values.debtHoldEnabled,
     vatInInvoices: vatRegistered,
+    defaultPaymentMethod: values.defaultPaymentMethod as SetupStep2Input['defaultPaymentMethod'],
+    invoiceDueDays: Number(values.invoiceDueDays),
+    noDirectDebitAction: noDirectDebitFromForm(values.noDirectDebitAction),
   }
 }
 
@@ -172,8 +192,7 @@ export function servicesFromForm(values: ServiceCatalogueData): ServiceInput[] {
   }))
 }
 
-// CONTRACT-DIFF: step 4 only persists the cycle length. Clean method, reminder schedule/times
-// and auto-create are frontend-only until the endpoint accepts them.
+/** GET /setup/step/4 → the form. GAP-003: reminders, clean method and auto-create are stored. */
 export function roundSettingsToForm(
   data: BusinessSettings | null | undefined,
 ): RoundSettingsData {
@@ -181,14 +200,19 @@ export function roundSettingsToForm(
   if (!data) return defaults
 
   return {
-    ...defaults,
     recurringCycle: daysToCycleLength(data.defaultCycleLength),
+    cleanMethod: cleanMethodToForm(data.defaultCleanMethod, defaults.cleanMethod),
+    ...reminderToForm(data, defaults),
+    autoGenerateVisits: data.autoCreateNextVisit ?? defaults.autoGenerateVisits,
   }
 }
 
-export function roundSettingsFromForm(values: RoundSettingsData) {
+export function roundSettingsFromForm(values: RoundSettingsData): SetupStep4Input {
   return {
     defaultCycleLength: cycleLengthToDays(values.recurringCycle),
+    defaultCleanMethod: cleanMethodFromForm(values.cleanMethod),
+    ...reminderFromForm(values),
+    autoCreateNextVisit: values.autoGenerateVisits,
   }
 }
 
@@ -335,7 +359,12 @@ export function step9BundlesToRecords(
   }))
 }
 
-export function propertyDraftToStep9Input(draft: PropertyDraft): SetupStep9Input {
+/** Single-add extras the draft type doesn't carry: the picked existing customer and last-cleaned date. */
+export type PropertyDraftExtras = { customerId?: string; lastCleanedDate?: string }
+
+export function propertyDraftToStep9Input(
+  draft: PropertyDraft & PropertyDraftExtras,
+): SetupStep9PropertyInput {
   const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, ''))
   const serviceAreaId = draft.assignServiceArea || draft.serviceArea || undefined
 
@@ -351,16 +380,16 @@ export function propertyDraftToStep9Input(draft: PropertyDraft): SetupStep9Input
     ...(draft.email.trim() ? { email: draft.email.trim() } : {}),
     ...(serviceAreaId ? { serviceAreaId } : {}),
     ...(draft.propertyType
-      ? { propertyType: draft.propertyType as SetupStep9Input['propertyType'] }
+      ? { propertyType: draft.propertyType as SetupStep9PropertyInput['propertyType'] }
       : {}),
     ...(draft.cleaningFrequency
       ? {
           cleaningFrequency:
-            draft.cleaningFrequency as SetupStep9Input['cleaningFrequency'],
+            draft.cleaningFrequency as SetupStep9PropertyInput['cleaningFrequency'],
         }
       : {}),
     ...(draft.paymentMethod
-      ? { paymentMethod: draft.paymentMethod as SetupStep9Input['paymentMethod'] }
+      ? { paymentMethod: draft.paymentMethod as SetupStep9PropertyInput['paymentMethod'] }
       : {}),
     ...(draft.serviceIds.length > 0
       ? { serviceId: draft.serviceIds[0], serviceIds: draft.serviceIds }
@@ -369,6 +398,9 @@ export function propertyDraftToStep9Input(draft: PropertyDraft): SetupStep9Input
         : {}),
     ...(draft.accessNotes.trim() ? { accessNotes: draft.accessNotes.trim() } : {}),
     ...(draft.riskNotes.trim() ? { riskNotes: draft.riskNotes.trim() } : {}),
+    // GAP-010: attach to an existing customer instead of creating one.
+    ...(draft.customerId ? { customerId: draft.customerId } : {}),
+    ...(draft.lastCleanedDate ? { lastCleanedDate: draft.lastCleanedDate } : {}),
   }
 }
 

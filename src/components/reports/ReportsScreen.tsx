@@ -62,6 +62,7 @@ const VISIT_STATUS_CLASS: Record<VisitStatus, string> = {
   'in-progress': 'border-success/40 bg-success/5 text-success',
   pending: 'border-border bg-surface text-muted',
   scheduled: 'border-border bg-surface text-muted',
+  cancelled: 'border-border bg-muted/15 text-muted',
 }
 
 type FocusedReport = 'technicians' | 'visits' | 'activity'

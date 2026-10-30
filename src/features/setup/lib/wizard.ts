@@ -26,13 +26,25 @@ export const SETUP_STEP_TASKS: Record<number, string> = {
   12: 'Review and launch',
 }
 
+/**
+ * GAP-002: whether a wizard step is done, from `status.wizardSteps` matched by the step's `key`
+ * (the stepper's `id`) — never by array position. `complete` = that step was saved at least once.
+ * A backend that doesn't send `wizardSteps` falls back to `steps[]` by backend number.
+ */
+export function isWizardStepComplete(status: SetupStatus | undefined, stepNumber: number): boolean {
+  const definition = SETUP_STEPS.find((item) => item.step === stepNumber)
+  const keyed = status?.wizardSteps?.find((item) => item.key === definition?.id)
+  if (keyed) return keyed.complete
+  return status?.steps.find((item) => item.step === stepNumber)?.complete ?? false
+}
+
 export function getMaxAllowedStep(
   status: SetupStatus,
   skippedSteps?: ReadonlySet<number>,
 ): number {
   for (const stepNumber of SETUP_STEP_ORDER) {
-    const step = status.steps.find((item) => item.step === stepNumber)
-    if (!step || step.deferred || step.complete || skippedSteps?.has(stepNumber)) continue
+    const deferred = status.steps.find((item) => item.step === stepNumber)?.deferred ?? false
+    if (deferred || isWizardStepComplete(status, stepNumber) || skippedSteps?.has(stepNumber)) continue
     return stepNumber
   }
   return LAST_SETUP_STEP
@@ -59,10 +71,9 @@ export function stepCompletionFlags(
   status: SetupStatus | undefined,
   stepCount = SETUP_STEP_COUNT,
 ): boolean[] {
-  return SETUP_STEPS.slice(0, stepCount).map(({ step: stepNumber }) => {
-    const step = status?.steps.find((item) => item.step === stepNumber)
-    return step?.complete ?? false
-  })
+  return SETUP_STEPS.slice(0, stepCount).map(({ step: stepNumber }) =>
+    isWizardStepComplete(status, stepNumber),
+  )
 }
 
 export function getSetupProgress(status: SetupStatus) {

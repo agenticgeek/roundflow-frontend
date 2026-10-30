@@ -1,4 +1,5 @@
 import { api } from '@/api/client'
+import type { components } from '@/api/types.gen'
 
 /** CONTRACT-DIFF: `/invites` not fully in generated OpenAPI yet — live per INVITES_HANDOFF. */
 
@@ -21,6 +22,9 @@ export type InviteRecord = {
   acceptedAt: string | null
   createdAt?: string
 }
+
+/** GET /invites row — unaccepted invites, expired ones included (`expired: true`). */
+export type PendingInvite = components['schemas']['PendingInvite']
 
 export type InvitePreview = {
   email: string
@@ -56,6 +60,12 @@ function jsonRequest(method: 'POST', body?: unknown): RequestInit {
 export const invitesApi = {
   create: (input: InviteCreateInput) =>
     api<InviteRecord>('/invites', jsonRequest('POST', input)),
+
+  list: (signal?: AbortSignal) => api<PendingInvite[]>('/invites', { signal }),
+
+  /** Re-sends an unaccepted invite's email and extends it 7 days (same token). */
+  resend: (id: string) =>
+    api<InviteRecord>(`/invites/${encodeURIComponent(id)}/resend`, jsonRequest('POST')),
 
   /** Public — works signed out (the invitee usually has no session yet). */
   getByToken: (token: string, signal?: AbortSignal) =>

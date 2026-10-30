@@ -1,6 +1,5 @@
 import { api } from '@/api/client'
 import type { components } from '@/api/types.gen'
-import type { BankDetailsPayload } from '@/lib/bank-details'
 import type {
   BusinessSettings,
   Round,
@@ -12,7 +11,6 @@ import type {
   SetupStatus,
   SetupStep9Bundle,
   SetupStep9BulkInput,
-  SetupStep9BulkResult,
   SetupStep9Input,
   SetupStep10Input,
   SetupStep10Result,
@@ -24,13 +22,30 @@ import type {
   TechnicianInput,
 } from '@/api/types'
 
-// CONTRACT-DIFF: `bankDetails` isn't in the generated step-1 input schema yet. Same shape as
-// PATCH /settings/business-profile — omit to leave unchanged, `null` to clear.
-export type SetupStep1Input = components['schemas']['BusinessProfileInput'] & {
-  bankDetails?: BankDetailsPayload | null
-}
-export type SetupStep2Input = components['schemas']['PaymentSetupInput']
+/** GAP-001: the address (line 1/2, town, postcode) and `vatRate` (a number) are stored. */
+export type SetupStep1Input = components['schemas']['BusinessProfileInput']
+/**
+ * A6: `gocardlessConnected` / `stripeConnected` are no longer accepted (400 FIELD_REMOVED) —
+ * connections come from the real provider flows. Omitted here so they can't be sent.
+ */
+export type SetupStep2Input = Omit<
+  components['schemas']['PaymentSetupInput'],
+  'gocardlessConnected' | 'stripeConnected'
+>
 export type SetupStep4Input = components['schemas']['RoundSettingsInput']
+/**
+ * One property for POST /setup/step/9. `roundId` stays optional ("Leave unassigned"); GAP-010
+ * adds `customerId` (attach to an existing customer) and `lastCleanedDate`.
+ */
+export type SetupStep9PropertyInput = SetupStep9Input &
+  Pick<components['schemas']['SetupPropertyInput'], 'customerId' | 'lastCleanedDate'>
+/** `customerMatched`: the property went onto an existing customer (picked, or same mobile/email). */
+export type SetupStep9SaveResult = SetupStep9Bundle & { customerMatched?: boolean }
+/** GAP-009: row errors are `{ row, field, error }` (`message` is the deprecated copy). */
+export type SetupStep9BulkResult = components['schemas']['BulkSetupPropertyResult']
+export type SetupStep9BulkRowError = components['schemas']['SetupPropertyRowError']
+/** GAP-016: the visits activation would create, per round, from the same planner. */
+export type ActivationPreview = components['schemas']['ActivationPreview']
 export type SetupStep5Input = components['schemas']['MessageTemplateInput']
 export type SetupStep5Template = components['schemas']['MessageTemplateView']
 export type {
@@ -91,11 +106,10 @@ export const setupApi = {
   saveStep8: (input: RoundInput) =>
     api<Round>('/setup/step/8', jsonPost(input)),
 
-  // CONTRACT-DIFF: steps 9–12 not yet in generated OpenAPI.
   getStep9: (signal?: AbortSignal) =>
     api<SetupStep9Bundle[]>('/setup/step/9', { signal }),
-  saveStep9: (input: SetupStep9Input) =>
-    api<SetupStep9Bundle>('/setup/step/9', jsonPost(input)),
+  saveStep9: (input: SetupStep9PropertyInput) =>
+    api<SetupStep9SaveResult>('/setup/step/9', jsonPost(input)),
   // All-or-nothing validation up front (400, nothing inserted); then inserted in batches of
   // 100, each in its own transaction — a later batch failing (500) keeps earlier batches.
   saveStep9Bulk: (input: SetupStep9BulkInput) =>
@@ -108,6 +122,14 @@ export const setupApi = {
 
   getStep11: (signal?: AbortSignal) =>
     api<SetupStep11Status>('/setup/step/11', { signal }),
+  getStep11Preview: (params: { startDate: string; cycleWeeks: number }, signal?: AbortSignal) =>
+    api<ActivationPreview>(
+      `/setup/step/11/preview?${new URLSearchParams({
+        startDate: params.startDate,
+        cycleWeeks: String(params.cycleWeeks),
+      }).toString()}`,
+      { signal },
+    ),
   saveStep11: (input: SetupStep11Input) =>
     api<SetupStep11Result>('/setup/step/11', jsonPost(input)),
 

@@ -4,7 +4,6 @@ import {
   type TechnicianCreateInput,
   type TechnicianUpdateInput,
 } from '@/api/technicians.api'
-import { useCreateInvite } from '@/features/invites/hooks/useInvites'
 import { invalidateTechnicians, queryKeys } from '@/lib/query-keys'
 
 export function useTechniciansList(enabled = true) {
@@ -41,9 +40,4 @@ export function useUpdateTechnician() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.technicians.detail(id) })
     },
   })
-}
-
-/** Resend / standalone invite — POST /invites. */
-export function useSendTechnicianInvite() {
-  return useCreateInvite()
 }

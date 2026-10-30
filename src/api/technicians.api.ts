@@ -53,7 +53,8 @@ export type TechnicianCreateInput = {
   role?: string
   email?: string | null
   notes?: string | null
-  serviceAreaId?: string | null
+  /** Replaces the technician's areas (GAP-004 — the API ignores the old singular `serviceAreaId`). */
+  serviceAreaIds?: string[]
   sendInvite?: boolean
 }
 
@@ -64,7 +65,8 @@ export type TechnicianUpdateInput = {
   email?: string | null
   notes?: string | null
   active?: boolean
-  serviceAreaId?: string | null
+  /** Replace semantics: `[]` clears every area. */
+  serviceAreaIds?: string[]
 }
 
 function jsonRequest(method: 'POST' | 'PATCH', body?: unknown): RequestInit {

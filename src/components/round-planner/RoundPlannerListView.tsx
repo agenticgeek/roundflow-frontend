@@ -1,4 +1,5 @@
 import type { PlannerVisitStatus } from '@/content/round-planner'
+import { OnHoldChip } from '@/components/round-planner/OnHoldChip'
 import { plannerVisitStatusLabels, roundPlannerContent } from '@/content/round-planner'
 import type { PlannerListStop } from '@/features/rounds/lib/planner'
 import { formatLongDate, formatTime } from '@/features/rounds/lib/planner'
@@ -33,6 +34,7 @@ const statusClass: Record<PlannerVisitStatus, string> = {
   IN_PROGRESS: 'bg-primary/10 text-primary',
   SCHEDULED: 'bg-accent-surface text-accent',
   SKIPPED: 'bg-surface text-muted',
+  CANCELLED: 'bg-muted/15 text-muted line-through',
 }
 
 function visitStatus(value: string): PlannerVisitStatus {
@@ -200,11 +202,7 @@ function ListRow({
           <p className="mt-0.5 text-xs text-muted">{stop.customerName}</p>
           {stop.paymentHold || stop.issues.length > 0 ? (
             <p className="mt-1.5 flex flex-wrap gap-1.5">
-              {stop.paymentHold ? (
-                <span className="rounded-md bg-warning-surface px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                  {badges.paymentHold}
-                </span>
-              ) : null}
+              <OnHoldChip paymentHold={stop.paymentHold} />
               {stop.issues.length > 0 ? (
                 <span
                   title={stop.issues[0]?.note ?? undefined}

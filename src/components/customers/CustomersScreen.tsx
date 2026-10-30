@@ -23,6 +23,7 @@ import { useRounds } from '@/features/rounds/hooks/useRounds'
 import { useServiceAreas, useServices } from '@/features/settings/hooks/useSettings'
 import { settingsServiceAreasToRows } from '@/features/settings/lib/mappers'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { roundFrequencyMap } from '@/lib/round-frequency'
 import { cn } from '@/lib/utils'
 
 const statusClass: Record<CustomerStatus, string> = {
@@ -34,7 +35,11 @@ const statusClass: Record<CustomerStatus, string> = {
 const paymentStatusClass: Record<CustomerPaymentStatus, string> = {
   paid: 'bg-success/10 text-success',
   hold: 'bg-danger/10 text-danger',
+  unpaid: 'bg-warning-surface text-warning',
+  overdue: 'bg-danger/10 text-danger',
+  failed: 'bg-danger/10 text-danger',
   pending: 'bg-warning-surface text-warning',
+  none: 'bg-muted/15 text-muted',
 }
 
 const metricClass: Record<(typeof customersContent.metrics)[number]['tone'], string> = {
@@ -276,6 +281,7 @@ export function CustomersScreen() {
           serviceOptions={importServiceOptions}
           servicePrices={importServicePrices}
           draftDefaults={setupWizardContent.addProperty.draftDefaults}
+          roundFrequencies={roundFrequencyMap(roundsQuery.data)}
           onSaveProperty={handleImportSave}
           onClose={() => setShowImport(false)}
         />
@@ -458,7 +464,7 @@ function CustomerRecordCard({
                 paymentStatusClass[record.paymentStatus],
               )}
             >
-              {statusLabels[record.paymentStatus] ?? record.paymentStatus}
+              {customersContent.paymentStatusLabels[record.paymentStatus]}
             </span>
           </dd>
         </div>

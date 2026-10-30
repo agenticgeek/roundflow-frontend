@@ -1,6 +1,10 @@
 import type { TechnicianRecord } from '@/content/technicians'
 import { technicianStatusLabels, techniciansContent } from '@/content/technicians'
 import { TechniciansOverviewSkeleton } from '@/components/technicians/TechniciansSkeletons'
+import { TechnicianAvailabilityPanel } from '@/components/technicians/TechnicianAvailabilityPanel'
+import { TechnicianIncidentsPanel } from '@/components/technicians/TechnicianIncidentsPanel'
+import { TechnicianPerformanceCard } from '@/components/technicians/TechnicianPerformanceCard'
+import { TechnicianPhotoGallery } from '@/components/technicians/TechnicianPhotoGallery'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass, dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
@@ -307,11 +311,9 @@ export function TechnicianDetail({
             )}
           </Panel>
 
-          <Panel title={content.performance}>
-            <p className="text-sm text-muted">
-              Performance metrics are not available from the technicians API yet.
-            </p>
-          </Panel>
+          <TechnicianPerformanceCard technicianId={technician.id} />
+          <TechnicianIncidentsPanel technicianId={technician.id} canMutate={canMutate} />
+          <TechnicianPhotoGallery technicianId={technician.id} />
         </div>
 
         <div className="space-y-5">
@@ -379,6 +381,12 @@ export function TechnicianDetail({
               </div>
             )}
           </Panel>
+
+          <TechnicianAvailabilityPanel
+            technicianId={technician.id}
+            technicianName={technician.name}
+            canMutate={canMutate}
+          />
         </div>
       </div>
     </div>

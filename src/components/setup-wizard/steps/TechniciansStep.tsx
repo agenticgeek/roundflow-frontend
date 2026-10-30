@@ -121,8 +121,6 @@ export function TechniciansStep({
   // The API can't tell "invite sent" from "never invited" (both PENDING_INVITE) — remember
   // what this session did; otherwise assume a pending technician with an email was invited.
   const [inviteSent, setInviteSent] = useState<Record<string, boolean>>({})
-  // CONTRACT-DIFF: /technicians takes a single serviceAreaId — extra areas stay in this step only.
-  const [extraAreaIds, setExtraAreaIds] = useState<Record<string, string[]>>({})
   const formCardRef = useRef<HTMLElement>(null)
 
   const savedAreas = useMemo(
@@ -133,8 +131,7 @@ export function TechniciansStep({
   const roleLabel = (role: string | null) => (role ? technicianRoleLabel(role) : '—')
 
   function technicianAreaIds(technician: TechnicianListItem): string[] {
-    const ids = technician.serviceAreas.map((assignment) => assignment.serviceAreaId)
-    return [...new Set([...ids, ...(extraAreaIds[technician.id] ?? [])])]
+    return technician.serviceAreas.map((assignment) => assignment.serviceAreaId)
   }
 
   function accessOf(technician: TechnicianListItem): AppAccess {
@@ -195,13 +192,13 @@ export function TechniciansStep({
       return
     }
 
-    const [primaryAreaId, ...otherAreaIds] = form.areaIds
+    // GAP-004: every picked area is saved (`serviceAreaIds`), not just the first.
     const input: TechnicianCreateInput = {
       name: fullName,
       phone: mobile,
       email,
       role: form.role,
-      serviceAreaId: primaryAreaId ?? null,
+      serviceAreaIds: form.areaIds,
     }
 
     try {
@@ -212,7 +209,6 @@ export function TechniciansStep({
         id = (await onCreateTechnician({ ...input, sendInvite: form.sendInvite })) ?? null
         if (id) setInviteSent((prev) => ({ ...prev, [id as string]: form.sendInvite }))
       }
-      if (id) setExtraAreaIds((prev) => ({ ...prev, [id as string]: otherAreaIds }))
       setStepError(null)
       resetForm()
     } catch (error) {

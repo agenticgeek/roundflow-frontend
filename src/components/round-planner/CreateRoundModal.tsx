@@ -4,7 +4,10 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Field, Input, Textarea } from '@/components/ui'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCreateServiceArea, useServiceAreas, useTechnicians } from '@/features/settings/hooks/useSettings'
-import { useCreateRound, useSetRoundTechnicians, useGenerateRoundVisits } from '@/features/rounds/hooks/useRounds'
+import { useCreateRound, useSetRoundTechnicians, useGenerateRoundVisits, useUpdateRound } from '@/features/rounds/hooks/useRounds'
+import { isPendingInvite } from '@/features/rounds/lib/assign'
+import { createRoundThenAssign } from '@/features/rounds/lib/create-round'
+import { PendingInviteResend } from '@/components/round-planner/PendingInviteResend'
 import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
 import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { settingsServiceAreasToRows, settingsTechniciansToRows } from '@/features/settings/lib/mappers'
@@ -408,6 +411,7 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
 
   const createRound = useCreateRound()
   const setTechnicians = useSetRoundTechnicians()
+  const updateRound = useUpdateRound()
   const generateVisits = useGenerateRoundVisits()
   const createServiceArea = useCreateServiceArea()
   const updateProperty = useUpdateProperty()
@@ -530,17 +534,22 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
 
     setSubmitError(null)
     try {
-      const created = await createRound.mutateAsync({
-        name: roundName.trim(),
-        frequency,
-        serviceAreaId: selectedAreaId,
-        defaultDay: dayMap[day] ?? null,
-        description: description.trim() || null,
+      // GAP-011: if the technician can't be assigned, the new round is rolled back and the
+      // server's error shows here on Review — no round is left without its technician.
+      const created = await createRoundThenAssign({
+        create: () =>
+          createRound.mutateAsync({
+            name: roundName.trim(),
+            frequency,
+            serviceAreaId: selectedAreaId,
+            defaultDay: dayMap[day] ?? null,
+            description: description.trim() || null,
+          }),
+        assign: selectedTechnicianId
+          ? (id) => setTechnicians.mutateAsync({ id, input: { technicianIds: [selectedTechnicianId], split: { mode: 'SINGLE' } } })
+          : undefined,
+        rollback: (id) => updateRound.mutateAsync({ id, input: { status: 'ARCHIVED' } }),
       })
-
-      if (selectedTechnicianId && created.id) {
-        await setTechnicians.mutateAsync({ id: created.id, technicianIds: [selectedTechnicianId] })
-      }
 
       const propertyIds = [...selectedProperties.keys()]
       if (propertyIds.length > 0 && created.id) {
@@ -734,6 +743,7 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
               <div className="space-y-2">
                 {technicians.map((technician) => {
                   const selected = technician.id === selectedTechnicianId
+                  const pending = isPendingInvite(technician)
                   const initials = technician.displayName
                     .split(/\s+/)
                     .map((part) => part[0])
@@ -742,12 +752,13 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
                     .toUpperCase()
 
                   return (
+                    <div key={technician.id}>
                     <button
-                      key={technician.id}
                       type="button"
                       onClick={() => setSelectedTechnicianId(selected ? '' : technician.id)}
+                      disabled={pending}
                       className={cn(
-                        'flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left',
+                        'flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left disabled:cursor-not-allowed disabled:opacity-70',
                         selected ? 'border-primary bg-accent-surface' : 'border-border bg-card hover:bg-surface',
                       )}
                     >
@@ -761,6 +772,10 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
                       </span>
                       {selected ? <DashboardIcon name="check" className="h-4 w-4 text-foreground" /> : null}
                     </button>
+                    {pending ? (
+                      <PendingInviteResend technician={{ id: technician.id, name: technician.displayName }} className="mt-1 px-4" />
+                    ) : null}
+                    </div>
                   )
                 })}
               </div>

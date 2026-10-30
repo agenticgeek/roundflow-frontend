@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CustomerPropertyRecord } from '@/content/customers'
 import { customersContent } from '@/content/customers'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
-import { Field, Select } from '@/components/ui'
+import { Field, FieldError, Select } from '@/components/ui'
 import { Modal, ModalButton, modalInputClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
@@ -25,6 +25,7 @@ export function AssignToRoundModal({ open, record, onClose }: AssignToRoundModal
   const updateProperty = useUpdateProperty()
   const roundsQuery = useRounds('ACTIVE', open)
   const [roundId, setRoundId] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   const roundOptions = useMemo(() => {
     const rounds = (roundsQuery.data ?? []).map((round) => ({
@@ -44,6 +45,7 @@ export function AssignToRoundModal({ open, record, onClose }: AssignToRoundModal
   useEffect(() => {
     if (!open) return
     setRoundId('')
+    setError(null)
   }, [open, record?.id])
 
   if (!record) return null
@@ -61,9 +63,14 @@ export function AssignToRoundModal({ open, record, onClose }: AssignToRoundModal
       })
       onClose()
       showToast(assignToRoundModal.successToast)
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 400) return
-      showToast(error instanceof Error ? error.message : 'Could not assign property')
+    } catch (caught) {
+      // 409 (e.g. NO_MATCHING_ROUND, round not ACTIVE) — keep the modal open with the server's reason.
+      if (caught instanceof ApiError && caught.status === 409) {
+        setError(caught.message)
+        return
+      }
+      if (caught instanceof ApiError && caught.status === 400) return
+      showToast(caught instanceof Error ? caught.message : assignToRoundModal.failed)
     }
   }
 
@@ -110,7 +117,10 @@ export function AssignToRoundModal({ open, record, onClose }: AssignToRoundModal
         <Select
           inputSize="sm"
           value={roundId}
-          onChange={(event) => setRoundId(event.target.value)}
+          onChange={(event) => {
+            setRoundId(event.target.value)
+            setError(null)
+          }}
           options={roundOptions}
           className={cn(modalInputClass, 'border-accent/25 bg-accent-surface')}
         />
@@ -122,6 +132,8 @@ export function AssignToRoundModal({ open, record, onClose }: AssignToRoundModal
         </p>
         <p className="mt-2 text-xs text-muted">{assignToRoundModal.fields.technicianHint}</p>
       </Field>
+
+      {error ? <FieldError message={error} size="sm" /> : null}
     </Modal>
   )
 }

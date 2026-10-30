@@ -5,6 +5,8 @@ import type { SelectOption } from '@/content/setup-wizard'
 import { Field, FieldError, Input, MultiSelect, Select, Textarea } from '@/components/ui'
 import { Spinner } from '@/components/ui/spinner'
 import { ApiError } from '@/lib/errors'
+import { toBulkRowErrors, type BulkRowError } from '@/features/setup/lib/bulk-errors'
+import { cn } from '@/lib/utils'
 import { parsePropertyCsv, parsePropertyXlsx, type PropertyCsvResult } from '@/lib/property-csv'
 
 /** Sum the catalogue prices of the given services (missing prices count as 0). */
@@ -15,12 +17,7 @@ function sumServicePrices(ids: readonly string[], prices: Readonly<Record<string
 /** Rows per bulk request — small enough that the backend's transaction finishes in time. */
 const BULK_CHUNK_SIZE = 25
 
-/** One row the bulk endpoint rejected. `row` is the 0-based index within the request. */
-export interface BulkRowError {
-  row: number
-  field?: string
-  message: string
-}
+export type { BulkRowError }
 
 /** What a bulk save resolves with — rows in `errors` weren't created, the rest were. */
 export interface BulkSaveResult {
@@ -42,17 +39,7 @@ function newImportRunId(): string {
 function bulkErrorsFromFailure(error: unknown): BulkRowError[] | null {
   if (error instanceof ApiError) {
     const body = error.body as { errors?: unknown } | undefined
-    if (Array.isArray(body?.errors)) {
-      return body.errors
-        .filter((item): item is { row: unknown; field?: unknown; message: string } =>
-          Boolean(item) && typeof (item as { message?: unknown }).message === 'string',
-        )
-        .map((item) => ({
-          row: Number(item.row),
-          field: typeof item.field === 'string' && item.field !== 'unknown' ? item.field : undefined,
-          message: item.message,
-        }))
-    }
+    if (Array.isArray(body?.errors)) return toBulkRowErrors(body.errors)
   }
   const legacy = parseBulkValidationErrors(error instanceof Error ? error.message : '')
   return legacy ? legacy.map((item) => ({ ...item, row: item.row - 1 })) : null
@@ -91,6 +78,11 @@ interface ImportPropertiesPanelProps {
   /** Catalogue default price per service id — prefills a row's price when its service is picked. */
   servicePrices: Readonly<Record<string, number>>
   draftDefaults: PropertyDraft
+  /**
+   * Each round's cleaning frequency, by round id. Imported properties take the chosen round's
+   * frequency (GAP-009) instead of the draft default (every 4 weeks).
+   */
+  roundFrequencies?: Readonly<Record<string, PropertyDraft['cleaningFrequency']>>
   /** Saves one property. Used row-by-row when no bulk saver is provided. */
   onSaveProperty: (draft: PropertyDraft) => Promise<void> | void
   /**
@@ -122,6 +114,7 @@ export function ImportPropertiesPanel({
   serviceOptions,
   servicePrices,
   draftDefaults,
+  roundFrequencies,
   onSaveProperty,
   onSaveProperties,
   onClose,
@@ -341,6 +334,7 @@ export function ImportPropertiesPanel({
       return {
         ...property.draft,
         round,
+        cleaningFrequency: roundFrequencies?.[round] || property.draft.cleaningFrequency,
         serviceArea,
         serviceIds: edit.serviceIds,
         serviceId: edit.serviceIds[0] ?? '',
@@ -792,9 +786,11 @@ function ImportProgress({
 }: {
   done: number
   total: number
-  copy: { title: string; detail: string; hint: string }
+  copy: { title: string; detail: string; starting: string; hint: string }
 }) {
   const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
+  // Until the first chunk comes back there's nothing to count — show an indeterminate bar.
+  const started = done > 0
   return (
     <div role="status" aria-live="polite" className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3.5">
       <div className="flex items-center justify-between gap-3">
@@ -803,20 +799,25 @@ function ImportProgress({
           {copy.title}
         </span>
         <span className="text-sm text-muted tabular-nums">
-          {copy.detail.replace('{done}', String(done)).replace('{total}', String(total))}
+          {started
+            ? copy.detail.replace('{done}', String(done)).replace('{total}', String(total))
+            : copy.starting.replace('{total}', String(total))}
         </span>
       </div>
       <div
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={total}
-        aria-valuenow={done}
+        aria-valuenow={started ? done : undefined}
         className="mt-3 h-2 overflow-hidden rounded-full bg-primary/15"
       >
-        {/* Saves land in chunks, so keep a minimum width and pulse to show work in between. */}
+        {/* Saves land in chunks: indeterminate until the first one, then the real share. */}
         <div
-          className="h-full animate-pulse rounded-full bg-primary transition-[width] duration-500 ease-out"
-          style={{ width: `${Math.max(percent, 4)}%` }}
+          className={cn(
+            'h-full rounded-full bg-primary',
+            started ? 'animate-pulse transition-[width] duration-500 ease-out' : 'w-full animate-pulse opacity-60',
+          )}
+          style={started ? { width: `${Math.max(percent, 4)}%` } : undefined}
         />
       </div>
       <p className="mt-2 text-xs text-muted">{copy.hint}</p>

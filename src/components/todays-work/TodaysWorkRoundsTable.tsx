@@ -47,14 +47,13 @@ export function TodaysWorkRoundsTable({
               <th className="px-4 py-3">{columns.issues}</th>
               <th className="px-4 py-3">{columns.paymentHolds}</th>
               <th className="px-4 py-3">{columns.value}</th>
-              <th className="px-4 py-3">{columns.eta}</th>
               <th className="px-4 py-3">{columns.actions}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-5 py-10 text-center text-sm text-muted">
+                <td colSpan={10} className="px-5 py-10 text-center text-sm text-muted">
                   <p>{noVisitsToday ? todaysWorkContent.table.noVisitsToday : emptyLabel}</p>
                   {noVisitsToday ? (
                     <p className="mx-auto mt-1.5 max-w-md text-xs text-muted/80">
@@ -110,8 +109,14 @@ export function TodaysWorkRoundsTable({
                   <td className="px-4 py-4">
                     <StatCell variant="payment-hold" value={row.paymentHolds} />
                   </td>
-                  <td className="px-4 py-4 font-semibold">{row.value}</td>
-                  <td className="px-4 py-4 text-muted">{row.eta}</td>
+                  <td className="px-4 py-4">
+                    <span className="font-semibold">{row.value}</span>
+                    {row.valueCompleted ? (
+                      <span className="block text-xs text-muted">
+                        {todaysWorkContent.table.valueCompleted.replace('{value}', row.valueCompleted)}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
                     <button
                       type="button"

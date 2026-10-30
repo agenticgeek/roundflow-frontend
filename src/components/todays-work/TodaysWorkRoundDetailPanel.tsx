@@ -27,6 +27,7 @@ const jobStatusClass: Record<TodaysWorkJob['status'], string> = {
   skipped: 'bg-warning-surface text-warning',
   scheduled: 'bg-primary/10 text-primary',
   'in-progress': 'bg-primary/10 text-primary',
+  cancelled: 'bg-muted/15 text-muted',
 }
 
 /** Right-side round detail — opened from the live rounds table. */

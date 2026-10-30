@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { SETUP_STEPS, SETUP_STEP_COUNT, setupStepPosition } from '@/config/setup-wizard'
-import { setupWizardContent } from '@/content/setup-wizard'
+import { setupWizardContent, type BusinessProfileForm } from '@/content/setup-wizard'
 import { ROUTES } from '@/config/routes'
 import {
   businessProfileFromForm,
@@ -82,7 +82,6 @@ import {
 } from '@/components/setup-wizard/steps/ActivateStep'
 import type { SetupLiveState } from '@/pages/SetupLive'
 import type {
-  BusinessProfileData,
   WizardPaymentData,
   PropertyDraft,
   RoundSettingsData,
@@ -286,7 +285,7 @@ export default function SetupWizard() {
       switch (step) {
         case 1:
           await saveStep1.mutateAsync(
-            businessProfileFromForm(values as BusinessProfileData),
+            businessProfileFromForm(values as BusinessProfileForm),
           )
           break
         case 2:

@@ -35,7 +35,7 @@ import { RoundPlannerCalendar } from '@/components/round-planner/RoundPlannerCal
 import { RoundPlannerDetailPanel } from '@/components/round-planner/RoundPlannerDetailPanel'
 import { RoundPlannerHeader } from '@/components/round-planner/RoundPlannerHeader'
 import { RoundPlannerListView } from '@/components/round-planner/RoundPlannerListView'
-import { RoundPlannerMapView } from '@/components/round-planner/RoundPlannerMapView'
+import { RoundPlannerMapSection } from '@/components/round-planner/RoundPlannerMapSection'
 import { RoundPlannerMetrics } from '@/components/round-planner/RoundPlannerMetrics'
 import { RoundPlannerToolbar } from '@/components/round-planner/RoundPlannerToolbar'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
@@ -342,7 +342,16 @@ export function RoundPlannerScreen({
 
       {interactions.view === 'map' ? (
         <div className="animate-fade-in">
-          <RoundPlannerMapView stops={filteredStops} currency={currency} />
+          <RoundPlannerMapSection
+            rounds={selectedRounds}
+            dayStops={filteredStops}
+            filter={{ technicianId: interactions.technicianId, statusId: interactions.statusId, query }}
+            selectedDate={interactions.selectedDate}
+            minDate={window.from}
+            maxDate={window.to}
+            onDateChange={interactions.setSelectedDate}
+            currency={currency}
+          />
         </div>
       ) : null}
 

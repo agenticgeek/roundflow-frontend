@@ -11,6 +11,10 @@ export interface UiToast {
   description?: string
   tone?: 'default' | 'error'
   durationMs?: number
+  /** A button in the toast, e.g. Retry after a network failure (GAP-005). Clicking dismisses it. */
+  action?: { label: string; onClick: () => void }
+  /** Toasts sharing a key are shown once — a second push while one is open is ignored. */
+  key?: string
 }
 
 type NewUiToast = Omit<UiToast, 'id'>
@@ -28,12 +32,14 @@ function createToastId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-export const useUiStore = create<UiState>((set) => ({
+export const useUiStore = create<UiState>((set, get) => ({
   modal: null,
   toasts: [],
   openModal: (modal) => set({ modal }),
   closeModal: () => set({ modal: null }),
   pushToast: (toast) => {
+    const existing = toast.key ? get().toasts.find((item) => item.key === toast.key) : undefined
+    if (existing) return existing.id
     const id = createToastId()
     set((state) => ({ toasts: [...state.toasts, { ...toast, id }] }))
     return id

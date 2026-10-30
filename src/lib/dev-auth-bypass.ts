@@ -12,6 +12,7 @@
 
 import type { Session } from '@supabase/supabase-js'
 import type { Profile, SetupStatus } from '@/api/types'
+import { SETUP_STEPS } from '@/config/setup-wizard'
 
 /**
  * Local dev server only — never in a production build. The backend always verifies the real
@@ -99,4 +100,6 @@ export const DEV_AUTH_BYPASS_SETUP_STATUS: SetupStatus = {
     complete: true,
     deferred: index + 1 === 5,
   })),
+  // GAP-002: the stepper reads completion from wizardSteps (keyed by step id).
+  wizardSteps: SETUP_STEPS.map(({ id, step }) => ({ key: id, step, complete: true })),
 }

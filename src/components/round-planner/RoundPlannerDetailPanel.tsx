@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { OnHoldChip } from '@/components/round-planner/OnHoldChip'
 import type { PlannerStop } from '@/api/rounds.api'
 import { plannerDayStatusLabels, roundPlannerContent } from '@/content/round-planner'
 import type { PlannerRoundCard } from '@/features/rounds/lib/planner'
@@ -158,7 +159,10 @@ function StopCard({ stop, index, currency }: { stop: PlannerStop; index: number;
         {index}. {stop.addressLine}
       </p>
       <p className="mt-0.5 text-xs text-muted">{stop.customerName}</p>
-      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(stop.price, currency)}</p>
+      <p className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
+        {formatCurrency(stop.price, currency)}
+        <OnHoldChip paymentHold={stop.paymentHold} />
+      </p>
     </li>
   )
 }

@@ -18,8 +18,8 @@ import {
   PaymentsTab,
   VisitHistoryTab,
 } from '@/components/property-detail/PropertyDetailTabs'
-import { ComingSoonOverlay } from '@/components/ui/coming-soon'
-import { Skeleton } from '@/components/ui/skeleton'
+import { BadDebtBadge, BadDebtControl } from '@/components/property-detail/BadDebtControl'
+import { PropertyPhotosTab } from '@/components/property-detail/PropertyPhotosTab'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { useResumeProperty } from '@/features/properties/hooks/useProperties'
@@ -39,6 +39,8 @@ interface PropertyDetailScreenProps {
   customerRecord?: CustomerPropertyRecord | null
   customerId: string
   tabData?: PropertyDetailTabData | null
+  /** `customer.badDebt` from GET /customers/:id (GAP-022). */
+  badDebt?: boolean
   onBack: () => void
 }
 
@@ -55,6 +57,8 @@ const paymentStatusClass: Record<PropertyDetailRecord['paymentStatus'], string> 
   paid: 'text-success',
   hold: 'text-danger',
   pending: 'text-warning',
+  unpaid: 'text-warning',
+  none: 'text-muted',
 }
 
 const propertyDetailActionClass = cn(
@@ -73,6 +77,7 @@ export function PropertyDetailScreen({
   customerRecord = null,
   customerId,
   tabData = null,
+  badDebt = false,
   onBack,
 }: PropertyDetailScreenProps) {
   const [activeTab, setActiveTab] = useState<PropertyDetailTabId>('overview')
@@ -167,6 +172,7 @@ export function PropertyDetailScreen({
           >
             {statusLabels[property.serviceStatus]}
           </span>
+          {badDebt ? <BadDebtBadge /> : null}
           {isActive && roundLabel !== '—' ? (
             <span className="inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               {roundLabel}
@@ -190,6 +196,9 @@ export function PropertyDetailScreen({
             </button>
           ) : null}
           <ActionButton icon="message" label={actions.sendMessage} onClick={() => setMessageOpen(true)} />
+          {canMutate ? (
+            <BadDebtControl customerId={customerId} customerName={property.customerName} badDebt={badDebt} />
+          ) : null}
         </div>
       </header>
 
@@ -302,7 +311,7 @@ export function PropertyDetailScreen({
               }
             />
           ) : activeTab === 'visit-history' ? (
-            <VisitHistoryTab property={property} visits={tabData?.visits} />
+            <VisitHistoryTab property={property} visits={tabData?.visits} customerId={customerId} />
           ) : activeTab === 'payments' ? (
             <PaymentsTab property={property} payments={tabData?.payments} />
           ) : activeTab === 'notes-risk' ? (
@@ -312,13 +321,7 @@ export function PropertyDetailScreen({
               customerId={customerId}
             />
           ) : activeTab === 'photos' ? (
-            <ComingSoonOverlay copy={propertyDetailContent.photosComingSoon} icon="home">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {Array.from({ length: 8 }, (_, index) => (
-                  <Skeleton key={index} className="aspect-square animate-none rounded-xl" />
-                ))}
-              </div>
-            </ComingSoonOverlay>
+            <PropertyPhotosTab propertyId={property.id} />
           ) : null}
         </div>
       </section>

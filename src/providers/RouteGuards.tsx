@@ -47,6 +47,21 @@ export function IntegrationsReturnRoute({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * Stripe's OAuth redirect URI. Needs a signed-in admin (the exchange is sent with their token)
+ * but no setup gate — the setup wizard connects Stripe before setup is finished.
+ */
+export function StripeCallbackRoute({ children }: { children: ReactNode }) {
+  const { session, loading: authLoading } = useAuth()
+  const { ready, isTechnician } = useAppBootstrap()
+
+  if (authLoading || (session && !ready)) return null
+  if (!session) return <Navigate to={ROUTES.login} replace />
+  if (isTechnician) return <Navigate to={ROUTES.technicianApp} replace />
+
+  return <>{children}</>
+}
+
 /** The technician block page — any signed-in technician, no setup gate. */
 export function TechnicianAppRoute({ children }: { children: ReactNode }) {
   const { session, loading: authLoading } = useAuth()

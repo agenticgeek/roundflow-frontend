@@ -22,9 +22,9 @@ export interface UnassignedRoundsAlert {
   totalVisits: number
 }
 
-/** A visit still to do with nobody on it. Done or skipped visits don't need anyone. */
+/** A visit still to do with nobody on it. Done, skipped or cancelled visits don't need anyone. */
 function needsTechnician(stop: PlannerStop): boolean {
-  if (stop.status === 'COMPLETED' || stop.status === 'SKIPPED') return false
+  if (stop.status === 'COMPLETED' || stop.status === 'SKIPPED' || stop.status === 'CANCELLED') return false
   return !stop.technicianId && !stop.technicianName
 }
 

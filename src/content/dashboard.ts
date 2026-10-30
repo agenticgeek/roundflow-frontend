@@ -60,13 +60,12 @@ export interface TodayRound {
   issues: number
   paymentHolds: number
   value: string
-  eta: string
 }
 
 export const dashboardRoundStatusLabels: Record<DashboardRoundStatus, string> = {
   not_started: 'Not started',
   in_progress: 'In progress',
-  complete: 'Completed',
+  completed: 'Completed',
 }
 
 export const dashboardContent = {
@@ -87,6 +86,21 @@ export const dashboardContent = {
     openComplaints: { label: 'Open Complaints', description: 'By priority' },
     cleanUnpaid: { label: 'Clean Unpaid', description: 'Completed this month, not yet paid' },
     monthlyRevenue: { label: 'Monthly Revenue', description: 'Completed jobs this calendar month' },
+  },
+  /** GAP-025 KPI threshold alerts (alerts.kpiAlerts). */
+  kpiAlerts: {
+    title: 'KPI alerts',
+    metrics: {
+      strikes: 'Strikes',
+      damages: 'Damages',
+      upsells: 'Upsells',
+      revenuePerHour: 'Revenue per hour',
+      timeOnJobMinutes: 'Time on job (min)',
+    } as Record<string, string>,
+    operators: { GT: 'above', LT: 'below' } as Record<string, string>,
+    line: '{metric} {value}, {operator} the {threshold} threshold',
+    unknownTechnician: 'Technician',
+    open: 'View technician',
   },
   alerts: {
     skipped: { label: 'Needs review', description: 'Skipped today', action: 'Manage skipped jobs' },
@@ -138,13 +152,16 @@ export const dashboardContent = {
       openComplaints: 'Open Complaints',
       issues: 'Issues Raised',
       timeOnJob: 'Time on Job',
+      revenuePerHour: 'Revenue / Hour',
       strikes: 'Strikes',
       damages: 'Damages',
       upsells: 'Upsells',
       scopeAll: 'All technicians',
       requiresReview: 'Requires review',
       allClear: 'All clear',
-      notAvailable: 'Coming in a later phase',
+      /** `null` from the API = no timed visit in the period (GAP-025). */
+      noData: 'No timed visits in this period',
+      upsellValue: '{value} upsold',
     },
     charts: {
       rangeOptions: [
@@ -154,7 +171,8 @@ export const dashboardContent = {
       valueTitle: 'Value of Work Completed',
       issuesTitle: 'Issues Raised',
       revenueTitle: 'Revenue Per Hour',
-      revenueUnavailable: 'Revenue per hour needs time tracking — coming in a later phase.',
+      revenuePerHourValue: '{value} per hour across completed, timed visits in this range.',
+      revenueUnavailable: 'No timed visits in this range yet — revenue per hour appears once technicians start and complete jobs in the app.',
       noData: {
         badge: 'No data',
         title: 'No data yet',
@@ -174,7 +192,6 @@ export const dashboardContent = {
       skipped: 'Skipped',
       issues: 'Issues',
       value: 'Value',
-      eta: 'ETA',
     },
   },
   bulkMessageModal: {

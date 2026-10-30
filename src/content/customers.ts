@@ -1,6 +1,8 @@
+import type { CustomerPaymentBadge, PaymentStanding } from '@/features/customers/lib/payment-status'
 export type CustomerStatus = 'active' | 'hold' | 'cancelled'
 
-export type CustomerPaymentStatus = 'paid' | 'hold' | 'pending'
+/** List badges, plus Property detail's standing (PropertyDetail reuses this record). */
+export type CustomerPaymentStatus = CustomerPaymentBadge | PaymentStanding
 
 export interface CustomerPropertyRecord {
   id: string
@@ -72,9 +74,17 @@ export const customersContent = {
     active: 'Active',
     hold: 'Hold',
     cancelled: 'Cancelled',
-    paid: 'paid',
-    pending: 'pending',
   },
+  /** GAP-021: one label per server `paymentStatus`. */
+  paymentStatusLabels: {
+    none: 'No invoices',
+    paid: 'Paid',
+    unpaid: 'Unpaid',
+    overdue: 'Overdue',
+    hold: 'On hold',
+    failed: 'Payment failed',
+    pending: 'Pending',
+  } satisfies Record<CustomerPaymentStatus, string>,
   assignment: {
     title: 'Not assigned to a round or technician yet',
     description:
@@ -96,6 +106,7 @@ export const customersContent = {
       confirm: 'Assign Property',
     },
     successToast: 'Property assigned to round',
+    failed: 'Could not assign property',
   },
   emptyLabel: 'No customers match the selected filters.',
 } as const

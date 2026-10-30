@@ -3,13 +3,11 @@ import type {
   DashboardCharts,
   DashboardKpis,
   DashboardRoundRow,
-  DashboardTechnicianKpi,
 } from '@/api/dashboard.api'
 import type {
   ChartBar,
   DashboardAlert,
   DashboardMetric,
-  KpiMetric,
   TodayRound,
 } from '@/content/dashboard'
 import { dashboardContent } from '@/content/dashboard'
@@ -112,70 +110,12 @@ export function roundsToRows(rows: DashboardRoundRow[] | undefined): TodayRound[
     skipped: row.skipped,
     issues: row.issueCount,
     paymentHolds: row.paymentHolds,
-    value: formatMoney(row.value),
-    // etaMinutes is a Phase 2 stub (always null).
-    eta: row.etaMinutes == null ? NOT_AVAILABLE : `~${row.etaMinutes} min`,
+    // GAP-035: the day's scheduled value (`value` is deprecated); ETA is a stub, so not shown.
+    value: formatMoney(row.scheduledValue ?? row.value),
   }))
 }
 
-/**
- * Technician KPI tiles, summed over the selected technicians (empty selection = all).
- * Phase 2 stubs (time on job / strikes / damages / upsells) keep their slots and show "—".
- */
-export function technicianKpisToTiles(
-  rows: DashboardTechnicianKpi[] | undefined,
-  selectedIds: ReadonlySet<string>,
-): KpiMetric[] {
-  const { tiles } = dashboardContent.kpis
-  if (!Array.isArray(rows)) {
-    return [
-      { label: tiles.jobsCompleted, value: NOT_AVAILABLE, detail: '' },
-      { label: tiles.valueCompleted, value: NOT_AVAILABLE, detail: '' },
-      { label: tiles.openComplaints, value: NOT_AVAILABLE, detail: '' },
-      { label: tiles.issues, value: NOT_AVAILABLE, detail: '' },
-      ...phaseTwoTiles(),
-    ]
-  }
-
-  const selected = selectedIds.size === 0 ? rows : rows.filter((row) => selectedIds.has(row.technicianId))
-  const sum = (pick: (row: DashboardTechnicianKpi) => number) =>
-    selected.reduce((total, row) => total + pick(row), 0)
-  const scope =
-    selected.length === rows.length
-      ? tiles.scopeAll
-      : selected.map((row) => row.technicianName.split(' ')[0]).join(', ')
-
-  const openComplaints = sum((row) => row.openComplaints)
-  const issues = sum((row) => row.issueCount)
-
-  return [
-    { label: tiles.jobsCompleted, value: String(sum((row) => row.jobsCompleted)), detail: scope },
-    { label: tiles.valueCompleted, value: formatMoney(sum((row) => row.valueCompleted)), detail: scope, tone: 'success' },
-    {
-      label: tiles.openComplaints,
-      value: String(openComplaints),
-      detail: openComplaints > 0 ? tiles.requiresReview : tiles.allClear,
-      tone: openComplaints > 0 ? 'warning' : 'success',
-    },
-    {
-      label: tiles.issues,
-      value: String(issues),
-      detail: issues > 0 ? tiles.requiresReview : tiles.allClear,
-      tone: issues > 0 ? 'warning' : 'success',
-    },
-    ...phaseTwoTiles(),
-  ]
-}
-
-function phaseTwoTiles(): KpiMetric[] {
-  const { tiles } = dashboardContent.kpis
-  return [
-    { label: tiles.timeOnJob, value: NOT_AVAILABLE, detail: tiles.notAvailable },
-    { label: tiles.strikes, value: NOT_AVAILABLE, detail: tiles.notAvailable },
-    { label: tiles.damages, value: NOT_AVAILABLE, detail: tiles.notAvailable },
-    { label: tiles.upsells, value: NOT_AVAILABLE, detail: tiles.notAvailable },
-  ]
-}
+export { technicianKpisToTiles } from '@/features/dashboard/lib/technician-kpis'
 
 /** Month arrays are positionally aligned — zip them into chart bars. */
 export function chartsToBars(charts: DashboardCharts | undefined): { value: ChartBar[]; issues: ChartBar[] } {

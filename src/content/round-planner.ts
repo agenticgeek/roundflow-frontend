@@ -1,3 +1,4 @@
+import type { VisitStatus } from '@/lib/visit-status'
 import type { DashboardTone } from '@/content/dashboard'
 import type { PlannerDayStatus, PlannerPeriod, PlannerStatusFilter } from '@/features/rounds/lib/planner'
 
@@ -29,7 +30,7 @@ export interface RoundPlannerMessageTemplate {
 }
 
 /** Visit statuses returned on planner stops. */
-export type PlannerVisitStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED'
+export type PlannerVisitStatus = VisitStatus
 
 export const plannerDayStatusLabels: Record<PlannerDayStatus, string> = {
   not_started: 'Scheduled',
@@ -42,6 +43,7 @@ export const plannerVisitStatusLabels: Record<PlannerVisitStatus, string> = {
   IN_PROGRESS: 'In progress',
   COMPLETED: 'Completed',
   SKIPPED: 'Skipped',
+  CANCELLED: 'Cancelled',
 }
 
 export const roundPlannerContent = {
@@ -255,7 +257,19 @@ export const roundPlannerContent = {
     error: 'Could not load Google Maps.',
     unresolvedTitle: 'No pin yet',
     unresolvedHint: 'These stops have no coordinates yet. New properties and postcode changes can take up to 15 minutes to appear — refresh later, or check the postcode.',
-    navigate: 'Navigate'
+    navigate: 'Navigate',
+    /** Map date controls — the same day picker as the List, plus a whole-week view (GAP-023). */
+    controls: {
+      modeLabel: 'Show',
+      day: 'Day',
+      week: 'Week',
+      previousDay: 'Previous day',
+      nextDay: 'Next day',
+      previousWeek: 'Previous week',
+      nextWeek: 'Next week',
+      dateLabel: 'Date',
+      weekOf: 'Week of {date}',
+    },
   },
   listView: {
     actions: {
@@ -333,8 +347,6 @@ export const assignTechniciansContent = {
     noTechnicians: 'No technicians yet — add them in Settings.',
     oneDoesAll: 'One technician does all jobs',
     split: { label: 'Split jobs between them', description: 'Each technician takes a share of the streets' },
-    splitSummary: '{count} jobs · {streets}',
-    splitNote: 'The split is a guide — every chosen technician sees the round’s visits in the app.',
     warning: 'Pick at least one technician before {date}, or these visits won’t appear in anyone’s app.',
     reviewSplit: 'Review job split →',
   },
@@ -348,6 +360,25 @@ export const assignTechniciansContent = {
     title: 'How should they share the work?',
     subtitle: 'Only rounds with two or more technicians need a choice.',
     nothing: 'Every round has one technician — nothing to split. Continue to review.',
+    /** GAP-012: the split is real — each technician only sees their own properties in the app. */
+    note: 'Each technician only sees their own properties in the app. Future visits follow this split.',
+    modes: {
+      SINGLE: { title: 'One technician does all jobs', description: 'The others are taken off this round.' },
+      AUTO: { title: 'Split automatically', description: 'Balanced by the value of each property’s plan.' },
+      MANUAL: { title: 'Choose per property', description: 'Pick a technician for every property.' },
+    },
+    singleLabel: 'Who does all the jobs?',
+    manualProperty: 'Property',
+    manualTechnician: 'Technician',
+    manualPick: 'Choose technician',
+    manualLoading: 'Loading properties…',
+    manualEmpty: 'This round has no properties yet.',
+    manualUnassigned: '{count} properties still need a technician.',
+    manualUnassignedOne: '1 property still needs a technician.',
+    balance: 'Balance',
+    allocationLine: '{stops} stops · {value}',
+    allocationLoading: 'Working out the split…',
+    allocationVisits: '{count} upcoming visits will follow this split.',
   },
   review: {
     title: 'Check and save',
@@ -357,8 +388,10 @@ export const assignTechniciansContent = {
     technicians: 'Technicians',
     firstVisit: 'First visit',
     howShared: 'Sharing',
+    allocation: 'Stops and value',
     oneDoesAll: 'One does all jobs',
-    split: 'Jobs split by street',
+    split: 'Split automatically',
+    manual: 'Chosen per property',
     single: '—',
     removed: 'No technician',
     edit: 'Edit',
@@ -380,8 +413,23 @@ export const assignTechniciansContent = {
     saving: 'Saving…',
   },
   toasts: { saved: 'Assignments saved', failed: 'Some assignments couldn’t be saved' },
+  /** Shown on Review when a save fails — `{rounds}`: the rounds that failed, `{error}`: the server's message. */
+  saveFailed: '{rounds}: {error}',
   loadError: 'Could not load rounds.',
   retry: 'Retry',
+} as const
+
+/**
+ * A technician who hasn't accepted their invite can't be assigned (the API answers 400) —
+ * shown disabled wherever technicians are picked, with a way to resend the invite (GAP-011).
+ */
+export const pendingInviteContent = {
+  badge: 'Invite pending',
+  hint: 'Can’t be assigned until they accept their app invite.',
+  resend: 'Resend invite',
+  resending: 'Sending…',
+  resent: 'Invite resent to {name}',
+  noEmail: 'Add an email to this technician before inviting them.',
 } as const
 
 /** Banner on the Round Planner when an active round with upcoming visits has no technician. */
@@ -401,6 +449,19 @@ export const unassignedRoundsAlertContent = {
   assign: 'Assign technicians',
   showRound: 'Show on planner',
 } as const
+
+/** Reassign technician modal additions (GAP-013) — the base copy lives in todays-work content. */
+export const reassignContent = {
+  unassignedFrom: 'Unassigned visits',
+  unassignedHint: 'No technician is on these visits yet — they will all move to the technician you pick.',
+  permanent: 'Make permanent',
+  permanentHint: 'Also move these properties to the new technician, so future visits follow.',
+  updatedOne: '1 job updated.',
+  updatedMany: '{count} jobs updated.',
+} as const
+
+/** Planner stop chip for a customer on payment hold (GAP-026). */
+export const plannerHoldContent = { onHold: 'On hold' } as const
 
 /** Calendar card → assign a technician to an unassigned round without leaving the planner. */
 export const quickAssignContent = {

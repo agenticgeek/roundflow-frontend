@@ -12,9 +12,15 @@ import { Modal, ModalButton, modalInfoPanelClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { FREQUENCY_LABELS } from '@/features/customers/lib/mappers'
 import { useUpdateProperty } from '@/features/properties/hooks/useProperties'
+import {
+  movedToRoundMessage,
+  parseNoMatchingRound,
+  type NoMatchingRound,
+  type RoundSuggestion,
+} from '@/features/properties/lib/frequency-move'
 import { useUpdateServicePlan } from '@/features/service-plans/hooks/useServicePlans'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
-import { ApiError } from '@/lib/errors'
+import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 interface ChangeFrequencyModalProps {
@@ -50,7 +56,9 @@ function currentFrequencyValue(frequency: string): CleaningFrequency | '' {
 /**
  * Change cleaning frequency of the property's primary plan — PATCH /service-plans/:id, so a
  * multi-plan property changes the plan the summary shows. Falls back to PATCH /properties/:id
- * when there's no plan id.
+ * when there's no plan id. When no round in the area runs at the new frequency the API answers
+ * 409 NO_MATCHING_ROUND (GAP-018): offer to create the proposed round (retry with
+ * `createRoundIfMissing`) or move to a suggested round (`roundId`, which syncs the frequency).
  */
 export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequencyModalProps) {
   const { changeFrequencyModal } = propertyDetailContent
@@ -59,9 +67,10 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
   const updatePropertyMutation = useUpdateProperty()
   const updatePlan = useUpdateServicePlan()
   const planId = property?.primaryPlanId ?? null
-  const updateProperty = planId ? updatePlan : updatePropertyMutation
   const [selected, setSelected] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [noMatch, setNoMatch] = useState<NoMatchingRound | null>(null)
+  const pending = updatePlan.isPending || updatePropertyMutation.isPending
 
   const current = property ? currentFrequencyValue(property.frequency) : ''
 
@@ -69,45 +78,52 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
     if (!open) return
     setSelected('')
     setMenuOpen(false)
+    setNoMatch(null)
   }, [open, property?.id])
 
   if (!property) return null
 
   const selectedOption = changeFrequencyModal.options.find((option) => option.value === selected)
-  const canSubmit =
-    canMutate && Boolean(selected) && selected !== current && !updateProperty.isPending
+  const canSubmit = canMutate && Boolean(selected) && selected !== current && !pending
 
-  async function handleSubmit() {
-    if (!canSubmit || !property || !selected) return
+  async function handleSubmit(createRoundIfMissing = false) {
+    if (!canSubmit || !property) return
+    const input = {
+      cleaningFrequency: selected as CleaningFrequency,
+      ...(createRoundIfMissing ? { createRoundIfMissing: true } : {}),
+    }
     try {
-      if (planId) {
-        await updatePlan.mutateAsync({ id: planId, input: { cleaningFrequency: selected as CleaningFrequency } })
-      } else {
-        await updatePropertyMutation.mutateAsync({
-          id: property.id,
-          input: { cleaningFrequency: selected as CleaningFrequency },
-        })
-      }
+      const result = planId
+        ? await updatePlan.mutateAsync({ id: planId, input })
+        : await updatePropertyMutation.mutateAsync({ id: property.id, input })
       onClose()
-      showToast(changeFrequencyModal.successToast)
+      showToast(movedToRoundMessage(result.movedToRound))
     } catch (error) {
-      // Surface the reason on every failure, including a 400 (e.g. the backend
-      // rejecting the frequency) — previously a 400 was swallowed and the modal
-      // just sat there with no feedback.
-      const message =
-        error instanceof ApiError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : 'Could not change frequency'
-      showToast(message)
+      const match = parseNoMatchingRound(error)
+      if (match) {
+        setNoMatch(match)
+        return
+      }
+      // Surface the reason on every failure, including a 400 (e.g. the backend rejecting the frequency).
+      showToast(errorMessage(error), { tone: 'error' })
+    }
+  }
+
+  async function handleMoveToRound(round: RoundSuggestion) {
+    if (!canSubmit || !property) return
+    try {
+      await updatePropertyMutation.mutateAsync({ id: property.id, input: { roundId: round.id } })
+      onClose()
+      showToast(changeFrequencyModal.movedToast.replace('{round}', round.name))
+    } catch (error) {
+      showToast(errorMessage(error), { tone: 'error' })
     }
   }
 
   return (
     <Modal
       open={open}
-      onClose={updateProperty.isPending ? () => undefined : onClose}
+      onClose={pending ? () => undefined : onClose}
       title={changeFrequencyModal.title}
       showCloseButton
       stacked
@@ -121,7 +137,7 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
             compact
             variant="secondary"
             className="rounded-lg"
-            disabled={updateProperty.isPending}
+            disabled={pending}
             onClick={onClose}
           >
             {changeFrequencyModal.actions.cancel}
@@ -133,7 +149,7 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
             disabled={!canSubmit}
             onClick={() => void handleSubmit()}
           >
-            {updateProperty.isPending ? 'Saving…' : changeFrequencyModal.actions.submit}
+            {pending ? changeFrequencyModal.noMatch.working : changeFrequencyModal.actions.submit}
           </ModalButton>
         </div>
       }
@@ -157,7 +173,7 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
             type="button"
             aria-haspopup="listbox"
             aria-expanded={menuOpen}
-            disabled={updateProperty.isPending}
+            disabled={pending}
             onClick={() => setMenuOpen((open) => !open)}
             className={cn(dropdownTriggerClass, 'min-h-10 rounded-lg px-3.5 py-2.5 text-sm')}
           >
@@ -188,6 +204,7 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
                       onClick={() => {
                         setSelected(option.value)
                         setMenuOpen(false)
+                        setNoMatch(null)
                       }}
                       className={cn(
                         'flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm',
@@ -209,7 +226,67 @@ export function ChangeFrequencyModal({ open, property, onClose }: ChangeFrequenc
         </div>
         <p className="mt-2 text-xs text-muted">{changeFrequencyModal.helper}</p>
       </Field>
+
+      {noMatch ? (
+        <NoMatchingRoundPrompt
+          noMatch={noMatch}
+          disabled={pending}
+          onCreate={() => void handleSubmit(true)}
+          onMove={(round) => void handleMoveToRound(round)}
+        />
+      ) : null}
     </Modal>
+  )
+}
+
+function NoMatchingRoundPrompt({
+  noMatch,
+  disabled,
+  onCreate,
+  onMove,
+}: {
+  noMatch: NoMatchingRound
+  disabled: boolean
+  onCreate: () => void
+  onMove: (round: RoundSuggestion) => void
+}) {
+  const copy = propertyDetailContent.changeFrequencyModal.noMatch
+  return (
+    <div role="alert" className="space-y-3 rounded-lg border border-warning-border bg-warning-surface/60 p-4">
+      <p className="text-sm text-foreground">{noMatch.message}</p>
+      {noMatch.proposedName ? (
+        <ModalButton compact variant="primary" className="rounded-lg" disabled={disabled} onClick={onCreate}>
+          {copy.create.replace('{name}', noMatch.proposedName)}
+        </ModalButton>
+      ) : null}
+      {noMatch.suggestions.length > 0 ? (
+        <div>
+          <p className="text-xs font-semibold text-muted">{copy.pickTitle}</p>
+          <ul className="mt-2 space-y-2">
+            {noMatch.suggestions.map((round) => (
+              <li key={round.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-foreground">
+                  {round.name}
+                  {round.frequencyLabel ? (
+                    <span className="ml-2 text-xs text-muted">
+                      {copy.frequency.replace('{frequency}', round.frequencyLabel)}
+                    </span>
+                  ) : null}
+                </span>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onMove(round)}
+                  className="font-semibold text-primary underline underline-offset-2 disabled:opacity-60"
+                >
+                  {copy.move.replace('{name}', round.name)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

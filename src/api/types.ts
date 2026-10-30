@@ -13,7 +13,8 @@ export type Technician = components['schemas']['TechnicianWithDisplayName']
 export type TechnicianInput = components['schemas']['TechnicianInput']
 export type Round = components['schemas']['Round']
 export type RoundInput = components['schemas']['FirstRoundInput']
-export type DeferredStatus = components['schemas']['DeferredStub']
+// No longer in the spec; kept for callers that still type deferred stubs.
+export type DeferredStatus = { status: 'deferred'; reason: string }
 export type PaymentConnectResponse = components['schemas']['ProviderConnectResponse']
 export type PaymentMethod = components['schemas']['PaymentMethod']
 export type CleaningFrequency = components['schemas']['CleaningFrequency']
@@ -30,10 +31,8 @@ export type PropertyCreateResult = {
   servicePlanId?: string
   assigned?: boolean
 }
-export type PropertyUpdateInput = components['schemas']['PropertyUpdateInput'] & {
-  // CONTRACT-DIFF: handoff §3.3 — mutually exclusive with roundId.
-  cleaningFrequency?: CleaningFrequency | null
-}
+/** `cleaningFrequency` without `roundId` runs the B3 move; `createRoundIfMissing` creates the proposed round. */
+export type PropertyUpdateInput = components['schemas']['PropertyUpdateInput']
 export type CustomerUpdateInput = components['schemas']['CustomerUpdateInput']
 type GeneratedCustomerDetail = components['schemas']['CustomerDetail']
 type GeneratedCustomerDetailTabs = NonNullable<GeneratedCustomerDetail['tabs']>

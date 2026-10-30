@@ -16,6 +16,8 @@ interface ImportMetaEnv {
   readonly VITE_TECHNICIAN_APP_IOS_URL?: string
   /** Google Play page for the RoundFlow technician app. */
   readonly VITE_TECHNICIAN_APP_ANDROID_URL?: string
+  /** Stripe Connect platform client id (`ca_…`, public) — builds the OAuth consent URL. */
+  readonly VITE_STRIPE_CONNECT_CLIENT_ID?: string
 }
 
 interface ImportMeta {

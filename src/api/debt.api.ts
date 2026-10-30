@@ -1,7 +1,6 @@
 import { api } from '@/api/client'
 import { toPaginated, type Paginated, type Pagination } from '@/api/pagination'
-
-/** CONTRACT-DIFF: `/debt/*` not in generated OpenAPI yet — live per DEBT_BOARD_HANDOFF. */
+import type { components } from '@/api/types.gen'
 
 export type DebtBucket =
   | 'INVOICE_SENT'
@@ -19,32 +18,14 @@ export type DebtPaymentMethodParam =
   | 'BACS'
   | 'STRIPE'
 
-export type DebtRemindChannel = 'EMAIL' | 'SMS' | 'WHATSAPP'
+export type DebtKpis = components['schemas']['DebtKpis']
 
-export type DebtKpis = {
-  totalOutstandings: number
-  totalOutstandingsCount: number
-  failedGoCardless: number
-  dueBeforeClean: number
-  holdNextClean: number
-  badDebt: number
-  badDebtCount: number
-}
-
-export type DebtBoardItem = {
-  invoiceId: string
-  invoiceNumber: string
-  amount: number
-  dueDate: string
-  customerId: string
-  customerName: string
-  addressLine: string
-  postcode: string | null
-  paymentMethod: DebtPaymentMethodParam | string
-  lastContactedAt: string | null
-  badDebt: boolean
-  holdNextClean: boolean
-}
+/**
+ * One board row. In the ON_HOLD bucket a row is a held customer (GAP-026): `invoiceId`,
+ * `invoiceNumber` and `dueDate` are the oldest SENT invoice and can be null, and `amount` is
+ * the customer's total outstanding.
+ */
+export type DebtBoardItem = components['schemas']['DebtBoardRow']
 
 export type DebtBoardParams = {
   bucket: DebtBucket
@@ -63,36 +44,18 @@ export type DebtBoardPagination = Pagination
 /** GET /debt/board is paginated (performance handoff 2026-10-16). */
 export type DebtBoardResult = Paginated<DebtBoardItem>
 
-export type DebtRemindInput = {
-  channel: DebtRemindChannel
-  message: string
-}
+/** POST /debt/:id/remind — `channel` omitted / AUTO = SMS if a mobile, else email (GAP-034). */
+export type DebtRemindInput = components['schemas']['DebtRemindInput']
 
-export type DebtPaymentLinkInput = {
-  message: string
-}
+export type DebtPaymentLinkInput = components['schemas']['DebtPaymentLinkInput']
 
-export type DebtMessageResult = {
-  id: string
-}
+export type DebtMessageResult = components['schemas']['ReminderResult']
 
-/** POST /debt/:id/payment-link — a Stripe Checkout link when Stripe is connected. */
-export type DebtPaymentLinkResult = DebtMessageResult & {
-  paymentUrl?: string
-  provider?: 'stripe' | 'static'
-  /** null for the static fallback link. */
-  expiresAt?: string | null
-}
+/** POST /debt/:id/payment-link — always a Stripe Checkout `url` (the static pay link is gone). */
+export type DebtPaymentLinkResult = components['schemas']['PaymentLinkResult']
 
-/** PATCH /debt/:id/hold body (audit follow-up 2026-10-22). `notify` sends the SMS. */
-export type DebtHoldInput = {
-  flag: boolean
-  reason?: string
-  /** `YYYY-MM-DD` the hold starts. */
-  date?: string
-  notify?: boolean
-  message?: string
-}
+/** PATCH /debt/:id/hold body. `notify` sends the SMS. */
+export type DebtHoldInput = components['schemas']['DebtHoldInput']
 
 /** GET /debt/board/counts — every tab's total in one call. `ALL` is the catch-all tab. */
 export type DebtBoardCounts = Partial<Record<Exclude<DebtBucket, 'INVOICE_SENT'> | 'ALL', number>>
@@ -121,12 +84,7 @@ export type DebtBadDebtResult = {
   badDebt: boolean
 }
 
-export type DebtHoldResult = {
-  customerId: string
-  holdNextClean: boolean
-  holdReason?: string | null
-  holdSince?: string | null
-}
+export type DebtHoldResult = components['schemas']['HoldFlagResult']
 
 function jsonRequest(method: 'POST' | 'PATCH', body?: unknown): RequestInit {
   return {

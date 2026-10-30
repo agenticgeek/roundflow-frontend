@@ -8,6 +8,7 @@ import { Input, Select, Textarea } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
 import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
+import { technicianListHint, technicianOptionLabel } from '@/features/complaints/lib/format'
 import { cn } from '@/lib/utils'
 
 export interface NewComplaintValues {
@@ -73,9 +74,12 @@ export function LogComplaintModal({ open, onClose, onSubmit, submitting = false 
   const customerResults = customersQuery.data?.customers ?? []
 
   const techniciansQuery = useTechniciansList(open)
-  const technicianOptions = (techniciansQuery.data ?? [])
-    .filter((technician) => technician.appStatus !== 'PENDING_INVITE')
-    .map((technician) => ({ value: technician.id, label: technician.name ?? 'Unnamed technician' }))
+  // GAP-029 part 2: pending-invite technicians can be named too.
+  const technicianOptions = (techniciansQuery.data ?? []).map((technician) => ({
+    value: technician.id,
+    label: technicianOptionLabel(technician),
+  }))
+  const technicianHint = technicianListHint(techniciansQuery.data)
 
   function update<K extends keyof NewComplaintValues>(key: K, value: NewComplaintValues[K]) {
     setValues((current) => ({ ...current, [key]: value }))
@@ -260,6 +264,7 @@ export function LogComplaintModal({ open, onClose, onSubmit, submitting = false 
             options={[{ value: '', label: modal.technicianPlaceholder }, ...technicianOptions]}
             className="border-primary/30 bg-accent-surface"
           />
+          {technicianHint ? <p className="text-xs text-muted">{technicianHint}</p> : null}
         </FormSection>
 
         {error ? <p className="text-xs text-danger">{error}</p> : null}

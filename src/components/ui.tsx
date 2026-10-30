@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
-import { forwardRef } from 'react'
+import { createContext, forwardRef, useContext, useId } from 'react'
 import { Link } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
@@ -18,6 +18,15 @@ export type {
 } from '@/components/ui/dropdown'
 
 const { ui } = authContent
+
+/** The enclosing <Field>'s label id, so its input is named by the visible label. */
+const FieldLabelContext = createContext<string | undefined>(undefined)
+
+/** `aria-labelledby` the Field label — unless the input already names itself. */
+function useFieldLabel(props: { 'aria-label'?: string; 'aria-labelledby'?: string }) {
+  const labelId = useContext(FieldLabelContext)
+  return labelId && !props['aria-label'] && !props['aria-labelledby'] ? { 'aria-labelledby': labelId } : {}
+}
 
 export const inputClass =
   'w-full rounded-xl border border-border bg-background text-foreground outline-none transition-[border-color,box-shadow] duration-200 placeholder:text-muted focus:border-foreground focus:ring-4 focus:ring-foreground/[0.06] aria-[invalid=true]:border-danger aria-[invalid=true]:focus:border-danger aria-[invalid=true]:focus:ring-danger/10'
@@ -45,9 +54,11 @@ export function Field({
   size?: InputSize
   className?: string
 }) {
+  const labelId = useId()
   return (
     <div className={cn('block', className)}>
       <span
+        id={labelId}
         className={cn(
           'block text-foreground',
           size === 'sm' ? 'mb-1.5 text-xs' : 'mb-2 text-sm',
@@ -57,7 +68,7 @@ export function Field({
         {label}
         {required ? <span className="text-danger"> *</span> : null}
       </span>
-      {children}
+      <FieldLabelContext.Provider value={labelId}>{children}</FieldLabelContext.Provider>
       {error ? <FieldError message={error} size={size} /> : null}
     </div>
   )
@@ -136,6 +147,7 @@ export const Input = forwardRef<
   InputHTMLAttributes<HTMLInputElement> & { inputSize?: InputSize }
 >(function Input({ type = 'text', className, inputSize = 'default', ...props }, ref) {
   const { visible, toggle, inputType } = usePasswordVisibility()
+  const named = useFieldLabel(props)
   const isPassword = type === 'password'
   const sizeClass = inputSizeClass[inputSize]
 
@@ -145,6 +157,7 @@ export const Input = forwardRef<
         ref={ref}
         type={type}
         className={cn(inputClass, sizeClass, className)}
+        {...named}
         {...props}
       />
     )
@@ -156,6 +169,7 @@ export const Input = forwardRef<
         ref={ref}
         type={inputType}
         className={cn(inputClass, sizeClass, 'pr-12', className)}
+        {...named}
         {...props}
       />
       <PasswordToggleButton visible={visible} onToggle={toggle} />
@@ -199,9 +213,11 @@ export const Textarea = forwardRef<
   HTMLTextAreaElement,
   TextareaHTMLAttributes<HTMLTextAreaElement> & { inputSize?: InputSize }
 >(function Textarea({ className, inputSize = 'default', ...props }, ref) {
+  const named = useFieldLabel(props)
   return (
     <textarea
       ref={ref}
+      {...named}
       className={cn(
         inputClass,
         inputSizeClass[inputSize],

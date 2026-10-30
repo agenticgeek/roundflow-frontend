@@ -19,6 +19,8 @@ export type Complaint = {
   technicianId: string | null
   revisitDate: string | null
   createdAt: string
+  /** Set on resolve; an upheld complaint with a technician counts as a strike (GAP-025). */
+  upheld?: boolean | null
 }
 
 /** GET /complaints/:id — the list row plus detail fields (audit follow-up 2026-10-22). */
@@ -27,7 +29,8 @@ export type ComplaintDetail = Complaint & {
   technicianName?: string | null
   messageCount?: number
   resolvedAt?: string | null
-  resolvedBy?: string | null
+  /** BREAKING (GAP-029): the resolver's profile, was a raw id string. */
+  resolvedBy?: { id: string; name: string | null } | null
   notes?: string | null
 }
 
@@ -47,6 +50,9 @@ export type ComplaintCreateInput = {
   propertyId?: string
   technicianId?: string | null
 }
+
+/** POST /complaints/:id/resolve — `upheld` counts the complaint as a strike (GAP-025). */
+export type ComplaintResolveInput = { notes?: string; upheld?: boolean }
 
 export type ComplaintMessageDirection = 'INBOUND' | 'OUTBOUND'
 
@@ -90,14 +96,15 @@ export const complaintsApi = {
   markInReview: (id: string) =>
     api<Complaint>(`/complaints/${id}/mark-in-review`, jsonRequest('POST')),
 
+  /** Also books the free revisit visit; `visitId` is null when the complaint has no property. */
   scheduleRevisit: (id: string, revisitDate: string) =>
-    api<Complaint>(`/complaints/${id}/schedule-revisit`, jsonRequest('POST', { revisitDate })),
-
-  resolve: (id: string, notes?: string) =>
-    api<ComplaintDetail>(
-      `/complaints/${id}/resolve`,
-      jsonRequest('POST', notes ? { notes } : undefined),
+    api<Complaint & { visitId: string | null }>(
+      `/complaints/${id}/schedule-revisit`,
+      jsonRequest('POST', { revisitDate }),
     ),
+
+  resolve: (id: string, input: ComplaintResolveInput = {}) =>
+    api<ComplaintDetail>(`/complaints/${id}/resolve`, jsonRequest('POST', input)),
 
   reopen: (id: string) => api<Complaint>(`/complaints/${id}/reopen`, jsonRequest('POST')),
 

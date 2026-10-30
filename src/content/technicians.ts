@@ -19,7 +19,7 @@ export interface TechnicianRecord {
   phone: string
   email: string
   areas: string[]
-  serviceAreaId?: string | null
+  serviceAreaIds: string[]
   notes: string
   status: TechnicianStatus
   appStatus?: TechnicianAppStatus
@@ -83,7 +83,8 @@ export const techniciansContent = {
     mobile: 'Mobile Number',
     email: 'Email Address',
     role: 'Role',
-    area: 'Default Area',
+    area: 'Service areas',
+    areaPlaceholder: 'Select areas...',
     notes: 'Notes',
     optional: 'optional',
     appAccess: 'App Access',

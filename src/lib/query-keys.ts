@@ -33,15 +33,26 @@ export const queryKeys = {
     list: (filters: Record<string, string | number | undefined>) =>
       ['customers', 'list', filters] as const,
     detail: (id: string) => ['customers', 'detail', id] as const,
+    /** GET /customers/:id/visits — full history incl. CANCELLED (GAP-020). */
+    visits: (id: string, page = 1) => ['customers', 'visits', id, page] as const,
   },
   properties: {
     all: ['properties'] as const,
     notes: (id: string) => ['properties', 'notes', id] as const,
   },
+  /** GAP-019 photo galleries (signed URLs expire after 1 h — refetched on focus). */
+  photos: {
+    all: ['photos'] as const,
+    property: (id: string, type = 'ALL', page = 1) => ['photos', 'property', id, type, page] as const,
+    technician: (id: string, page = 1) => ['photos', 'technician', id, page] as const,
+    visit: (id: string) => ['photos', 'visit', id] as const,
+  },
   rounds: {
     all: ['rounds'] as const,
     list: (status?: string) => ['rounds', 'list', status ?? 'ALL'] as const,
     detail: (id: string) => ['rounds', 'detail', id] as const,
+    /** GET /rounds/:id/allocation (GAP-012). */
+    allocation: (id: string) => ['rounds', 'allocation', id] as const,
     today: (id: string) => ['rounds', 'today', id] as const,
     /** Batch occurrences for a chunk of rounds (ids joined in request order). */
     occurrencesBatch: (roundIds: readonly string[], from?: string, to?: string) =>
@@ -62,6 +73,9 @@ export const queryKeys = {
     all: ['technicians'] as const,
     list: ['technicians', 'list'] as const,
     detail: (id: string) => ['technicians', 'detail', id] as const,
+    performance: (id: string, period: string) => ['technicians', 'performance', id, period] as const,
+    availability: (id: string) => ['technicians', 'availability', id] as const,
+    incidents: (id: string, type = 'ALL') => ['technicians', 'incidents', id, type] as const,
   },
   complaints: {
     all: ['complaints'] as const,
@@ -106,6 +120,16 @@ export const queryKeys = {
     preview: (visitId: string) => ['invoices', 'preview', visitId] as const,
     detail: (id: string) => ['invoices', 'detail', id] as const,
     byCustomer: (customerId: string) => ['invoices', 'customer', customerId] as const,
+    /** GET /invoices (GAP-028). */
+    list: (filters: Record<string, string | number | undefined>) => ['invoices', 'list', filters] as const,
+    /** POST /invoices/bulk/preview (GAP-014) — keyed by the excluded visits too. */
+    bulkPreview: (date: string, excludeVisitIds: readonly string[] = []) =>
+      ['invoices', 'bulk-preview', date, [...excludeVisitIds].sort().join(',')] as const,
+  },
+  payments: {
+    all: ['payments'] as const,
+    /** GET /payments (GAP-028). */
+    list: (filters: Record<string, string | number | undefined>) => ['payments', 'list', filters] as const,
   },
   settings: {
     all: ['settings'] as const,
@@ -155,6 +179,24 @@ export function invalidateDebt(queryClient: QueryClient) {
 
 export function invalidateInvoices(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: queryKeys.invoices.all })
+}
+
+export function invalidatePayments(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+}
+
+/**
+ * A change to a customer's service (hold, pause / resume, frequency move): the customer
+ * header, Today's Work and the planner all read it (GAP-018/020/026).
+ */
+export function invalidateServiceChange(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.customers.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.properties.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.today.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.debt.all }),
+  ])
 }
 
 export function invalidateComplaints(queryClient: QueryClient) {
