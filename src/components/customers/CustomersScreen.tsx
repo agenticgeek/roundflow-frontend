@@ -7,6 +7,9 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { dashboardCtaClass, dashboardHoverCardClass } from '@/components/dashboard/dashboard-styles'
 import { Input, MultiSelect, Select } from '@/components/ui'
+import { AddPropertyToCustomerModal } from '@/components/property-detail/AddPropertyToCustomerModal'
+import { AddCustomerModal } from '@/components/customers/AddCustomerModal'
+import { recordModalsContent } from '@/content/record-modals'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
 import { CustomersScreenSkeleton } from '@/components/customers/CustomersSkeletons'
 import { ImportPropertiesPanel } from '@/components/setup-wizard/ImportPropertiesPanel'
@@ -42,7 +45,7 @@ const paymentStatusClass: Record<CustomerPaymentStatus, string> = {
   none: 'bg-muted/15 text-muted',
 }
 
-const metricClass: Record<(typeof customersContent.metrics)[number]['tone'], string> = {
+const metricClass: Record<'default' | 'success' | 'danger' | 'warning', string> = {
   default: 'border-border bg-card text-foreground',
   success: 'border-success/20 bg-success/10 text-success',
   danger: 'border-danger/20 bg-danger/10 text-danger',
@@ -96,6 +99,8 @@ export function CustomersScreen() {
   const [statusIds, setStatusIds] = useState<string[]>(() => [...defaultStatusFilters])
   const [assignRecordId, setAssignRecordId] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [addCustomerOpen, setAddCustomerOpen] = useState(false)
+  const [addPropertyFor, setAddPropertyFor] = useState<{ id: string; name: string } | null>(null)
 
   const { canMutate } = useAppBootstrap()
   const createProperty = useCreateProperty()
@@ -262,15 +267,27 @@ export function CustomersScreen() {
                 : `Showing ${filteredRecords.length} customer${filteredRecords.length === 1 ? '' : 's'}`}
           </p>
         </div>
-        {canMutate && !showImport ? (
-          <button
-            type="button"
-            onClick={() => setShowImport(true)}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface"
-          >
-            <DashboardIcon name="upload" className="h-4 w-4" />
-            {setupWizardContent.addProperty.importCsv.openButton}
-          </button>
+        {canMutate ? (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setAddCustomerOpen(true)}
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              <span aria-hidden="true">+</span>
+              {recordModalsContent.addCustomer.button}
+            </button>
+            {!showImport ? (
+              <button
+                type="button"
+                onClick={() => setShowImport(true)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface"
+              >
+                <DashboardIcon name="upload" className="h-4 w-4" />
+                {setupWizardContent.addProperty.importCsv.openButton}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </header>
 
@@ -376,6 +393,7 @@ export function CustomersScreen() {
                   })
                 }
                 onAssign={() => setAssignRecordId(record.id)}
+                onAddProperty={() => setAddPropertyFor({ id: record.id, name: record.customer })}
               />
             ))
           )}
@@ -392,6 +410,13 @@ export function CustomersScreen() {
         </section>
       </LoadingOverlay>
 
+      <AddPropertyToCustomerModal
+        open={addPropertyFor !== null}
+        customerId={addPropertyFor?.id ?? ''}
+        customerName={addPropertyFor?.name ?? ''}
+        onClose={() => setAddPropertyFor(null)}
+      />
+      <AddCustomerModal open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} />
       <AssignToRoundModal
         open={assignRecord !== null}
         record={assignRecord}
@@ -405,10 +430,12 @@ function CustomerRecordCard({
   record,
   onOpen,
   onAssign,
+  onAddProperty,
 }: {
   record: CustomerPropertyRecord
   onOpen: () => void
   onAssign: () => void
+  onAddProperty: () => void
 }) {
   const { recordLabels, statusLabels, assignment } = customersContent
 
@@ -419,7 +446,7 @@ function CustomerRecordCard({
     >
       <button
         type="button"
-        onClick={onOpen}
+        onClick={record.hasNoProperty ? onAddProperty : onOpen}
         className="flex w-full items-start justify-between gap-4 text-left transition-transform active:scale-[0.99]"
       >
         <div className="min-w-0">
@@ -442,14 +469,23 @@ function CustomerRecordCard({
           </div>
           <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-muted">
             <DashboardIcon name="map-pin" className="h-4 w-4" />
-            {record.address}
+            {record.hasNoProperty ? customersContent.noProperty.title : record.address}
           </p>
         </div>
 
         <DashboardIcon name="chevron-right" className="mt-1 h-5 w-5 shrink-0 text-muted" />
       </button>
 
-      <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs">
+      {record.hasNoProperty ? (
+        <div className="mt-4 flex flex-col gap-3 rounded-xl border border-primary/30 bg-accent-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-foreground">{customersContent.noProperty.description}</p>
+          <button type="button" className={cn(dashboardCtaClass, 'shrink-0')} onClick={onAddProperty}>
+            {customersContent.noProperty.action}
+          </button>
+        </div>
+      ) : null}
+
+      <dl className={cn('mt-3 flex-wrap gap-x-5 gap-y-2 text-xs', record.hasNoProperty ? 'hidden' : 'flex')}>
         <MetaItem label={recordLabels.round} value={record.round} />
         <MetaItem label={recordLabels.frequency} value={record.frequency} />
         <MetaItem label={recordLabels.price} value={record.price} />

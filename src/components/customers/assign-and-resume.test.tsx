@@ -56,7 +56,7 @@ describe('AssignToRoundModal (GAP-018)', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('leaves a 400 to the global handler and toasts any other failure', async () => {
+  it('shows a 400 inline and toasts any other failure', async () => {
     useRoundsApi()
     let calls = 0
     server.use(
@@ -69,7 +69,7 @@ describe('AssignToRoundModal (GAP-018)', () => {
     await pickRound(user, 'Alnwick Fri')
     await user.click(screen.getByRole('button', { name: 'Assign Property' }))
     await waitFor(() => expect(calls).toBe(1))
-    expect(screen.queryByText('roundId is invalid')).not.toBeInTheDocument()
+    expect(await screen.findByText('roundId is invalid')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Assign Property' }))
     expect(await screen.findByText('Database timeout')).toBeInTheDocument()
   })

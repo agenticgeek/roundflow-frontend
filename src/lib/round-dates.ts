@@ -1,9 +1,11 @@
+import { isoDateInTenantZone } from '@/lib/timezone'
+
 /** Round day codes as returned by the API, indexed like `Date#getDay()`. */
 const DAY_CODES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const
 
-/** Today as `YYYY-MM-DD` in local time. */
+/** Today as `YYYY-MM-DD` in the business time zone (the zone the backend uses for "today"). */
 export function todayIso(): string {
-  return toIsoDate(new Date())
+  return isoDateInTenantZone()
 }
 
 export function toIsoDate(date: Date): string {

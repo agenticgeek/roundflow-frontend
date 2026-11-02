@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   debtApi,
   type DebtBoardParams,
+  type DebtBulkInput,
   type DebtBucket,
   type DebtHoldInput,
   type DebtPaymentLinkInput,
@@ -122,6 +123,15 @@ export function useDebtPaymentLink() {
     }) => debtApi.paymentLink(invoiceId, input),
     meta: { silenceGlobalError: true },
     onSuccess: () => invalidateDebt(queryClient),
+  })
+}
+
+export function useDebtBulk() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: DebtBulkInput) => debtApi.bulk(input),
+    // Hold flags upcoming visits too, so refresh everything service-related.
+    onSuccess: () => invalidateServiceChange(queryClient),
   })
 }
 

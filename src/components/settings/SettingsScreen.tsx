@@ -19,6 +19,8 @@ import {
   useDeleteService,
   useDeleteServiceArea,
   useDeleteTechnician,
+  useCreateMessageTemplate,
+  useDeleteMessageTemplate,
   useMessageTemplates,
   useUpdateMessageTemplate,
   usePaymentSettings,
@@ -60,6 +62,9 @@ import { KpiThresholdsPanel } from '@/components/settings/KpiThresholdsPanel'
 import { isValidPostcodeSector } from '@/lib/postcode'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
+import { Modal, ModalButton } from '@/components/ui/modal'
+import { PaymentMethodsField } from '@/components/setup-wizard/PaymentMethodsField'
+import { ReminderChecklist } from '@/components/setup-wizard/ReminderChecklist'
 import { Field, FieldError, Input, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
@@ -608,12 +613,6 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   } as const
   const defaultsCopy = settingsContent.paymentSetup.defaults
   const wizardPayments = setupWizardContent.payments
-  // Direct Debit / card link need their provider connected (GAP-008).
-  const methodOptions = wizardPayments.methods.map((method) => ({
-    value: method.value,
-    label: method.label,
-    disabled: method.requires ? !connectionMap[method.requires] : false,
-  }))
   const noDirectDebitOptions = wizardPayments.noDirectDebitActions.map((action) => ({
     value: action.value,
     label: action.label,
@@ -726,18 +725,15 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
           />
         </Field>
 
-        <div className="grid gap-5 sm:grid-cols-3">
-          <Field label={defaultsCopy.method} labelWeight="medium">
-            <Select
-              aria-label={defaultsCopy.method}
-              value={values.defaultPaymentMethod}
-              onChange={(e) => updateField('defaultPaymentMethod', e.target.value)}
-              options={methodOptions}
-              disabled={!editing}
-              className={settingsSelectClass}
-            />
-            <p className="mt-1 text-xs text-muted">{defaultsCopy.methodHint}</p>
-          </Field>
+        <PaymentMethodsField
+          values={values}
+          connections={connectionMap}
+          onChange={(patch) => setDraft({ ...values, ...patch })}
+          disabled={!editing}
+          selectClassName={settingsSelectClass}
+        />
+
+        <div className="grid gap-5 sm:grid-cols-2">
           <Field label={defaultsCopy.dueDays} labelWeight="medium">
             <Input
               aria-label={defaultsCopy.dueDays}
@@ -769,18 +765,6 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
             checked={values.vatApplicable}
             onChange={(vatApplicable) => updateField('vatApplicable', vatApplicable)}
             ariaLabel={settings.vatApplicable.label}
-          />
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold text-foreground">{settings.debtHoldEnabled.label}</p>
-            <p className="mt-0.5 text-sm text-muted">{settings.debtHoldEnabled.description}</p>
-          </div>
-          <Toggle
-            checked={values.debtHoldEnabled}
-            onChange={(debtHoldEnabled) => updateField('debtHoldEnabled', debtHoldEnabled)}
-            ariaLabel={settings.debtHoldEnabled.label}
           />
         </div>
 
@@ -817,9 +801,6 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
   const { fields, recurringCycles } = wizardRounds
   const days = setupWizardContent.businessProfile.days
   const roundCopy = settingsContent.roundSettings
-  // GAP-003: one reminder mode + time (preCleanReminderTimings is deprecated and no longer read).
-  const reminderTimeKey =
-    values.reminderSchedule === 'morning-of' ? 'morningReminderTime' : 'eveningReminderTime'
 
   function startEdit() {
     setDraft(settingsRoundToForm(query.data))
@@ -914,31 +895,13 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
         <div>
           <p className="text-sm font-medium text-foreground">{roundCopy.reminder}</p>
           <p className="mt-0.5 text-sm text-muted">{roundCopy.reminderDescription}</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Select
-              aria-label={roundCopy.reminder}
-              value={values.reminderSchedule}
-              onChange={(e) =>
-                setDraft({ ...values, reminderSchedule: e.target.value as SettingsRoundForm['reminderSchedule'] })
-              }
-              options={wizardRounds.reminderOptions.map((option) => ({ value: option.id, label: option.label }))}
+          <div className="mt-3">
+            <ReminderChecklist
+              ariaLabel={roundCopy.reminder}
+              values={values}
+              onChange={(patch) => setDraft({ ...values, ...patch })}
               disabled={!editing}
-              className={settingsSelectClass}
             />
-            {values.reminderSchedule === 'none' ? null : (
-              <Select
-                aria-label={roundCopy.reminderTime}
-                value={values[reminderTimeKey]}
-                onChange={(e) => setDraft({ ...values, [reminderTimeKey]: e.target.value })}
-                options={
-                  values.reminderSchedule === 'morning-of'
-                    ? wizardRounds.morningReminderTimes
-                    : wizardRounds.eveningReminderTimes
-                }
-                disabled={!editing}
-                className={settingsSelectClass}
-              />
-            )}
           </div>
         </div>
 
@@ -975,6 +938,15 @@ function SmsTemplatesPanel({
   const query = useMessageTemplates()
   const ghlStatus = useGhlStatus()
   const update = useUpdateMessageTemplate()
+  const create = useCreateMessageTemplate()
+  const remove = useDeleteMessageTemplate()
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newChannel, setNewChannel] = useState<'SMS' | 'WHATSAPP' | 'EMAIL'>('SMS')
+  const [newSubject, setNewSubject] = useState('')
+  const [newBody, setNewBody] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const { showToast } = useToast()
   const copy = settingsContent.smsTemplates
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -1002,6 +974,39 @@ function SmsTemplatesPanel({
     }
   }
 
+  async function createTemplate() {
+    if (!newName.trim()) return setCreateError(copy.nameRequired)
+    if (!newBody.trim()) return setCreateError(copy.bodyRequired)
+    if (newChannel === 'EMAIL' && !newSubject.trim()) return setCreateError(copy.subjectRequired)
+    try {
+      await create.mutateAsync({
+        name: newName.trim(),
+        channel: newChannel,
+        body: newBody.trim(),
+        ...(newChannel === 'EMAIL' ? { subject: newSubject.trim() } : {}),
+      })
+      setCreating(false)
+      setNewName('')
+      setNewBody('')
+      setNewSubject('')
+      setCreateError(null)
+      showToast(copy.created)
+    } catch (error) {
+      setCreateError(errorMessage(error))
+    }
+  }
+
+  async function deleteTemplate(id: string) {
+    try {
+      await remove.mutateAsync(id)
+      setDeletingId(null)
+      showToast(copy.deleted)
+    } catch (error) {
+      setDeletingId(null)
+      showToast(errorMessage(error))
+    }
+  }
+
   return (
     <article className={cn(cardClass, 'p-6')}>
       <div className="flex items-start gap-3 border-b border-border pb-5">
@@ -1012,7 +1017,62 @@ function SmsTemplatesPanel({
           <h2 className="text-base font-semibold text-foreground">{copy.heading}</h2>
           <p className="mt-0.5 text-sm text-muted">{copy.subheading}</p>
         </div>
+        {canMutate && !creating ? (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="ml-auto shrink-0 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            {copy.new}
+          </button>
+        ) : null}
       </div>
+
+      {creating ? (
+        <div className="mt-5 space-y-3 rounded-xl border border-border bg-card px-4 py-4">
+          <Field label={copy.nameLabel} size="sm" labelWeight="medium">
+            <Input inputSize="sm" value={newName} onChange={(event) => setNewName(event.target.value)} />
+          </Field>
+          <Field label={copy.channelLabel} size="sm" labelWeight="medium">
+            <Select
+              inputSize="sm"
+              value={newChannel}
+              onChange={(event) => setNewChannel(event.target.value as 'SMS' | 'WHATSAPP' | 'EMAIL')}
+              options={Object.entries(copy.channels).map(([value, label]) => ({ value, label }))}
+            />
+          </Field>
+          {newChannel === 'EMAIL' ? (
+            <Field label={copy.subjectLabel} size="sm" labelWeight="medium">
+              <Input inputSize="sm" value={newSubject} onChange={(event) => setNewSubject(event.target.value)} />
+            </Field>
+          ) : null}
+          <Field label={copy.bodyLabel} size="sm" labelWeight="medium">
+            <Textarea inputSize="sm" value={newBody} onChange={(event) => setNewBody(event.target.value)} />
+          </Field>
+          {createError ? <FieldError message={createError} size="sm" /> : null}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void createTemplate()}
+              disabled={create.isPending}
+              className="rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {create.isPending ? copy.creating : copy.create}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCreating(false)
+                setCreateError(null)
+              }}
+              disabled={create.isPending}
+              className="rounded-xl border border-border px-3.5 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-60"
+            >
+              {copy.cancel}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-6 rounded-xl border border-primary/20 bg-accent-surface px-4 py-3 text-sm text-foreground">
         {copy.sendingNote}
@@ -1061,7 +1121,37 @@ function SmsTemplatesPanel({
                       {copy.edit}
                     </button>
                   ) : null}
+                  {canMutate && !editing ? (
+                    <button
+                      type="button"
+                      onClick={() => setDeletingId(template.id)}
+                      className="shrink-0 text-sm font-semibold text-danger hover:underline"
+                    >
+                      {copy.delete}
+                    </button>
+                  ) : null}
                 </div>
+                {deletingId === template.id ? (
+                  <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-sm text-foreground">
+                    <span>{copy.confirmDelete.replace('{name}', template.name)}</span>
+                    <button
+                      type="button"
+                      onClick={() => void deleteTemplate(template.id)}
+                      disabled={remove.isPending}
+                      className="rounded-xl bg-danger px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {remove.isPending ? copy.deleting : copy.confirmDeleteYes}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingId(null)}
+                      disabled={remove.isPending}
+                      className="rounded-xl border border-border px-3 py-1.5 text-sm font-semibold text-foreground"
+                    >
+                      {copy.cancel}
+                    </button>
+                  </div>
+                ) : null}
                 {editing ? (
                   <div className="mt-3 space-y-2">
                     <Textarea
@@ -1530,6 +1620,7 @@ function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
   const create = useCreateService()
   const update = useUpdateService()
   const remove = useDeleteService()
+  const [deletingService, setDeletingService] = useState<CatalogueService | null>(null)
   const { showToast } = useToast()
   const { categories, columns, tags, actions, addService } =
     setupWizardContent.serviceCatalogue
@@ -1590,7 +1681,9 @@ function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
     if (!canMutate) return
     try {
       await remove.mutateAsync(id)
+      setDeletingService(null)
     } catch (error) {
+      setDeletingService(null)
       if (error instanceof ApiError && error.status === 404) {
         showToast('This service no longer exists.')
         query.refetch()
@@ -1604,6 +1697,33 @@ function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
 
   return (
     <>
+      <Modal
+        open={deletingService !== null}
+        onClose={remove.isPending ? () => undefined : () => setDeletingService(null)}
+        title={settingsContent.serviceDelete.title}
+        size="compact"
+        maxWidthClass="max-w-md"
+        footer={
+          <div className="grid grid-cols-2 gap-3">
+            <ModalButton compact variant="secondary" className="w-full" disabled={remove.isPending} onClick={() => setDeletingService(null)}>
+              {settingsContent.serviceDelete.keep}
+            </ModalButton>
+            <ModalButton
+              compact
+              variant="danger"
+              className="w-full"
+              disabled={remove.isPending}
+              onClick={() => deletingService && void deleteService(deletingService.id)}
+            >
+              {remove.isPending ? settingsContent.serviceDelete.deleting : settingsContent.serviceDelete.confirm}
+            </ModalButton>
+          </div>
+        }
+      >
+        <p className="text-sm text-foreground">
+          {settingsContent.serviceDelete.body.replace('{name}', deletingService?.name ?? '')}
+        </p>
+      </Modal>
       <article className={cn(cardClass, 'p-6')}>
         <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
@@ -1697,7 +1817,7 @@ function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteService(service.id)}
+                        onClick={() => setDeletingService(service)}
                         disabled={pending}
                         className="rounded-lg bg-danger/10 px-3 py-1.5 text-sm font-medium text-danger transition-colors hover:bg-danger/15 disabled:opacity-60"
                       >

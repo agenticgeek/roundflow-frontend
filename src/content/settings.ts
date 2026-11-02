@@ -119,6 +119,13 @@ export const settingsContent = {
     reminderDescription: 'Visits don’t have time slots, so reminders go out at a fixed time.',
     reminderTime: 'Reminder time',
   },
+  serviceDelete: {
+    title: 'Delete this service?',
+    body: '“{name}” will be removed from the service catalogue.',
+    keep: 'Keep',
+    confirm: 'Yes, delete',
+    deleting: 'Deleting…',
+  },
   smsTemplates: {
     heading: 'SMS / WhatsApp Templates',
     subheading: 'Configure your customer messaging templates',
@@ -136,6 +143,21 @@ export const settingsContent = {
     /** GAP-017: shown when GoHighLevel isn't connected. */
     notConnectedNote: 'GoHighLevel isn’t connected yet, so these messages aren’t being sent.',
     connectMessaging: 'Connect messaging',
+    new: 'New template',
+    create: 'Create template',
+    creating: 'Creating…',
+    created: 'Template created',
+    nameLabel: 'Template name',
+    channelLabel: 'Channel',
+    bodyLabel: 'Message',
+    subjectLabel: 'Subject',
+    nameRequired: 'Give the template a name.',
+    subjectRequired: 'Email templates need a subject.',
+    delete: 'Delete',
+    deleting: 'Deleting…',
+    deleted: 'Template deleted',
+    confirmDelete: 'Delete “{name}”? This cannot be undone.',
+    confirmDeleteYes: 'Yes, delete',
   },
   integrations: {
     heading: 'Integrations',
@@ -232,10 +254,10 @@ export const settingsContent = {
     addForm: {
       title: 'Add New Area',
       fields: {
-        areaName: { label: 'Area Name', placeholder: 'e.g. Alnwick' },
+        areaName: { label: 'Area Name', placeholder: 'Area name' },
         postcodeSectors: {
           label: 'Postcode Sectors',
-          placeholder: 'e.g. NE66, NE67',
+          placeholder: 'Postcode sectors, comma-separated',
           hint: 'Separate multiple sectors with commas.',
         },
       },

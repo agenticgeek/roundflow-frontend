@@ -56,6 +56,7 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
   const [resumeDate, setResumeDate] = useState<string>(() => addDays(todayIsoDate(), DEFAULT_PAUSE_DAYS))
   const [notifySms, setNotifySms] = useState(true)
   const [smsMessage, setSmsMessage] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open || !property) return
@@ -64,6 +65,7 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
     setStartDate(todayIsoDate())
     setResumeDate(addDays(todayIsoDate(), DEFAULT_PAUSE_DAYS))
     setNotifySms(true)
+    setError(null)
     setSmsMessage(applyMessageTemplate(pauseServiceModal.defaultSmsMessage, property))
   }, [open, pauseServiceModal, property])
 
@@ -79,8 +81,13 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
 
   async function handlePause() {
     if (!canMutate || !property || pauseProperty.isPending) return
+    setError(null)
+    if (startDate < todayIsoDate()) {
+      setError(pauseServiceModal.validation.startInPast)
+      return
+    }
     if (duration === 'range' && resumeDate && resumeDate <= startDate) {
-      showToast('Resume date must be after the start date')
+      setError(pauseServiceModal.validation.resumeBeforeStart)
       return
     }
 
@@ -106,7 +113,10 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
         })
       }
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) return
+      if (error instanceof ApiError && error.status === 400) {
+        setError(error.message)
+        return
+      }
       showToast(error instanceof Error ? error.message : 'Could not pause service')
       return
     }
@@ -172,6 +182,12 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
         <DashboardIcon name="pause" className="h-5 w-5" />
       </span>
 
+      {error ? (
+        <p role="alert" className="rounded-lg border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+
       <Field label={pauseServiceModal.fields.reason} size="sm" labelWeight="medium">
         <Select
           inputSize="sm"
@@ -230,6 +246,7 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
               <Input
                 inputSize="sm"
                 type="date"
+                min={todayIsoDate()}
                 value={startDate}
                 onChange={(event) => setStartDate(event.target.value)}
                 className={cn(modalInputClass, 'rounded-lg bg-card pl-9')}
@@ -245,6 +262,7 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
               <Input
                 inputSize="sm"
                 type="date"
+                min={addDays(startDate, 1)}
                 value={resumeDate}
                 onChange={(event) => setResumeDate(event.target.value)}
                 className={cn(modalInputClass, 'rounded-lg bg-card pl-9')}

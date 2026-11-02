@@ -1,3 +1,10 @@
+import { useState } from 'react'
+import { Select } from '@/components/ui'
+import { useToast } from '@/components/ui/toast'
+import { useTechnicians } from '@/features/settings/hooks/useSettings'
+import { settingsTechniciansToRows } from '@/features/settings/lib/mappers'
+import { useAssignVisit } from '@/features/visits/hooks/useVisits'
+import { errorMessage } from '@/lib/errors'
 import type { TodaysWorkJob, TodaysWorkRound } from '@/content/todays-work'
 import { todaysWorkContent } from '@/content/todays-work'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
@@ -15,6 +22,9 @@ interface TodaysWorkRoundDetailPanelProps {
   onReassignTechnician?: (roundId: string) => void
   onPushMissedJobs?: (roundId: string) => void
 }
+
+/** Select value that means "unassign this visit". */
+const UNASSIGN = '__none__'
 
 const roundStatusClass: Record<TodaysWorkRound['status'], string> = {
   'in-progress': 'bg-primary/10 text-primary',
@@ -129,7 +139,7 @@ export function TodaysWorkRoundDetailPanel({
         ) : (
           <ul className="mt-3 space-y-2">
             {round.jobs.map((job) => (
-              <JobCard key={job.id} job={job} />
+              <JobCard key={job.id} job={job} canAssign={Boolean(onReassignTechnician)} />
             ))}
           </ul>
         )}
@@ -155,7 +165,55 @@ function SummaryCard({
   )
 }
 
-function JobCard({ job }: { job: TodaysWorkJob }) {
+function VisitAssign({ visitId }: { visitId: string }) {
+  const { detailPanel } = todaysWorkContent
+  const { showToast } = useToast()
+  const assign = useAssignVisit()
+  const techniciansQuery = useTechnicians()
+  const [error, setError] = useState<string | null>(null)
+  const options = settingsTechniciansToRows(techniciansQuery.data)
+    .filter((tech) => tech.appStatus !== 'inactive')
+    .map((tech) => ({ value: tech.id, label: tech.displayName }))
+
+  async function change(value: string) {
+    if (!value) return
+    setError(null)
+    try {
+      const result = await assign.mutateAsync({ visitId, technicianId: value === UNASSIGN ? null : value })
+      showToast(
+        result.technicianId
+          ? detailPanel.assign.assigned.replace('{name}', result.technicianName ?? '')
+          : detailPanel.assign.unassigned,
+      )
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
+
+  return (
+    <div className="mt-2 border-t border-border pt-2">
+      <Select
+        inputSize="sm"
+        aria-label={detailPanel.assign.label}
+        value=""
+        disabled={assign.isPending}
+        onChange={(event) => void change(event.target.value)}
+        options={[
+          { value: '', label: detailPanel.assign.placeholder },
+          ...options,
+          { value: UNASSIGN, label: detailPanel.assign.unassign },
+        ]}
+      />
+      {error ? (
+        <p role="alert" className="mt-1 text-xs text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function JobCard({ job, canAssign }: { job: TodaysWorkJob; canAssign: boolean }) {
   const { detailPanel } = todaysWorkContent
 
   return (
@@ -183,6 +241,8 @@ function JobCard({ job }: { job: TodaysWorkJob }) {
           {detailPanel.jobStatusLabels[job.status]}
         </span>
       </div>
+
+      {canAssign && job.status === 'scheduled' ? <VisitAssign visitId={job.id} /> : null}
 
       {job.paymentHold || job.issueNote ? (
         <div className="mt-2 space-y-1 border-t border-border pt-2">

@@ -1,4 +1,4 @@
-import type { PhotoRow } from '@/api/photos.api'
+import type { PhotoReviewStatus, PhotoRow } from '@/api/photos.api'
 
 export type PhotoGroup = {
   /** visitId, or `property` for photos not taken on a visit. */
@@ -6,6 +6,11 @@ export type PhotoGroup = {
   visitId: string | null
   visitDate: string | null
   technicianName: string | null
+  /** The visit's property address / customer (technician + property galleries). */
+  address: string | null
+  /** The visit's job reference, e.g. JOB-000123. */
+  jobRef: string | null
+  customerName: string | null
   before: PhotoRow[]
   after: PhotoRow[]
   other: PhotoRow[]
@@ -26,6 +31,9 @@ export function groupPhotosByVisit(rows: readonly PhotoRow[]): PhotoGroup[] {
         visitId: row.visitId,
         visitDate: row.visitDate,
         technicianName: row.technician?.name ?? null,
+        address: row.propertyAddress ?? null,
+        jobRef: row.jobRef ?? null,
+        customerName: row.customerName ?? null,
         before: [],
         after: [],
         other: [],
@@ -38,6 +46,13 @@ export function groupPhotosByVisit(rows: readonly PhotoRow[]): PhotoGroup[] {
     else group.other.push(row)
   }
   return [...groups.values()]
+}
+
+/** A group's review state: PENDING while any photo awaits review, else REJECTED if any was rejected. */
+export function groupReviewStatus(group: PhotoGroup): PhotoReviewStatus {
+  const statuses = groupPhotosInOrder(group).map((photo) => photo.reviewStatus)
+  if (statuses.includes('PENDING')) return 'PENDING'
+  return statuses.includes('REJECTED') ? 'REJECTED' : 'APPROVED'
 }
 
 /** A group's photos in display order (before, after, other) — the lightbox steps through these. */

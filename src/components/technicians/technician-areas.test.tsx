@@ -44,9 +44,9 @@ describe('GAP-004: technicians keep every service area', () => {
     expect(within(row).getByText('Alnwick')).toBeInTheDocument()
     expect(within(row).getByText('Amble')).toBeInTheDocument()
 
-    await user.type(screen.getByPlaceholderText('e.g. Sarah Johnson'), 'Alex Hill')
-    await user.type(screen.getByPlaceholderText('07700 900123'), '07700900123')
-    await user.type(screen.getByPlaceholderText('e.g. sarah@example.co.uk'), 'alex@example.com')
+    await user.type(screen.getByPlaceholderText('Full name'), 'Alex Hill')
+    await user.type(screen.getByPlaceholderText('Mobile number'), '07700900123')
+    await user.type(screen.getByPlaceholderText('name@company.com'), 'alex@example.com')
     await user.click(screen.getByRole('button', { name: 'Alnwick' }))
     await user.click(screen.getByRole('button', { name: 'Amble' }))
     await user.click(screen.getByRole('button', { name: 'Add technician' }))
@@ -65,9 +65,9 @@ describe('GAP-004: technicians keep every service area', () => {
     const { user } = renderWithProviders(
       <TechnicianForm mode="add" onCancel={vi.fn()} onSave={onSave} onRemove={vi.fn()} />,
     )
-    await user.type(screen.getByPlaceholderText('e.g. James Smith'), 'Alex')
-    await user.type(screen.getByPlaceholderText('e.g. 07700 900000'), '07700900123')
-    await user.type(screen.getByPlaceholderText('e.g. james@example.com'), 'alex@example.com')
+    await user.type(screen.getByPlaceholderText('Full name'), 'Alex')
+    await user.type(screen.getByPlaceholderText('Mobile number'), '07700900123')
+    await user.type(screen.getByPlaceholderText('name@company.com'), 'alex@example.com')
     const trigger = await screen.findByRole('button', { name: 'Service areas' })
     await vi.waitFor(() => expect(trigger).toBeEnabled())
     await user.click(trigger)

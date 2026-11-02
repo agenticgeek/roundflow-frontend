@@ -101,7 +101,7 @@ describe('Create round (GAP-011)', () => {
   async function walkToReview() {
     const utils = renderWithProviders(<CreateRoundModal open onClose={vi.fn()} />)
     const { user } = utils
-    await user.type(screen.getByPlaceholderText('e.g. Alnwick Monday'), 'Amble Mon')
+    await user.type(screen.getByPlaceholderText('Round name'), 'Amble Mon')
     await user.click(screen.getByRole('button', { name: /Continue/ }))
     await user.click(await screen.findByRole('button', { name: /Alnwick/ }))
     await user.click(screen.getByRole('button', { name: /Continue/ }))

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type userEvent from '@testing-library/user-event'
 import { fireEvent, screen } from '@testing-library/react'
 import { HttpResponse } from 'msw'
 import { setupApi } from '@/api/setup.api'
@@ -13,6 +14,12 @@ import type { PropertyDraft } from '@/types/setup-wizard'
 import { server } from '@/test/msw/server'
 import { on } from '@/test/msw/typed'
 import { renderWithProviders } from '@/test/render'
+
+/** Offers one 'Windows' (£18) service for the import and ticks it, so each row's price becomes £18. */
+async function pickWindows(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /Select services/ }))
+  await user.click(screen.getByRole('option', { name: /Windows/ }))
+}
 
 describe('setup API additions', () => {
   it('saves one property (step 9) and previews activation (step 11)', async () => {
@@ -79,10 +86,10 @@ describe('Business profile step (GAP-001)', () => {
 
   it('edits address line 2 and the town', () => {
     renderWithProviders(<BusinessProfileStep initialValues={businessProfileToForm(null)} onSubmit={vi.fn()} />)
-    fireEvent.change(screen.getByPlaceholderText('e.g. Unit 3'), { target: { value: 'Unit 3' } })
-    fireEvent.change(screen.getByPlaceholderText('e.g. Alnwick'), { target: { value: 'Alnwick' } })
-    expect(screen.getByPlaceholderText('e.g. Unit 3')).toHaveValue('Unit 3')
-    expect(screen.getByPlaceholderText('e.g. Alnwick')).toHaveValue('Alnwick')
+    fireEvent.change(screen.getByPlaceholderText('Address line 2'), { target: { value: 'Unit 3' } })
+    fireEvent.change(screen.getByPlaceholderText('Town / city'), { target: { value: 'Alnwick' } })
+    expect(screen.getByPlaceholderText('Address line 2')).toHaveValue('Unit 3')
+    expect(screen.getByPlaceholderText('Town / city')).toHaveValue('Alnwick')
   })
 })
 
@@ -103,8 +110,8 @@ describe('ImportPropertiesPanel bulk rejection (GAP-009)', () => {
         roundOptions={[{ value: 'r6', label: 'Amble 6-weekly' }]}
         roundFrequencies={{ r6: 'SIX_WEEKLY' }}
         serviceAreaOptions={[{ value: 'a1', label: 'Alnwick' }]}
-        serviceOptions={[]}
-        servicePrices={{}}
+        serviceOptions={[{ value: 's1', label: 'Windows' }]}
+        servicePrices={{ s1: 18 }}
         draftDefaults={draftDefaults}
         onSaveProperty={vi.fn()}
         onSaveProperties={onSaveProperties}
@@ -117,7 +124,7 @@ describe('ImportPropertiesPanel bulk rejection (GAP-009)', () => {
     await user.click(screen.getByRole('option', { name: 'Alnwick' }))
     await user.click(screen.getByRole('button', { name: 'Select a round' }))
     await user.click(screen.getByRole('option', { name: 'Amble 6-weekly' }))
-    await user.type(screen.getByPlaceholderText('e.g. 20'), '18')
+    await pickWindows(user)
     await user.click(screen.getByRole('button', { name: 'Import 1 properties' }))
     expect(await screen.findByText(/Postcode is not in a service area/)).toBeInTheDocument()
   })

@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
+import { useBusinessProfile } from '@/features/settings/hooks/useSettings'
+import { setTenantTimeZone } from '@/lib/timezone'
 import type { AppQuickActionId } from '@/content/app-shell'
 import { appShellContent } from '@/content/app-shell'
 import type { AppQuickActions } from '@/hooks/use-app-quick-actions'
@@ -34,6 +36,8 @@ export function AppShell({
   const { sidebar } = appShellContent
   const sidebarState = useAppSidebar()
   const { isTechnician } = useAppBootstrap()
+  const timezone = useBusinessProfile(!isTechnician).data?.timezone
+  useEffect(() => setTenantTimeZone(timezone), [timezone])
 
   function handleQuickAction(actionId: AppQuickActionId) {
     quickActions.handleQuickAction(actionId)

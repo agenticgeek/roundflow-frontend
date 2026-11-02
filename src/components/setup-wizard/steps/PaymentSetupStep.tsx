@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import type { WizardPaymentData } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { settingsContent } from '@/content/settings'
-import { Field, FieldError, Input, Select, Toggle } from '@/components/ui'
+import { Field, FieldError, Input, Select } from '@/components/ui'
+import { PaymentMethodsField } from '@/components/setup-wizard/PaymentMethodsField'
 import {
   GoCardlessTokenForm,
   GoCardlessWebhookSetup,
@@ -95,22 +96,11 @@ export function PaymentSetupStep({
   const [busy, setBusy] = useState<Provider | null>(null)
   const [providerError, setProviderError] = useState<{ provider: Provider; message: string } | null>(null)
 
-  // A default that needs a provider stops being valid once that provider is disconnected.
+  // Card link as the no-Direct-Debit action needs Stripe; payment methods can be accepted before connecting.
   useEffect(() => {
-    setValues((prev) => {
-      const next = { ...prev }
-      if (!connections.stripe && prev.noDirectDebitAction === 'card-link') next.noDirectDebitAction = 'invoice'
-      if (
-        (!connections.stripe && prev.defaultPaymentMethod === 'STRIPE') ||
-        (!connections.gocardless && prev.defaultPaymentMethod === 'GOCARDLESS')
-      ) {
-        next.defaultPaymentMethod = 'BACS'
-      }
-      return next.noDirectDebitAction === prev.noDirectDebitAction &&
-        next.defaultPaymentMethod === prev.defaultPaymentMethod
-        ? prev
-        : next
-    })
+    setValues((prev) =>
+      !connections.stripe && prev.noDirectDebitAction === 'card-link' ? { ...prev, noDirectDebitAction: 'invoice' } : prev,
+    )
   }, [connections.stripe, connections.gocardless])
 
   async function connectStripe() {
@@ -154,12 +144,6 @@ export function PaymentSetupStep({
   }
 
   const connected = connections
-
-  const methodOptions = content.methods.map((method) => ({
-    value: method.value,
-    label: method.label,
-    disabled: method.requires ? !connected[method.requires] : false,
-  }))
 
   const noDirectDebitOptions = content.noDirectDebitActions.map((action) => ({
     value: action.value,
@@ -278,7 +262,6 @@ export function PaymentSetupStep({
               setGcSecretSaved(false)
               // Connected, but not finished: the webhook still needs adding in GoCardless.
               setGcWebhook({ url: webhookUrl })
-              if (values.defaultPaymentMethod === 'BACS') updateField('defaultPaymentMethod', 'GOCARDLESS')
             }}
             onCancel={() => setGcFormOpen(false)}
           />
@@ -307,16 +290,13 @@ export function PaymentSetupStep({
 
       <WizardCard heading={defaults.heading} description={defaults.description}>
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label={fields.method.label} labelWeight="medium">
-            <Select
-              value={values.defaultPaymentMethod}
-              onChange={(event) => updateField('defaultPaymentMethod', event.target.value)}
-              options={methodOptions}
+          <div className="sm:col-span-2">
+            <PaymentMethodsField
+              values={values}
+              connections={connections}
+              onChange={(patch) => setValues((prev) => ({ ...prev, ...patch }))}
             />
-            {connections.stripe ? null : (
-              <p className="mt-2 text-sm text-muted">{fields.method.stripeDisabledHint}</p>
-            )}
-          </Field>
+          </div>
 
           <Field label={fields.timing.label} labelWeight="medium">
             <Select
@@ -378,17 +358,6 @@ export function PaymentSetupStep({
           </button>
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-6">
-          <div>
-            <p className="text-sm font-medium text-foreground sm:text-[15px]">{fields.debtHold.label}</p>
-            <p className="mt-0.5 text-sm text-muted">{fields.debtHold.description}</p>
-          </div>
-          <Toggle
-            checked={values.debtHoldEnabled}
-            onChange={(debtHoldEnabled) => updateField('debtHoldEnabled', debtHoldEnabled)}
-            ariaLabel={fields.debtHold.label}
-          />
-        </div>
       </WizardCard>
     </form>
   )

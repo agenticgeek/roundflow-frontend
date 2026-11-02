@@ -5,6 +5,7 @@ import {
 } from '@tanstack/react-query'
 import { settingsApi } from '@/api/settings.api'
 import type {
+  MessageTemplateInput,
   BusinessProfilePatch,
   PaymentSettingsPatch,
   RoundSettingsPatch,
@@ -21,10 +22,11 @@ import {
 
 // GET /settings/* works before setup is complete (only writes are gated), so reads aren't gated here.
 
-export function useBusinessProfile() {
+export function useBusinessProfile(enabled = true) {
   return useQuery({
     queryKey: queryKeys.settings.businessProfile,
     queryFn: ({ signal }) => settingsApi.getBusinessProfile(signal),
+    enabled,
   })
 }
 
@@ -247,9 +249,33 @@ export function useUpdateMessageTemplate() {
   })
 }
 
-export function useMessageTemplates() {
+function invalidateMessageTemplates(queryClient: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.settings.messageTemplates }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.setup.step(5) }),
+  ])
+}
+
+export function useCreateMessageTemplate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: MessageTemplateInput) => settingsApi.createMessageTemplate(input),
+    onSuccess: () => invalidateMessageTemplates(queryClient),
+  })
+}
+
+export function useDeleteMessageTemplate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => settingsApi.deleteMessageTemplate(id),
+    onSuccess: () => invalidateMessageTemplates(queryClient),
+  })
+}
+
+export function useMessageTemplates(enabled = true) {
   return useQuery({
     queryKey: queryKeys.settings.messageTemplates,
     queryFn: ({ signal }) => settingsApi.getMessageTemplates(signal),
+    enabled,
   })
 }

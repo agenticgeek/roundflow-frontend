@@ -12,9 +12,43 @@ if (!supabaseUrl || !supabaseAnonKey) {
   )
 }
 
+const REMEMBER_KEY = 'rf-remember-session'
+
+/** "Remember me": stay signed in across browser restarts (default), or only for this tab session. */
+export function setRememberSession(remember: boolean) {
+  try {
+    window.localStorage.setItem(REMEMBER_KEY, remember ? '1' : '0')
+  } catch {
+    // Storage blocked — the session simply falls back to the default store.
+  }
+}
+
+function sessionStore(): Storage {
+  try {
+    return window.localStorage.getItem(REMEMBER_KEY) === '0' ? window.sessionStorage : window.localStorage
+  } catch {
+    return window.localStorage
+  }
+}
+
+/** Reads from either store, writes to the one chosen at sign-in, and clears the other. */
+export const authStorage = {
+  getItem: (key: string) => window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key),
+  setItem: (key: string, value: string) => {
+    const target = sessionStore()
+    const other = target === window.localStorage ? window.sessionStorage : window.localStorage
+    other.removeItem(key)
+    target.setItem(key, value)
+  },
+  removeItem: (key: string) => {
+    window.localStorage.removeItem(key)
+    window.sessionStorage.removeItem(key)
+  },
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: window.localStorage,
+    storage: authStorage,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,

@@ -21,7 +21,7 @@ function paymentSettings() {
   )
 }
 
-describe('SettingsScreen', () => {
+describe('SettingsScreen', { timeout: 30_000 }, () => {
   it('Stripe connect redirects to Stripe, and shows why when it can’t (no client id)', async () => {
     paymentSettings()
     const assign = vi.fn()
@@ -29,9 +29,10 @@ describe('SettingsScreen', () => {
     const { user } = renderWithProviders(<SettingsScreen />, { route: '/settings/integrations' })
 
     vi.stubEnv('VITE_STRIPE_CONNECT_CLIENT_ID', '')
-    await user.click(await screen.findByRole('button', { name: 'Connect Stripe' }))
+    // The provider cards render after GET /settings/payment; wait for them explicitly (CI load made 1s too short).
+    await user.click(await screen.findByRole('button', { name: 'Connect Stripe' }, { timeout: 10_000 }))
     expect(assign).not.toHaveBeenCalled()
-    expect(await screen.findByText(/VITE_STRIPE_CONNECT_CLIENT_ID/)).toBeInTheDocument()
+    expect(await screen.findByText(/VITE_STRIPE_CONNECT_CLIENT_ID/, undefined, { timeout: 5_000 })).toBeInTheDocument()
 
     vi.stubEnv('VITE_STRIPE_CONNECT_CLIENT_ID', 'ca_test')
     await user.click(screen.getByRole('button', { name: 'Connect Stripe' }))
@@ -85,7 +86,9 @@ describe('SettingsScreen sections (GAP-001 / GAP-003 / GAP-008 / GAP-017)', () =
     const { user } = renderWithProviders(<SettingsScreen />, { route: '/settings' })
     await user.click(screen.getByRole('button', { name: 'Payment Setup' }))
     await user.click(await screen.findByRole('button', { name: 'Edit' }))
-    await user.click(screen.getByRole('button', { name: 'Default payment method' }))
+    // BUG-05: accept Cheque too, then make it the primary method.
+    await user.click(screen.getByRole('checkbox', { name: /Cheque/ }))
+    await user.click(screen.getByRole('button', { name: 'Primary payment method' }))
     await user.click(screen.getByRole('option', { name: 'Cheque' }))
     await user.click(screen.getByRole('button', { name: 'Customers without a Direct Debit' }))
     await user.click(screen.getByRole('option', { name: 'Send a card payment link' }))
@@ -100,14 +103,14 @@ describe('SettingsScreen sections (GAP-001 / GAP-003 / GAP-008 / GAP-017)', () =
     await user.type(dueDays, '30')
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
     await waitFor(() => expect(body).toBeDefined())
-    expect(body).toMatchObject({ defaultPaymentMethod: 'CHEQUE', invoiceDueDays: 30, noDirectDebitAction: 'SEND_PAYMENT_LINK' })
+    expect(body).toMatchObject({ defaultPaymentMethod: 'CHEQUE', acceptedPaymentMethods: expect.arrayContaining(['CHEQUE']), invoiceDueDays: 30, noDirectDebitAction: 'SEND_PAYMENT_LINK' })
   })
 
   it('Round Settings saves the clean method, reminder and auto-generate', async () => {
     let body: Record<string, unknown> | undefined
     server.use(
       on('get', '/settings/round-settings', () =>
-        HttpResponse.json({ reminderMode: 'EVENING_BEFORE', reminderTime: '18:00', defaultCleanMethod: 'TRADITIONAL', autoCreateNextVisit: true }),
+        HttpResponse.json({ preCleanReminders: [{ type: 'EVENING_BEFORE', time: '18:00' }], defaultCleanMethod: 'TRADITIONAL', autoCreateNextVisit: true }),
       ),
       on('patch', '/settings/round-settings', async ({ request }) => {
         body = (await request.json()) as Record<string, unknown>
@@ -119,14 +122,19 @@ describe('SettingsScreen sections (GAP-001 / GAP-003 / GAP-008 / GAP-017)', () =
     await user.click(await screen.findByRole('button', { name: 'Edit' }))
     await user.click(screen.getByRole('button', { name: 'Default clean method' }))
     await user.click(screen.getByRole('option', { name: 'Water-fed pole' }))
-    await user.click(screen.getByRole('button', { name: 'Pre-clean reminder' }))
-    await user.click(screen.getByRole('option', { name: 'The morning of the clean' }))
-    await user.click(screen.getByRole('button', { name: 'Reminder time' }))
+    // BUG-01: both reminders can be on, each with its own time.
+    await user.click(screen.getByRole('checkbox', { name: /The morning of the clean/ }))
+    await user.click(screen.getByRole('button', { name: /The morning of the clean — Reminder time/ }))
     await user.click(screen.getByRole('option', { name: '6:30 AM' }))
     await user.click(screen.getByRole('switch'))
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
     await waitFor(() => expect(body).toBeDefined())
-    expect(body).toMatchObject({ defaultCleanMethod: 'WATER_FED_POLE', reminderMode: 'MORNING_OF', reminderTime: '06:30', autoCreateNextVisit: false })
+    expect(body).toMatchObject({ defaultCleanMethod: 'WATER_FED_POLE', autoCreateNextVisit: false,
+      preCleanReminders: [
+        { type: 'EVENING_BEFORE', time: '18:00' },
+        { type: 'MORNING_OF', time: '06:30' },
+      ],
+    })
   })
 
   it('SMS Templates point at Integrations while GoHighLevel is not connected', async () => {

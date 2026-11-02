@@ -1,3 +1,4 @@
+import { PAYMENT_METHOD_OPTIONS } from '@/lib/payment-methods'
 import type {
   BusinessProfileData,
   CatalogueService,
@@ -145,7 +146,6 @@ export interface SetupWizardContent {
       heading: string
       defaultPaymentRule: { label: string }
       vatApplicable: { label: string; description: string }
-      debtHoldEnabled: { label: string; description: string }
     }
     paymentRules: SelectOption[]
     defaults: PaymentSetupData
@@ -427,11 +427,10 @@ export interface SetupWizardContent {
       heading: string
       description: string
       fields: {
-        method: { label: string; stripeDisabledHint: string }
+        method: { label: string; acceptedLabel: string; notConnectedTag: string; primaryHint: string }
         timing: { label: string; hint: string }
         dueDays: { label: string; suffix: string; invalid: string }
         noDirectDebit: { label: string; hint: string }
-        debtHold: { label: string; description: string }
       }
       vat: { label: string; registered: string; notRegistered: string; source: string; change: string }
     }
@@ -592,8 +591,6 @@ export interface SetupWizardContent {
       servicesFilterLabel: string
       servicesFilterPlaceholder: string
       noServicesHint: string
-      priceLabel: string
-      pricePlaceholder: string
       customizeHint: string
       parse: string
       clear: string
@@ -609,7 +606,6 @@ export interface SetupWizardContent {
       unrecognized: string
       roundRequired: string
       serviceAreaRequired: string
-      priceRequired: string
       allPricesRequired: string
       bulkPartialFailure: string
       rowError: string
@@ -721,37 +717,37 @@ const defaultMessageTemplates = [
     id: 'pre-clean-reminder',
     name: 'Pre-Clean Reminder',
     channel: 'sms',
-    body: 'Hi {{customer_name}}, your window clean is scheduled for {{clean_date}}. Please ensure access is available. Thanks, {{business_name}}',
+    body: 'Hi {{customerName}}, your window clean is scheduled for {{date}}. Please ensure access is available. Thanks, {{businessName}}',
   },
   {
     id: 'payment-reminder',
     name: 'Payment Reminder',
     channel: 'sms',
-    body: 'Hi {{customer_name}}, payment of £{{amount_owed}} is due for your recent window clean. Please pay at your earliest convenience. Thanks, {{business_name}}',
+    body: 'Hi {{customerName}}, payment of £{{amount}} is due for your recent window clean. Please pay at your earliest convenience. Thanks, {{businessName}}',
   },
   {
     id: 'payment-failed',
     name: 'Payment Failed',
     channel: 'sms',
-    body: 'Hi {{customer_name}}, your payment of £{{amount_owed}} was unsuccessful. Please update your payment details. Thanks, {{business_name}}',
+    body: 'Hi {{customerName}}, your payment of £{{amount}} was unsuccessful. Please update your payment details. Thanks, {{businessName}}',
   },
   {
     id: 'access-issue',
     name: 'Access Issue Follow-up',
     channel: 'sms',
-    body: "Hi {{customer_name}}, we couldn't access your property for today's clean. Please contact us to reschedule. Thanks, {{business_name}}",
+    body: "Hi {{customerName}}, we couldn't access your property for today's clean. Please contact us to reschedule. Thanks, {{businessName}}",
   },
   {
     id: 'job-completed',
     name: 'Job Completed',
     channel: 'whatsapp',
-    body: 'Hi {{customer_name}}, your windows have been cleaned today. Thank you for your business! {{business_name}}',
+    body: 'Hi {{customerName}}, your windows have been cleaned today. Thank you for your business! {{businessName}}',
   },
   {
     id: 'weather-delay',
     name: 'Weather Delay',
     channel: 'sms',
-    body: "Hi {{customer_name}}, due to weather conditions we've had to reschedule your clean to {{new_date}}. Sorry for any inconvenience. {{business_name}}",
+    body: "Hi {{customerName}}, due to weather conditions we've had to reschedule your clean to {{date}}. Sorry for any inconvenience. {{businessName}}",
   },
 ] satisfies MessageTemplate[]
 
@@ -918,44 +914,44 @@ export const setupWizardContent = {
     fields: {
       businessName: {
         label: 'Business name',
-        placeholder: 'e.g. Crystal Clear Window Cleaning',
+        placeholder: 'Business name',
         required: true,
       },
       businessPhone: {
         label: 'Business phone',
-        placeholder: '07123 456789',
+        placeholder: 'Phone number',
         required: true,
       },
       businessEmail: {
         label: 'Business email',
-        placeholder: 'info@example.co.uk',
+        placeholder: 'name@company.com',
         required: true,
       },
       companyNumber: {
         label: 'Company number (optional)',
-        placeholder: 'e.g. 12345678',
+        placeholder: 'Company number',
         required: false,
       },
       businessAddress: {
         label: 'Address line 1',
-        placeholder: 'e.g. 12 Bondgate Within',
+        placeholder: 'Address line 1',
       },
       addressLine2: {
         label: 'Address line 2 (optional)',
-        placeholder: 'e.g. Unit 3',
+        placeholder: 'Address line 2',
       },
       town: {
         label: 'Town',
-        placeholder: 'e.g. Alnwick',
+        placeholder: 'Town / city',
       },
       postcode: {
         label: 'Postcode',
-        placeholder: 'e.g. NE66 1TD',
+        placeholder: 'Postcode',
         invalid: 'Enter a valid UK postcode, e.g. NE66 1TD.',
       },
       vatNumber: {
         label: 'VAT number',
-        placeholder: 'e.g. GB 123 4567 89',
+        placeholder: 'VAT number',
         required: false,
       },
       vatRegistered: {
@@ -1007,10 +1003,10 @@ export const setupWizardContent = {
       description:
         'Printed in the invoice footer so customers paying by bank transfer know where to send payment. UK accounts only: 8-digit account number and 6-digit sort code.',
       fields: {
-        accountName: { label: 'Account Name', placeholder: 'e.g. Alnwick Window Cleaning Ltd' },
-        bankName: { label: 'Bank Name', optional: '(optional)', placeholder: 'e.g. Barclays' },
-        accountNumber: { label: 'Account Number', placeholder: '12345678' },
-        sortCode: { label: 'Sort Code', placeholder: '30-80-12' },
+        accountName: { label: 'Account Name', placeholder: 'Account holder name' },
+        bankName: { label: 'Bank Name', optional: '(optional)', placeholder: 'Bank name' },
+        accountNumber: { label: 'Account Number', placeholder: 'Account number' },
+        sortCode: { label: 'Sort Code', placeholder: 'Sort code' },
       },
       validation: {
         accountNameRequired: 'Account name is required when adding bank details.',
@@ -1065,10 +1061,6 @@ export const setupWizardContent = {
         label: 'VAT Applicable',
         description: 'Include VAT in invoices by default',
       },
-      debtHoldEnabled: {
-        label: 'Debt Hold Enabled',
-        description: 'Block service if payment is overdue',
-      },
     },
     paymentRules: [
       { value: 'collect-after-visit', label: 'Collect after Visit' },
@@ -1117,7 +1109,7 @@ export const setupWizardContent = {
       subtitle: 'Create a custom service that can be added to jobs.',
       editSubtitle: 'Update this service in your catalogue.',
       fields: {
-        name: { label: 'Service Name', placeholder: 'e.g. Pressure Washing' },
+        name: { label: 'Service Name', placeholder: 'Service name' },
         description: {
           label: 'Description',
           optional: '(optional)',
@@ -1164,7 +1156,7 @@ export const setupWizardContent = {
       autoGenerateVisits: {
         label: 'Create the next visit automatically',
         description:
-          'When a visit is completed or skipped, the next one is scheduled from the round’s frequency. If the customer owes money, the next visit is marked On hold.',
+          'When a visit is completed or skipped, the next one is scheduled from the round’s frequency.',
       },
       reminderTime: { label: 'Reminder time' },
     },
@@ -1226,8 +1218,9 @@ export const setupWizardContent = {
     defaults: {
       recurringCycle: '4-week',
       cleanMethod: 'both',
-      reminderSchedule: 'evening-before',
+      eveningReminderEnabled: true,
       eveningReminderTime: '19:00',
+      morningReminderEnabled: false,
       morningReminderTime: '07:00',
       autoGenerateVisits: true,
     },
@@ -1253,7 +1246,7 @@ export const setupWizardContent = {
       fields: {
         body: {
           label: 'Message Body',
-          placeholder: 'Hi {{customer_name}}, your message here...',
+          placeholder: 'Hi {{customerName}}, your message here...',
         },
       },
       actions: { cancel: 'Cancel', save: 'Save Changes' },
@@ -1278,11 +1271,11 @@ export const setupWizardContent = {
     addForm: {
       title: 'Add New Technician',
       fields: {
-        fullName: { label: 'Full Name', placeholder: 'e.g. Mark Thompson' },
-        mobile: { label: 'Mobile Number', placeholder: '07123 456789' },
-        email: { label: 'Email', placeholder: 'mark@example.com' },
+        fullName: { label: 'Full Name', placeholder: 'Full name' },
+        mobile: { label: 'Mobile Number', placeholder: 'Mobile number' },
+        email: { label: 'Email', placeholder: 'name@company.com' },
         role: { label: 'Role', optional: '(optional)' },
-        defaultArea: { label: 'Default Area', placeholder: 'e.g. Alnwick' },
+        defaultArea: { label: 'Default Area', placeholder: 'Default area' },
       },
       actions: { confirm: 'Add Technician', cancel: 'Cancel' },
       validation: {
@@ -1332,14 +1325,14 @@ export const setupWizardContent = {
       title: 'Add a service area',
       editTitle: 'Edit service area',
       fields: {
-        areaName: { label: 'Area name', placeholder: 'e.g. Alnwick' },
+        areaName: { label: 'Area name', placeholder: 'Area name' },
         postcodeSectors: {
           label: 'Postcode sectors',
           placeholder: 'Type a sector, press Enter',
           hint: 'e.g. NE66 1 — the first part of the postcode plus the next digit',
           remove: 'Remove {sector}',
         },
-        notes: { label: 'Notes (optional)', placeholder: 'e.g. Town centre and surrounding villages' },
+        notes: { label: 'Notes (optional)', placeholder: 'Notes' },
       },
       actions: { confirm: 'Add area', save: 'Save area', cancel: 'Cancel' },
       validation: {
@@ -1449,12 +1442,12 @@ export const setupWizardContent = {
       notes: 'Access & notes',
     },
     fields: {
-      postcode: { label: 'Postcode', placeholder: 'e.g. NE66 1AB', area: 'Area: {area}', noArea: 'No matching area' },
+      postcode: { label: 'Postcode', placeholder: 'Postcode', area: 'Area: {area}', noArea: 'No matching area' },
       propertyType: { label: 'Property type' },
-      address: { label: 'Address', placeholder: 'e.g. 4 Hotspur Street, Alnwick' },
-      customerName: { label: 'Customer name', placeholder: 'e.g. John Smith' },
-      mobile: { label: 'Mobile', placeholder: '07700 900789' },
-      email: { label: 'Email', placeholder: 'e.g. john@example.co.uk', hint: 'Needed to email invoices' },
+      address: { label: 'Address', placeholder: 'Address' },
+      customerName: { label: 'Customer name', placeholder: 'Customer name' },
+      mobile: { label: 'Mobile', placeholder: 'Mobile number' },
+      email: { label: 'Email', placeholder: 'name@company.com', hint: 'Needed to email invoices' },
       propertyName: { label: 'Property name (optional)', placeholder: 'Defaults to the address' },
       services: { label: 'Services', placeholder: 'Select services' },
       price: { label: 'Price per visit', placeholder: '£0.00', hint: 'Starts from the service’s default price' },
@@ -1464,9 +1457,9 @@ export const setupWizardContent = {
         hint: 'For existing customers — keeps their cycle instead of starting fresh',
       },
       sendDdLink: { label: 'Send a Direct Debit setup link to the customer now' },
-      accessNotes: { label: 'Access notes', placeholder: 'e.g. Side gate, code 1234' },
-      riskNotes: { label: 'Risk notes', placeholder: 'e.g. Dog in back garden' },
-      internalNotes: { label: 'Internal notes (not shown to technicians)', placeholder: 'e.g. Prefers text over calls' },
+      accessNotes: { label: 'Access notes', placeholder: 'Access notes' },
+      riskNotes: { label: 'Risk notes', placeholder: 'Risk notes' },
+      internalNotes: { label: 'Internal notes (not shown to technicians)', placeholder: 'Internal notes' },
     },
     round: {
       summary: 'Every {day}, {frequency}',
@@ -1515,28 +1508,30 @@ export const setupWizardContent = {
     footerInfo:
       'Messages are sent through your GHL account. Until it’s connected, they’re saved and shown to you instead of being sent.',
     variables: [
-      'customer_name',
-      'property_address',
-      'visit_date',
+      'customerName',
+      'firstName',
+      'address',
+      'date',
+      'dueDate',
       'amount',
-      'invoice_number',
-      'pay_link',
-      'dd_setup_link',
-      'business_name',
+      'invoiceNumber',
+      'paymentLink',
+      'roundName',
+      'technicianName',
+      'businessName',
     ],
     previewValues: {
-      customer_name: 'John Smith',
-      property_address: '4 Hotspur St',
-      visit_date: 'Mon 19 Oct',
+      customerName: 'John Smith',
+      firstName: 'John',
+      address: '4 Hotspur St',
+      date: 'Mon 19 Oct',
+      dueDate: 'Mon 26 Oct',
       amount: '18.00',
-      invoice_number: 'INV-2026-014',
-      pay_link: 'pay.roundflow.app/i/7Kq2',
-      dd_setup_link: 'pay.roundflow.app/dd/3Fh8',
-      business_name: 'your business',
-      // Older template variables.
-      clean_date: 'Mon 19 Oct',
-      new_date: 'Tue 20 Oct',
-      amount_owed: '18.00',
+      invoiceNumber: 'INV-2026-014',
+      paymentLink: 'pay.roundflow.app/i/7Kq2',
+      roundName: 'Alnwick Monday',
+      technicianName: 'Sam',
+      businessName: 'your business',
     },
     // Older wizard names, and the templates the backend seeds for new tenants.
     aliases: {
@@ -1554,7 +1549,7 @@ export const setupWizardContent = {
         group: 'visits',
         description: 'Sent before a clean, at the time set in Round Settings',
         channels: ['sms'],
-        body: 'Hi {{customer_name}}, we’re cleaning your windows at {{property_address}} on {{visit_date}}. Please leave side gates unlocked. Thanks, {{business_name}}',
+        body: 'Hi {{customerName}}, we’re cleaning your windows at {{address}} on {{date}}. Please leave side gates unlocked. Thanks, {{businessName}}',
       },
       {
         key: 'visit-completed',
@@ -1562,7 +1557,7 @@ export const setupWizardContent = {
         group: 'visits',
         description: 'Sent when a technician marks the visit done',
         channels: ['whatsapp'],
-        body: 'Hi {{customer_name}}, your windows at {{property_address}} have been cleaned today. Thank you! {{business_name}}',
+        body: 'Hi {{customerName}}, your windows at {{address}} have been cleaned today. Thank you! {{businessName}}',
       },
       {
         key: 'access-issue',
@@ -1570,7 +1565,7 @@ export const setupWizardContent = {
         group: 'visits',
         description: 'Sent when a technician can’t get in',
         channels: ['sms'],
-        body: 'Hi {{customer_name}}, we couldn’t get access to {{property_address}} today. Reply to rearrange your clean. Thanks, {{business_name}}',
+        body: 'Hi {{customerName}}, we couldn’t get access to {{address}} today. Reply to rearrange your clean. Thanks, {{businessName}}',
       },
       {
         key: 'weather-delay',
@@ -1578,7 +1573,7 @@ export const setupWizardContent = {
         group: 'visits',
         description: 'Sent when a round is moved because of the weather',
         channels: ['sms'],
-        body: 'Hi {{customer_name}}, due to the weather we’ve moved your window clean to {{visit_date}}. Sorry for any inconvenience. {{business_name}}',
+        body: 'Hi {{customerName}}, due to the weather we’ve moved your window clean to {{date}}. Sorry for any inconvenience. {{businessName}}',
       },
       {
         key: 'invoice-link',
@@ -1586,7 +1581,7 @@ export const setupWizardContent = {
         group: 'payments',
         description: 'Sent after a visit for customers without a Direct Debit',
         channels: ['sms', 'email'],
-        body: 'Hi {{customer_name}}, your window clean at {{property_address}} is done. Invoice {{invoice_number}}: £{{amount}}. Pay securely here: {{pay_link}} — Thanks, {{business_name}}',
+        body: 'Hi {{customerName}}, your window clean at {{address}} is done. Invoice {{invoiceNumber}}: £{{amount}}. Pay securely here: {{paymentLink}} — Thanks, {{businessName}}',
       },
       {
         key: 'dd-setup-link',
@@ -1594,7 +1589,7 @@ export const setupWizardContent = {
         group: 'payments',
         description: 'Sent to set up a Direct Debit with GoCardless',
         channels: ['sms', 'email'],
-        body: 'Hi {{customer_name}}, set up a Direct Debit for your window cleaning and you’ll never need to pay by hand: {{dd_setup_link}} — Thanks, {{business_name}}',
+        body: 'Hi {{customerName}}, set up a Direct Debit for your window cleaning and you’ll never need to pay by hand: {{paymentLink}} — Thanks, {{businessName}}',
       },
       {
         key: 'payment-reminder',
@@ -1602,7 +1597,7 @@ export const setupWizardContent = {
         group: 'payments',
         description: 'Sent when an invoice is overdue',
         channels: ['sms'],
-        body: 'Hi {{customer_name}}, a reminder that £{{amount}} for invoice {{invoice_number}} is now due. Pay here: {{pay_link}} — Thanks, {{business_name}}',
+        body: 'Hi {{customerName}}, a reminder that £{{amount}} for invoice {{invoiceNumber}} is now due. Pay here: {{paymentLink}} — Thanks, {{businessName}}',
       },
       {
         key: 'payment-failed',
@@ -1610,7 +1605,7 @@ export const setupWizardContent = {
         group: 'payments',
         description: 'Sent when a Direct Debit or card payment fails',
         channels: ['sms'],
-        body: 'Hi {{customer_name}}, your payment of £{{amount}} didn’t go through. Please pay here: {{pay_link}} — Thanks, {{business_name}}',
+        body: 'Hi {{customerName}}, your payment of £{{amount}} didn’t go through. Please pay here: {{paymentLink}} — Thanks, {{businessName}}',
       },
       {
         key: 'complaint-received',
@@ -1618,7 +1613,7 @@ export const setupWizardContent = {
         group: 'other',
         description: 'Sent when you log a complaint for a customer',
         channels: ['email'],
-        body: 'Hi {{customer_name}}, thanks for letting us know about your clean at {{property_address}}. We’re looking into it and will be in touch shortly. {{business_name}}',
+        body: 'Hi {{customerName}}, thanks for letting us know about your clean at {{address}}. We’re looking into it and will be in touch shortly. {{businessName}}',
       },
     ],
   },
@@ -1652,19 +1647,16 @@ export const setupWizardContent = {
       description: 'Used for new properties — change any property later',
       fields: {
         method: {
-          label: 'Default payment method',
-          stripeDisabledHint: 'Card link (Stripe) is disabled until Stripe is connected',
+          label: 'Primary payment method',
+          acceptedLabel: 'Payment methods you accept',
+          notConnectedTag: 'Not connected yet',
+          primaryHint: 'Used for new customers unless you pick another. Choose from the methods you accept.',
         },
         timing: { label: 'When to take payment', hint: 'Or: once a day for all completed visits' },
         dueDays: { label: 'Invoice due after', suffix: 'days', invalid: 'Enter a number of days (0–90).' },
         noDirectDebit: {
           label: 'Customers without a Direct Debit',
           hint: 'Becomes “Send a card payment link” once Stripe is connected',
-        },
-        debtHold: {
-          label: 'Put the next clean on hold if payment is overdue',
-          description:
-            'The visit stays on the planner marked “On hold” and no reminder is sent. Released automatically when paid.',
         },
       },
       vat: {
@@ -1694,6 +1686,7 @@ export const setupWizardContent = {
       goCardlessConnected: false,
       stripeConnected: false,
       defaultPaymentMethod: 'BACS',
+      acceptedPaymentMethods: ['BACS'],
       paymentTiming: 'after-visit',
       invoiceDueDays: '7',
       noDirectDebitAction: 'invoice',
@@ -1708,11 +1701,11 @@ export const setupWizardContent = {
       title: 'Add a technician',
       editTitle: 'Edit technician',
       fields: {
-        fullName: { label: 'Full name', placeholder: 'e.g. Sarah Johnson' },
-        mobile: { label: 'Mobile', placeholder: '07700 900123' },
+        fullName: { label: 'Full name', placeholder: 'Full name' },
+        mobile: { label: 'Mobile', placeholder: 'Mobile number' },
         email: {
           label: 'Email',
-          placeholder: 'e.g. sarah@example.co.uk',
+          placeholder: 'name@company.com',
           hint: 'The app invite is sent here',
         },
         role: { label: 'Role', hint: 'Technician · Senior · Lead · Trainee' },
@@ -1771,7 +1764,7 @@ export const setupWizardContent = {
         area: { label: 'Area', placeholder: 'Select an area' },
         name: {
           label: 'Round name',
-          placeholder: 'e.g. Alnwick Monday',
+          placeholder: 'Round name',
           placeholderFor: 'e.g. {area} {day}',
         },
         day: { label: 'Day', hint: 'Only your working days (Step {step}) are listed' },
@@ -1823,7 +1816,7 @@ export const setupWizardContent = {
     heading: 'Assign Area to Round',
     subheading: 'Link areas to specific rounds for scheduling',
     fields: {
-      areaName: { label: 'Service Area Name', placeholder: 'Example: Alnwick' },
+      areaName: { label: 'Service Area Name', placeholder: 'Service area name' },
       postcodeSector: {
         label: 'Post Code Sector (for precise allotment)',
         placeholder: 'XX-XXXX',
@@ -1907,7 +1900,7 @@ export const setupWizardContent = {
       openButton: 'Import from CSV',
       title: 'Import properties from a spreadsheet',
       description:
-        'Upload a CSV or Excel (.xlsx) file, or paste rows copied from your customer export. We read the name, phone, email and service address columns. Pick the round and a default price to apply to every imported property — you can edit each one later.',
+        'Upload a CSV or Excel (.xlsx) file, or paste rows copied from your customer export. We read the name, phone, email and service address columns. Pick the round to apply to every imported property — you can edit each one later.',
       pasteLabel: 'Paste your rows (including the header row)',
       pastePlaceholder:
         'First name\tLast name\tMobile phone\tEmail\tService street 1\tService city\tService postcode\nOliver\tClarke\t07500 208 733\toliver@example.com\t63 Manor Road\tLiverpool\tL24 2XD',
@@ -1922,10 +1915,8 @@ export const setupWizardContent = {
       servicesFilterLabel: 'Services to offer (pick which apply, then check/uncheck per property)',
       servicesFilterPlaceholder: 'Select services',
       noServicesHint: 'Pick services above to assign them per property.',
-      priceLabel: 'Default price per visit (£)',
-      pricePlaceholder: 'e.g. 20',
       customizeHint:
-        'Each property’s price is the sum of its checked services — tick/untick services per row, or type a custom price.',
+        'Each property’s price is the sum of its checked services — tick or untick services per row.',
       parse: 'Preview',
       clear: 'Clear',
       cancel: 'Cancel',
@@ -1947,8 +1938,7 @@ export const setupWizardContent = {
         "Couldn't recognise the columns. Make sure the first pasted line is the header row (e.g. First name, Last name, Service postcode).",
       roundRequired: 'Choose a round for the imported properties.',
       serviceAreaRequired: 'Choose a service area for the imported properties.',
-      priceRequired: 'Enter a default price per visit.',
-      allPricesRequired: 'Enter a price for every property before importing.',
+      allPricesRequired: 'Tick at least one priced service for every property before importing.',
       bulkPartialFailure:
         'The import stopped partway ({message}). Rows that were saved have been taken off this list, so importing again only sends the rest.',
       rowError: 'Row {row}',
@@ -1996,19 +1986,19 @@ export const setupWizardContent = {
       address: 'Address',
     },
     fields: {
-      customerName: { label: 'Customer Name', placeholder: 'Jack Big' },
+      customerName: { label: 'Customer Name', placeholder: 'Customer name' },
       propertyName: {
         label: 'Property Name',
         optional: '(optional / auto customer name)',
         placeholder: 'Property Name',
       },
-      phone: { label: 'Phone Number', placeholder: '07123 456789' },
-      landline: { label: 'Landline Number', optional: '(optional)', placeholder: '01665 600000' },
-      email: { label: 'Email', optional: '(optional)', placeholder: 'customer@example.com' },
-      fullAddress: { label: 'Full Address', placeholder: 'Street#X, 25th Avenue Park' },
-      postcode: { label: 'Postcode', placeholder: 'NE66 1AA' },
+      phone: { label: 'Phone Number', placeholder: 'Phone number' },
+      landline: { label: 'Landline Number', optional: '(optional)', placeholder: 'Landline number' },
+      email: { label: 'Email', optional: '(optional)', placeholder: 'name@company.com' },
+      fullAddress: { label: 'Full Address', placeholder: 'Full address' },
+      postcode: { label: 'Postcode', placeholder: 'Postcode' },
       serviceArea: { label: 'Service Area', placeholder: 'Select service area' },
-      propertyType: { label: 'Property Type', placeholder: 'House' },
+      propertyType: { label: 'Property Type', placeholder: 'Select property type' },
       cleaningFrequency: { label: 'Cleaning Frequency' },
       pricePerVisit: {
         label: 'Price per visit',
@@ -2017,9 +2007,9 @@ export const setupWizardContent = {
       },
       vat: { label: 'VAT (Yes/No)', placeholder: 'Select' },
       paymentMethod: { label: 'Payment Method', placeholder: 'Select' },
-      startDate: { label: 'Start Date', placeholder: '01/02/2025' },
+      startDate: { label: 'Start Date', placeholder: 'DD/MM/YYYY' },
       preferredDay: { label: 'Preferred Day', optional: '(optional)', placeholder: 'Select' },
-      nextVisitDate: { label: 'Next Visit Date', optional: '(optional)', placeholder: '01/03/2025' },
+      nextVisitDate: { label: 'Next Visit Date', optional: '(optional)', placeholder: 'DD/MM/YYYY' },
       customerNotes: {
         label: 'Customer Notes',
         hint: '(internal)',
@@ -2056,14 +2046,7 @@ export const setupWizardContent = {
       { value: 'yes', label: 'Yes' },
       { value: 'no', label: 'No' },
     ],
-    paymentMethods: [
-      { value: '', label: 'Select' },
-      { value: 'GOCARDLESS', label: 'GoCardless' },
-      { value: 'STRIPE', label: 'Stripe' },
-      { value: 'CASH', label: 'Cash' },
-      { value: 'CHEQUE', label: 'Cheque' },
-      { value: 'BACS', label: 'Bank Transfer' },
-    ],
+    paymentMethods: [{ value: '', label: 'Select' }, ...PAYMENT_METHOD_OPTIONS],
     preferredDays: [
       { value: '', label: 'Select' },
       { value: 'MON', label: 'Monday' },

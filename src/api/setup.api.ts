@@ -2,6 +2,8 @@ import { api } from '@/api/client'
 import type { components } from '@/api/types.gen'
 import type {
   BusinessSettings,
+  PaymentMethod,
+  PreCleanReminder,
   Round,
   RoundInput,
   Service,
@@ -31,8 +33,10 @@ export type SetupStep1Input = components['schemas']['BusinessProfileInput']
 export type SetupStep2Input = Omit<
   components['schemas']['PaymentSetupInput'],
   'gocardlessConnected' | 'stripeConnected'
->
-export type SetupStep4Input = components['schemas']['RoundSettingsInput']
+> & { acceptedPaymentMethods?: PaymentMethod[] }
+export type SetupStep4Input = components['schemas']['RoundSettingsInput'] & {
+  preCleanReminders?: PreCleanReminder[]
+}
 /**
  * One property for POST /setup/step/9. `roundId` stays optional ("Leave unassigned"); GAP-010
  * adds `customerId` (attach to an existing customer) and `lastCleanedDate`.

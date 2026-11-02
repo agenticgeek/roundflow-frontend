@@ -37,7 +37,7 @@ export const ROUTES = {
   technicianDetail: '/technicians/:technicianId',
   technicianEdit: '/technicians/:technicianId/edit',
   technicianConversation: '/technicians/:technicianId/conversation',
-  technicianPhotos: '/technicians/:technicianId/photos/:photoJobId',
+  technicianPhotos: '/technicians/:technicianId/photos/:visitId',
 } as const
 
 export type RouteKey = keyof typeof ROUTES
@@ -59,6 +59,6 @@ export function technicianConversationPath(technicianId: string) {
   return `/technicians/${technicianId}/conversation`
 }
 
-export function technicianPhotosPath(technicianId: string, photoJobId: string) {
-  return `/technicians/${technicianId}/photos/${photoJobId}`
+export function technicianPhotosPath(technicianId: string, visitId: string) {
+  return `/technicians/${technicianId}/photos/${visitId}`
 }

@@ -3,6 +3,8 @@ import { beginStripeConnect } from '@/lib/stripe-connect'
 import type { components } from '@/api/types.gen'
 import type {
   BusinessSettings,
+  PaymentMethod,
+  PreCleanReminder,
   Service,
   ServiceArea,
   ServiceAreaInput,
@@ -13,9 +15,14 @@ import type {
 
 /** `bankDetails`: omit to leave unchanged, `null` to clear. GAP-001 adds the address + `vatRate`. */
 export type BusinessProfilePatch = components['schemas']['BusinessProfileUpdateInput']
-export type RoundSettingsPatch = components['schemas']['RoundSettingsUpdateInput']
-export type PaymentSettingsPatch = components['schemas']['PaymentRulesUpdateInput']
+export type RoundSettingsPatch = components['schemas']['RoundSettingsUpdateInput'] & {
+  preCleanReminders?: PreCleanReminder[]
+}
+export type PaymentSettingsPatch = components['schemas']['PaymentRulesUpdateInput'] & {
+  acceptedPaymentMethods?: PaymentMethod[]
+}
 export type MessageTemplateView = components['schemas']['MessageTemplateView']
+export type MessageTemplateInput = components['schemas']['MessageTemplateInput']
 
 /** `webhookUrl` is the endpoint the admin adds in their GoCardless dashboard (Developers → Webhooks). */
 export type GoCardlessConnectResponse = components['schemas']['ProviderConnectResponse']
@@ -162,4 +169,8 @@ export const settingsApi = {
     input: { name?: string; channel?: MessageTemplateView['channel']; body?: string; subject?: string | null },
   ) =>
     api<MessageTemplateView>(`/settings/message-templates/${id}`, jsonRequest('PATCH', input)),
+  createMessageTemplate: (input: MessageTemplateInput) =>
+    api<MessageTemplateView>('/settings/message-templates', jsonRequest('POST', input)),
+  deleteMessageTemplate: (id: string) =>
+    api<void>(`/settings/message-templates/${id}`, { method: 'DELETE' }),
 }

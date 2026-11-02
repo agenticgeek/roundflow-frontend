@@ -1,4 +1,5 @@
 import type { VisitStatus } from '@/lib/visit-status'
+import type { WeatherCondition, WeatherRescheduling } from '@/api/rounds.api'
 import type { DashboardTone } from '@/content/dashboard'
 import type { PlannerDayStatus, PlannerPeriod, PlannerStatusFilter } from '@/features/rounds/lib/planner'
 
@@ -21,12 +22,6 @@ export interface RoundPlannerWeatherHoldOption {
   id: string
   title: string
   description: string
-}
-
-export interface RoundPlannerMessageTemplate {
-  value: string
-  label: string
-  body: string
 }
 
 /** Visit statuses returned on planner stops. */
@@ -137,52 +132,87 @@ export const roundPlannerContent = {
   },
   weatherHoldModal: {
     title: 'Weather Hold',
-    subtitle: 'Postpone round due to weather',
+    subtitle: 'Postpone this round-day because of the weather and tell customers',
     fields: {
       round: 'Round',
       weatherCondition: 'Weather Condition',
       rescheduling: 'Rescheduling',
       notifyCustomers: 'Notify customers',
     },
-    statusLabel: 'Scheduled',
+    /** Values are the API's `condition` enum. */
     conditions: [
       { value: 'heavy-rain', label: 'Heavy rain' },
       { value: 'high-winds', label: 'High winds' },
       { value: 'snow-ice', label: 'Snow / ice' },
       { value: 'technician-safety', label: 'Technician safety' },
-    ] satisfies RoundPlannerSelectOption[],
+    ] satisfies { value: WeatherCondition; label: string }[],
+    /** Ids are the API's `rescheduling` enum. */
     reschedulingOptions: [
       {
         id: 'next-available',
         title: 'Next available date',
-        description: 'Schedule for tomorrow or next working day',
+        description: 'Move the visits to the next working day',
       },
       {
         id: 'next-cycle',
         title: 'Add to next round cycle',
-        description: 'Merge with next scheduled occurrence',
+        description: 'Move each visit to its next regular visit date',
       },
       {
         id: 'manual',
         title: 'Manual rescheduling',
-        description: "I'll reschedule later",
+        description: "Take the visits off the list — I'll book new dates later",
       },
-    ] satisfies RoundPlannerWeatherHoldOption[],
-    messagePreview:
-      "Hi {customer_name}, due to heavy rain we've postponed today's window cleaning. We'll reschedule for the next available date. Thanks for understanding!",
-    messageMeta: '147 characters · 1 SMS per customer',
-    affectedJobsLabel: 'jobs will be affected',
-    affectedJobsDescription: 'All scheduled visits for this round will be postponed',
+    ] satisfies (RoundPlannerWeatherHoldOption & { id: WeatherRescheduling })[],
+    notifyHint: 'Message affected customers about the delay and their new date',
+    messageMeta: '{count} characters',
+    previewLoading: 'Loading preview…',
+    previewError: 'Could not load the preview.',
+    noMessage: 'No scheduled visits on this date, so there is nothing to hold.',
+    optedOut: '{count} opted out of messages — they will not be contacted',
+    newDate: 'New date: {date}',
+    newDateManual: 'No new date — the visits are marked as skipped',
+    affectedJobsLabel: 'visits will be affected',
+    affectedJobsLabelOne: 'visit will be affected',
+    affectedJobsDescription: 'Scheduled visits for this round on this date will be postponed',
     actions: {
       cancel: 'Cancel',
-      apply: 'Apply Weather Hold',
+      done: 'Done',
+      apply: 'Apply hold',
+      applyNotify: 'Hold & notify customers',
+      applying: 'Applying…',
     },
-    successToast: 'Applied Weather Hold successfully',
+    successToast: 'Weather hold applied',
+    result: {
+      held: '{count} visits held',
+      heldOne: '1 visit held',
+      moved: ' · moved to {date}',
+      skipped: ' · marked as skipped',
+      notNotified: 'Customers were not notified.',
+      notMessaged: 'Not messaged',
+      notifyFailed: 'The hold was applied, but customers could not be notified: {error}',
+    },
+  },
+  rescheduleModal: {
+    title: 'Reschedule visit',
+    subtitle: '{address}',
+    action: 'Reschedule',
+    dateLabel: 'New date',
+    hint: 'The visit goes back on the list for that day and its reminders are re-queued.',
+    pastDate: 'Pick today or a later date.',
+    cancel: 'Cancel',
+    save: 'Reschedule',
+    saving: 'Saving…',
+    toast: 'Visit rescheduled',
   },
   messageCustomersModal: {
     title: 'Message Customers',
     subtitle: 'Send SMS or WhatsApp to your customers',
     recipientAction: 'Change',
+    recipientsLoading: 'Counting recipients…',
+    recipientsError: 'Could not load recipients',
+    unreachable: '{count} more won’t be messaged (opted out or no contact details on this channel)',
+    noRecipients: 'No recipients to message.',
     fields: {
       template: 'Message Template',
       message: 'Message',
@@ -190,25 +220,20 @@ export const roundPlannerContent = {
       filters: 'Recipient Filters',
       sendOptions: 'Send Options',
       channel: 'Channel',
+      sendAt: 'Send at',
     },
-    templates: [
-      {
-        value: 'appointment-reminder',
-        label: 'Appointment Reminder',
-        body: "Hi {customer_name}, this is a reminder that we'll be cleaning your windows tomorrow between 9am-3pm.\nPlease ensure we have access.\nThanks!",
-      },
-      {
-        value: 'weather-delay',
-        label: 'Weather Delay',
-        body: "Hi {customer_name}, due to weather conditions we've had to reschedule your clean. We'll confirm the new date shortly. Thanks for understanding!",
-      },
-      {
-        value: 'payment-reminder',
-        label: 'Payment Reminder',
-        body: 'Hi {customer_name}, this is a friendly reminder that payment of {amount} is due for your recent window clean. Thanks!',
-      },
-    ] satisfies RoundPlannerMessageTemplate[],
-    variables: ['{customer_name}', '{property_address}', '{date}', '{time_window}', '{amount}', '{technician}'],
+    customTemplate: 'Write my own',
+    templatesLoading: 'Loading templates…',
+    messagePlaceholder: 'Write a message, or pick a template above',
+    variablesHint: 'Variables are filled in for each customer when the message is sent.',
+    variables: [
+      '{{customerName}}',
+      '{{firstName}}',
+      '{{address}}',
+      '{{date}}',
+      '{{amount}}',
+      '{{technicianName}}',
+    ],
     filters: {
       excludePaymentHold: 'Exclude payment hold customers',
     },
@@ -221,21 +246,25 @@ export const roundPlannerContent = {
       {
         id: 'schedule',
         title: 'Schedule for later',
-        description: '',
+        description: 'Messages are queued and sent at the time you pick',
       },
     ] satisfies RoundPlannerWeatherHoldOption[],
+    scheduleInPast: 'Pick a time in the future.',
     channels: ['SMS', 'WhatsApp'],
-    creditPricePerSms: 0.1,
     meta: {
-      smsCredit: '1 SMS credit',
-      totalPrefix: 'Total:',
-      credits: 'credits',
+      characters: '{count} characters',
     },
     actions: {
       cancel: 'Cancel',
+      done: 'Done',
       send: 'Send to {count} Customers',
+      schedule: 'Schedule for {count} Customers',
+    },
+    result: {
+      notMessaged: 'Not messaged',
     },
     successToast: 'Message sent successfully',
+    scheduledToast: 'Message scheduled',
   },
   mapView: {
     propertiesTitle: 'Stops',

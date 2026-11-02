@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Pager } from '@/components/ui/pager'
 import { useToast } from '@/components/ui/toast'
 import { RecordIncidentModal } from '@/components/technicians/RecordIncidentModal'
 import { technicianRecordsContent } from '@/content/technician-records'
@@ -11,7 +12,8 @@ import { formatCurrency } from '@/lib/utils'
 export function TechnicianIncidentsPanel({ technicianId, canMutate }: { technicianId: string; canMutate: boolean }) {
   const copy = technicianRecordsContent.incidents
   const { showToast } = useToast()
-  const query = useTechnicianIncidents(technicianId)
+  const [page, setPage] = useState(1)
+  const query = useTechnicianIncidents(technicianId, page)
   const remove = useDeleteIncident(technicianId)
   const [recording, setRecording] = useState(false)
 
@@ -70,6 +72,9 @@ export function TechnicianIncidentsPanel({ technicianId, canMutate }: { technici
             ))}
           </ul>
         )}
+        {query.data && query.data.pagination.totalPages > 1 ? (
+          <Pager pagination={query.data.pagination} loading={query.isFetching} onPage={setPage} />
+        ) : null}
       </div>
       {recording ? <RecordIncidentModal technicianId={technicianId} onClose={() => setRecording(false)} /> : null}
     </section>

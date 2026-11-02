@@ -39,12 +39,15 @@ export const queryKeys = {
   properties: {
     all: ['properties'] as const,
     notes: (id: string) => ['properties', 'notes', id] as const,
+    detail: (id: string) => ['properties', 'detail', id] as const,
+    servicesHistory: (id: string, page = 1) => ['properties', 'services-history', id, page] as const,
   },
   /** GAP-019 photo galleries (signed URLs expire after 1 h — refetched on focus). */
   photos: {
     all: ['photos'] as const,
     property: (id: string, type = 'ALL', page = 1) => ['photos', 'property', id, type, page] as const,
-    technician: (id: string, page = 1) => ['photos', 'technician', id, page] as const,
+    technician: (id: string, page = 1, search = '', reviewStatus = 'ALL') =>
+      ['photos', 'technician', id, page, search, reviewStatus] as const,
     visit: (id: string) => ['photos', 'visit', id] as const,
   },
   rounds: {
@@ -54,6 +57,8 @@ export const queryKeys = {
     /** GET /rounds/:id/allocation (GAP-012). */
     allocation: (id: string) => ['rounds', 'allocation', id] as const,
     today: (id: string) => ['rounds', 'today', id] as const,
+    weatherHoldPreview: (id: string, date: string, condition: string, rescheduling: string) =>
+      ['rounds', 'weather-hold-preview', id, date, condition, rescheduling] as const,
     /** Batch occurrences for a chunk of rounds (ids joined in request order). */
     occurrencesBatch: (roundIds: readonly string[], from?: string, to?: string) =>
       ['rounds', 'occurrences-batch', roundIds.join(','), from ?? '', to ?? ''] as const,
@@ -92,7 +97,7 @@ export const queryKeys = {
     technicians: (period: string, page = 1) => ['reports', 'technicians', period, page] as const,
     visits: (period: string, status?: string, page = 1) =>
       ['reports', 'visits', period, status ?? 'ALL', page] as const,
-    activity: (type?: string) => ['reports', 'activity', type ?? 'ALL'] as const,
+    activity: (type?: string, page = 1) => ['reports', 'activity', type ?? 'ALL', page] as const,
   },
   invites: {
     all: ['invites'] as const,
@@ -152,6 +157,8 @@ export function invalidateBusinessSettings(queryClient: QueryClient) {
 }
 
 export function invalidateCustomers(queryClient: QueryClient) {
+  // The property page (GET /properties/:id) shows customer fields too.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.properties.all })
   return queryClient.invalidateQueries({ queryKey: queryKeys.customers.all })
 }
 

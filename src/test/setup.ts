@@ -9,6 +9,7 @@ import { resetBootstrap } from '@/test/bootstrap'
 vi.mock('@/lib/supabase', () => ({
   getCachedAccessToken: () => 'test-token',
   refreshAccessToken: async () => 'test-token',
+  setRememberSession: vi.fn(),
   supabase: {
     auth: {
       signOut: async () => ({ error: null }),

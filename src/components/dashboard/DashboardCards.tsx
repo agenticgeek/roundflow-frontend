@@ -72,7 +72,8 @@ export function DashboardAlertRow({ alerts, loading = false, onOpenAlert }: Dash
               <div>
                 <p className="text-sm font-semibold text-foreground">
                   {loading || alert.value === undefined ? (
-                    <Skeleton className="mr-2 inline-block h-4 w-6 align-middle" />
+                    // A <span>, not <Skeleton> (a <div>): block elements are invalid inside this <p>.
+                    <span aria-hidden="true" className="mr-2 inline-block h-4 w-6 animate-pulse rounded-md bg-border/50 align-middle" />
                   ) : (
                     <span className="mr-2 text-base font-bold">{alert.value}</span>
                   )}

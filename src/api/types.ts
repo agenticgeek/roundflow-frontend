@@ -4,15 +4,23 @@ export type Role = components['schemas']['UserRole']
 export type Profile = components['schemas']['Profile']
 export type SetupStatus = components['schemas']['SetupStatus']
 export type SetupStepStatus = components['schemas']['StepStatus']
-export type BusinessSettings = components['schemas']['BusinessSettings']
+/** BUG-01: `type` is when the reminder goes out; `time` is `HH:mm` in the tenant's time zone. */
+export type PreCleanReminder = { type: 'EVENING_BEFORE' | 'MORNING_OF'; time: string }
+// CONTRACT-DIFF: `preCleanReminders` / `acceptedPaymentMethods` are live on the backend but not
+// yet in the generated OpenAPI.
+export type BusinessSettings = components['schemas']['BusinessSettings'] & {
+  preCleanReminders?: PreCleanReminder[]
+  acceptedPaymentMethods?: PaymentMethod[]
+}
 export type Service = components['schemas']['Service']
 export type ServiceInput = components['schemas']['ServiceInput']
 export type ServiceArea = components['schemas']['ServiceAreaWithRounds']
 export type ServiceAreaInput = components['schemas']['ServiceAreaInput']
 export type Technician = components['schemas']['TechnicianWithDisplayName']
 export type TechnicianInput = components['schemas']['TechnicianInput']
-export type Round = components['schemas']['Round']
-export type RoundInput = components['schemas']['FirstRoundInput']
+// CONTRACT-DIFF: `postcodeSectors` (BUG-04) is live on the backend but not in the generated OpenAPI.
+export type Round = components['schemas']['Round'] & { postcodeSectors?: string[] }
+export type RoundInput = components['schemas']['FirstRoundInput'] & { postcodeSectors?: string[] }
 // No longer in the spec; kept for callers that still type deferred stubs.
 export type DeferredStatus = { status: 'deferred'; reason: string }
 export type PaymentConnectResponse = components['schemas']['ProviderConnectResponse']
@@ -60,6 +68,8 @@ export type CustomerListRow = Omit<
   components['schemas']['CustomerListRow'],
   'paymentStatus'
 > & {
+  /** A customer with no property yet: `propertyId` / `addressLine` are null and this is true. */
+  hasNoProperty?: boolean
   // CONTRACT-DIFF: handoff allows "none" when there is no payment history.
   paymentStatus?: CustomerListRowPaymentStatus
 }
@@ -95,6 +105,8 @@ export type CustomerCreateInput = {
   phone?: string | null
   email?: string | null
   paymentMethod?: PaymentMethod | null
+  /** Created in the same transaction as the customer (customer + property + first plan). */
+  property?: Omit<PropertyCreateInput, 'customerName' | 'phone' | 'email'>
 }
 
 export type CustomerListParams = {

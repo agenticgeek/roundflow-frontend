@@ -3,8 +3,8 @@ import type {
   CleanMethod,
   NoDirectDebitAction,
   PaymentTimingOption,
-  ReminderSchedule,
 } from '@/types/setup-wizard'
+import type { PreCleanReminder } from '@/api/types'
 
 /**
  * Business-settings enums shared by the setup wizard (steps 1, 2, 4) and Settings (Business
@@ -17,17 +17,6 @@ export type ApiCleanMethod = Schemas['CleanMethod']
 export type ApiNoDirectDebitAction = Schemas['NoDirectDebitAction']
 export type PaymentTiming = Schemas['PaymentTiming']
 export type PaymentMethodValue = Schemas['PaymentMethod']
-
-const REMINDER_FROM_API: Record<ReminderMode, ReminderSchedule> = {
-  EVENING_BEFORE: 'evening-before',
-  MORNING_OF: 'morning-of',
-  NONE: 'none',
-}
-const REMINDER_TO_API: Record<ReminderSchedule, ReminderMode> = {
-  'evening-before': 'EVENING_BEFORE',
-  'morning-of': 'MORNING_OF',
-  none: 'NONE',
-}
 
 const CLEAN_METHOD_FROM_API: Record<ApiCleanMethod, CleanMethod> = {
   TRADITIONAL: 'traditional',
@@ -50,37 +39,49 @@ const NO_DD_TO_API: Record<NoDirectDebitAction, ApiNoDirectDebitAction> = {
 }
 
 export interface ReminderFormValues {
-  reminderSchedule: ReminderSchedule
-  /** `HH:mm` — used when reminderSchedule is `evening-before`. */
+  eveningReminderEnabled: boolean
+  /** `HH:mm`. */
   eveningReminderTime: string
-  /** `HH:mm` — used when reminderSchedule is `morning-of`. */
+  morningReminderEnabled: boolean
+  /** `HH:mm`. */
   morningReminderTime: string
 }
 
-/** `reminderMode` + one `reminderTime` → the form, which keeps a time per schedule. */
+/**
+ * `preCleanReminders` → the form, which keeps a tick and a time per reminder. A backend that only
+ * returns the legacy `reminderMode` + `reminderTime` is still understood.
+ */
 export function reminderToForm(
-  data: { reminderMode?: ReminderMode; reminderTime?: string } | null | undefined,
+  data:
+    | { preCleanReminders?: PreCleanReminder[]; reminderMode?: ReminderMode; reminderTime?: string }
+    | null
+    | undefined,
   defaults: ReminderFormValues,
 ): ReminderFormValues {
-  const reminderSchedule = data?.reminderMode ? REMINDER_FROM_API[data.reminderMode] : defaults.reminderSchedule
-  const time = data?.reminderTime
+  const list =
+    data?.preCleanReminders ??
+    (data?.reminderMode && data.reminderMode !== 'NONE'
+      ? [{ type: data.reminderMode, time: data.reminderTime ?? '' }]
+      : data?.reminderMode === 'NONE'
+        ? []
+        : undefined)
+  if (!list) return defaults
+  const evening = list.find((reminder) => reminder.type === 'EVENING_BEFORE')
+  const morning = list.find((reminder) => reminder.type === 'MORNING_OF')
   return {
-    reminderSchedule,
-    eveningReminderTime:
-      reminderSchedule === 'evening-before' && time ? time : defaults.eveningReminderTime,
-    morningReminderTime: reminderSchedule === 'morning-of' && time ? time : defaults.morningReminderTime,
+    eveningReminderEnabled: Boolean(evening),
+    eveningReminderTime: evening?.time || defaults.eveningReminderTime,
+    morningReminderEnabled: Boolean(morning),
+    morningReminderTime: morning?.time || defaults.morningReminderTime,
   }
 }
 
-/** Only the chosen schedule's time is sent; "Don't send reminders" sends no time. */
-export function reminderFromForm(values: ReminderFormValues): { reminderMode: ReminderMode; reminderTime?: string } {
-  const reminderMode = REMINDER_TO_API[values.reminderSchedule]
-  if (values.reminderSchedule === 'none') return { reminderMode }
-  return {
-    reminderMode,
-    reminderTime:
-      values.reminderSchedule === 'morning-of' ? values.morningReminderTime : values.eveningReminderTime,
-  }
+/** Only ticked reminders are sent; no ticks = `[]` ("Don't send reminders"). */
+export function reminderFromForm(values: ReminderFormValues): { preCleanReminders: PreCleanReminder[] } {
+  const preCleanReminders: PreCleanReminder[] = []
+  if (values.eveningReminderEnabled) preCleanReminders.push({ type: 'EVENING_BEFORE', time: values.eveningReminderTime })
+  if (values.morningReminderEnabled) preCleanReminders.push({ type: 'MORNING_OF', time: values.morningReminderTime })
+  return { preCleanReminders }
 }
 
 export function cleanMethodToForm(value: ApiCleanMethod | null | undefined, fallback: CleanMethod): CleanMethod {
@@ -117,4 +118,17 @@ export function parseInvoiceDueDays(value: string): number | null {
   if (!/^\d+$/.test(trimmed)) return null
   const days = Number(trimmed)
   return days <= 90 ? days : null
+}
+
+/**
+ * BUG-05: the accepted list from the API; an older tenant without one accepts just its default.
+ * The default is always part of the list.
+ */
+export function acceptedMethodsToForm(
+  accepted: readonly string[] | null | undefined,
+  defaultMethod: string,
+): string[] {
+  const list = accepted && accepted.length > 0 ? [...accepted] : []
+  if (defaultMethod && !list.includes(defaultMethod)) list.unshift(defaultMethod)
+  return list
 }

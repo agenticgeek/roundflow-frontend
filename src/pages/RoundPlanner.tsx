@@ -52,7 +52,7 @@ export default function RoundPlanner() {
   }
 
   function handleViewPropertyDetails(propertyId: string) {
-    navigate(propertyDetailPath(propertyId))
+    navigate(propertyDetailPath(propertyId), { state: { from: 'round-planner' } })
   }
 
   return (

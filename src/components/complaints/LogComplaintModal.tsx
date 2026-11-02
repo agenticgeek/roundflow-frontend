@@ -88,7 +88,7 @@ export function LogComplaintModal({ open, onClose, onSubmit, submitting = false 
   function selectCustomer(customer: CustomerListRow) {
     update('customerId', customer.customerId ?? '')
     update('customerName', customer.customerName ?? '')
-    update('propertyId', customer.propertyId)
+    update('propertyId', customer.propertyId ?? undefined)
     setCustomerQuery('')
     setCustomerMenuOpen(false)
   }

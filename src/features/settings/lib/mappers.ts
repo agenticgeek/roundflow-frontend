@@ -1,4 +1,4 @@
-import type { BusinessSettings, Service, ServiceArea, Technician } from '@/api/types'
+import type { BusinessSettings, PaymentMethod, Service, ServiceArea, Technician } from '@/api/types'
 import type { BusinessProfilePatch, PaymentSettingsPatch, RoundSettingsPatch } from '@/api/settings.api'
 import { bankDetailsFromForm, bankDetailsToForm } from '@/lib/bank-details'
 import { deriveTechnicianAppStatus } from '@/api/types'
@@ -15,6 +15,7 @@ import {
   noDirectDebitFromForm,
   noDirectDebitToForm,
   type PaymentTiming,
+  acceptedMethodsToForm,
 } from '@/features/settings/lib/business-rules'
 
 type DayOfWeek = components['schemas']['DayOfWeek']
@@ -85,6 +86,7 @@ export type SettingsPaymentForm = {
   stripeConnected: boolean
   /** GAP-008 payment defaults. PaymentMethod enum value. */
   defaultPaymentMethod: string
+  acceptedPaymentMethods: string[]
   /** Text input — a whole number 0–90. */
   invoiceDueDays: string
   noDirectDebitAction: NoDirectDebitAction
@@ -144,6 +146,7 @@ export function settingsPaymentToForm(
 ): SettingsPaymentForm {
   const defaults = setupWizardContent.paymentSetup.defaults
   const wizardDefaults = setupWizardContent.payments.formDefaults
+  const defaultPaymentMethod = data?.defaultPaymentMethod ?? wizardDefaults.defaultPaymentMethod
   return {
     defaultPaymentRule: data?.paymentRule
       ? PAYMENT_RULE_API_TO_UI[data.paymentRule]
@@ -152,7 +155,8 @@ export function settingsPaymentToForm(
     debtHoldEnabled: data?.debtHoldEnabled ?? defaults.debtHoldEnabled,
     goCardlessConnected: data?.gocardlessConnected ?? defaults.goCardlessConnected,
     stripeConnected: data?.stripeConnected ?? defaults.stripeConnected,
-    defaultPaymentMethod: data?.defaultPaymentMethod ?? wizardDefaults.defaultPaymentMethod,
+    defaultPaymentMethod,
+    acceptedPaymentMethods: acceptedMethodsToForm(data?.acceptedPaymentMethods, defaultPaymentMethod),
     invoiceDueDays:
       data?.invoiceDueDays != null ? String(data.invoiceDueDays) : wizardDefaults.invoiceDueDays,
     noDirectDebitAction: noDirectDebitToForm(data?.noDirectDebitAction, wizardDefaults.noDirectDebitAction),
@@ -165,6 +169,7 @@ export function settingsPaymentFromForm(values: SettingsPaymentForm): PaymentSet
     vatInInvoices: values.vatApplicable,
     debtHoldEnabled: values.debtHoldEnabled,
     defaultPaymentMethod: values.defaultPaymentMethod as PaymentSettingsPatch['defaultPaymentMethod'],
+    acceptedPaymentMethods: values.acceptedPaymentMethods as PaymentMethod[],
     invoiceDueDays: Number(values.invoiceDueDays),
     noDirectDebitAction: noDirectDebitFromForm(values.noDirectDebitAction),
   }

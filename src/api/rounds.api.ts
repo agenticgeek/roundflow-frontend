@@ -15,6 +15,7 @@ export interface RoundListItem {
   serviceAreaName: string | null
   technicianCount: number
   propertyCount: number
+  postcodeSectors?: string[]
 }
 
 export interface RoundDetail {
@@ -28,6 +29,7 @@ export interface RoundDetail {
   serviceAreaName: string | null
   technicians: { id: string; name: string; active: boolean }[]
   propertyCount: number
+  postcodeSectors?: string[]
 }
 
 export type RoundCreateInput = {
@@ -36,6 +38,8 @@ export type RoundCreateInput = {
   serviceAreaId: string
   defaultDay?: DayOfWeek | null
   description?: string | null
+  /** BUG-04: postcode sectors the round covers (inside the service area's sectors). */
+  postcodeSectors?: string[]
 }
 
 export type RoundUpdateInput = {
@@ -45,6 +49,7 @@ export type RoundUpdateInput = {
   defaultDay?: DayOfWeek | null
   description?: string | null
   status?: RoundStatus
+  postcodeSectors?: string[]
 }
 
 export type PlannerOccurrence = {
@@ -170,6 +175,13 @@ export type RoundPropertyRow = {
 
 type CustomerListResult = components['schemas']['CustomerListResult']
 
+export type WeatherHoldInput = components['schemas']['WeatherHoldInput']
+export type WeatherCondition = WeatherHoldInput['condition']
+export type WeatherRescheduling = WeatherHoldInput['rescheduling']
+export type WeatherHoldQuery = Pick<WeatherHoldInput, 'date' | 'condition' | 'rescheduling'>
+export type WeatherHoldPreview = components['schemas']['WeatherHoldPreview']
+export type WeatherHoldResult = components['schemas']['WeatherHoldResult']
+
 function jsonRequest(method: 'POST' | 'PATCH' | 'PUT', body?: unknown): RequestInit {
   return {
     method,
@@ -201,13 +213,18 @@ export const roundsApi = {
   getAllocation: (id: string, signal?: AbortSignal) =>
     api<RoundAllocation>(`/rounds/${id}/allocation`, { signal }),
 
-  /** The round's properties (max 100) for the MANUAL split — GET /customers?roundId=. */
+  /** Every property on the round for the MANUAL split — GET /customers?roundId=, paged 100 at a time. */
   listProperties: async (id: string, signal?: AbortSignal): Promise<RoundPropertyRow[]> => {
-    const result = await api<CustomerListResult>(
-      `/customers?roundId=${encodeURIComponent(id)}&pageSize=100`,
-      { signal },
-    )
-    return (result.customers ?? []).flatMap((row) =>
+    const customers: NonNullable<CustomerListResult['customers']> = []
+    for (let page = 1; ; page += 1) {
+      const result = await api<CustomerListResult>(
+        `/customers?roundId=${encodeURIComponent(id)}&pageSize=100&page=${page}`,
+        { signal },
+      )
+      customers.push(...(result.customers ?? []))
+      if (page >= (result.pagination?.totalPages ?? 1)) break
+    }
+    return customers.flatMap((row) =>
       row.propertyId
         ? [{
             propertyId: row.propertyId,
@@ -277,4 +294,10 @@ export const roundsApi = {
 
   reassign: (id: string, input: ReassignInput) =>
     api<ReassignResult>(`/rounds/${id}/reassign`, jsonRequest('POST', input)),
+
+  weatherHoldPreview: (id: string, query: WeatherHoldQuery, signal?: AbortSignal) =>
+    api<WeatherHoldPreview>(`/rounds/${id}/weather-hold/preview?${new URLSearchParams(query)}`, { signal }),
+
+  weatherHold: (id: string, input: WeatherHoldInput) =>
+    api<WeatherHoldResult>(`/rounds/${id}/weather-hold`, jsonRequest('POST', input)),
 }

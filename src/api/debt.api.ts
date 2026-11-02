@@ -18,6 +18,23 @@ export type DebtPaymentMethodParam =
   | 'BACS'
   | 'STRIPE'
 
+export type DebtBulkAction = 'remind' | 'hold' | 'bad-debt'
+export type DebtBulkInput = {
+  ids: string[]
+  action: DebtBulkAction
+  channel?: 'SMS' | 'EMAIL' | 'WHATSAPP' | 'AUTO'
+  message?: string
+  reason?: string
+  notify?: boolean
+}
+export type DebtBulkResult = {
+  action: DebtBulkAction
+  total: number
+  succeeded: number
+  failed: number
+  results: ({ id: string; ok: true } | { id: string; ok: false; error: string; code?: string })[]
+}
+
 export type DebtKpis = components['schemas']['DebtKpis']
 
 /**
@@ -142,6 +159,10 @@ export const debtApi = {
       `/debt/${encodeURIComponent(invoiceId)}/payment-link`,
       jsonRequest('POST', input),
     ),
+
+  /** POST /debt/bulk — always 200; each id reports its own result. CONTRACT-DIFF: not in the OpenAPI yet. */
+  bulk: (input: DebtBulkInput) =>
+    api<DebtBulkResult>('/debt/bulk', jsonRequest('POST', input)),
 
   setBadDebt: (invoiceId: string, flag: boolean) =>
     api<DebtBadDebtResult>(

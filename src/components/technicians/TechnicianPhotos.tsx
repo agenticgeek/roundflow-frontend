@@ -1,38 +1,67 @@
 import { useMemo, useState } from 'react'
-import type { TechnicianPhotoJob, TechnicianRecord } from '@/content/technicians'
+import type { PhotoReviewStatus, PhotoRow } from '@/api/photos.api'
+import type { TechnicianRecord } from '@/content/technicians'
 import { techniciansContent } from '@/content/technicians'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass, dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
-import { Input, Select } from '@/components/ui'
-import { ComingSoonOverlay } from '@/components/ui/coming-soon'
+import { Input } from '@/components/ui'
+import { Pager } from '@/components/ui/pager'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useToast } from '@/components/ui/toast'
+import { TechnicianChat } from '@/components/chat/TechnicianChat'
+import { formatInvoiceDate } from '@/features/invoices/lib/mappers'
+import { useReviewTechnicianPhotos, useTechnicianPhotos } from '@/features/photos/hooks/usePhotos'
+import { groupPhotosByVisit, groupPhotosInOrder, groupReviewStatus, type PhotoGroup } from '@/features/photos/lib/group'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+
+const SEARCH_DEBOUNCE_MS = 300
+const ARCHIVE_PAGE_SIZE = 10 // visits per page
 
 interface TechnicianConversationProps {
   technician: TechnicianRecord
-  jobs: readonly TechnicianPhotoJob[]
+  canMutate: boolean
   onBack: () => void
-  onOpenJob: (jobId: string) => void
-  onApproveAll: () => void
+  onOpenVisit: (visitId: string) => void
+  /** Ids of the pending photos in the current view — the modal confirms, then approves exactly these. */
+  onApproveAll: (pendingPhotoIds: string[]) => void
 }
 
 export function TechnicianConversation({
   technician,
-  jobs,
+  canMutate,
   onBack,
-  onOpenJob,
+  onOpenVisit,
   onApproveAll,
 }: TechnicianConversationProps) {
   const content = techniciansContent.conversation
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [archiveOpen, setArchiveOpen] = useState(true)
 
-  const filteredJobs = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return jobs
-    return jobs.filter((job) =>
-      `${job.property} ${job.customer} ${job.service}`.toLowerCase().includes(query),
-    )
-  }, [jobs, search])
+  const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS)
+
+  const query = useTechnicianPhotos(technician.id, page, { search: debouncedSearch, pageSize: ARCHIVE_PAGE_SIZE })
+  const { showToast } = useToast()
+  const reviewPhotos = useReviewTechnicianPhotos(technician.id)
+
+  async function reviewVisit(group: PhotoGroup, status: 'APPROVED' | 'REJECTED') {
+    try {
+      await reviewPhotos.mutateAsync({ photoIds: groupPhotosInOrder(group).map((photo) => photo.id), status })
+      showToast(status === 'APPROVED' ? content.visitApproved : content.visitRejected)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : content.reviewError)
+    }
+  }
+  const groups = useMemo(
+    () => groupPhotosByVisit(query.data?.rows ?? []).filter((group) => group.visitId),
+    [query.data],
+  )
+  const pendingPhotoIds = useMemo(
+    () => (query.data?.rows ?? []).filter((row) => row.reviewStatus === 'PENDING').map((row) => row.id),
+    [query.data],
+  )
 
   return (
     <div className="animate-slide-in-right space-y-6">
@@ -40,74 +69,34 @@ export function TechnicianConversation({
         <div>
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-xs text-muted hover:text-foreground">
             <DashboardIcon name="chevron-left" className="h-3.5 w-3.5" />
-            {content.back}
+            {content.back.replace('{name}', technician.name)}
           </button>
-          <h1 className="mt-3 text-2xl font-semibold text-foreground">{content.title}</h1>
+          <h1 className="mt-3 text-2xl font-semibold text-foreground">
+            {content.title.replace('{name}', technician.name)}
+          </h1>
           <p className="mt-1 text-sm text-muted">{content.subtitle}</p>
         </div>
       </header>
 
-      {/* No messaging backend yet — the mocked thread is blurred behind a Coming Soon overlay. */}
-      <ComingSoonOverlay copy={content.comingSoon} icon="message">
       <div className="mb-4 flex justify-end">
-        <button type="button" onClick={onApproveAll} className={dashboardCtaClass}>
+        <button
+          type="button"
+          disabled={!canMutate || pendingPhotoIds.length === 0}
+          onClick={() => onApproveAll(pendingPhotoIds)}
+          className={cn(dashboardCtaClass, 'disabled:opacity-50')}
+        >
           {content.approveAll}
         </button>
       </div>
       <div className={cn('grid gap-6', archiveOpen && 'xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,0.8fr)]')}>
-        <section className="min-h-[36rem]">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-              {technician.initials}
-            </span>
-            <div>
-              <p className="font-semibold text-foreground">{technician.name.split(' ')[0]}</p>
-              <p className="text-xs text-muted">
-                {technician.role} <span className="ml-2 text-success">● Online</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-6 space-y-6">
-            {content.messages.map((message, index) => {
-              const admin = message.from === 'admin'
-              const photos = index === 0 ? jobs[0]?.before.slice(0, 2) : index === 2 ? jobs[0]?.after.slice(0, 2) : []
-              return (
-                <article
-                  key={message.id}
-                  className={cn('animate-reveal-item', admin && 'ml-auto max-w-md')}
-                  style={{ animationDelay: `${index * 60}ms` }}
-                >
-                  <div
-                    className={cn(
-                      'w-fit max-w-md rounded-xl px-4 py-3 text-sm',
-                      admin ? 'ml-auto bg-primary text-primary-foreground' : 'bg-muted/20 text-foreground',
-                    )}
-                  >
-                    <p>{message.body}</p>
-                    <time className={cn('mt-1 block text-[10px]', admin ? 'text-primary-foreground/70' : 'text-muted')}>
-                      {message.time}
-                    </time>
-                  </div>
-                  {photos?.length ? (
-                    <div className={cn('mt-3 flex gap-2', admin && 'justify-end')}>
-                      {photos.map((src) => (
-                        <img key={src} src={src} alt="" className="h-24 w-28 rounded-lg object-cover" />
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
-              )
-            })}
-          </div>
-        </section>
+        <TechnicianChat technicianId={technician.id} />
 
         {archiveOpen ? (
           <aside className="animate-slide-in-right rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">{content.archiveTitle}</h2>
-                <p className="text-xs text-muted">{content.archiveSubtitle}</p>
+                <p className="text-xs text-muted">{content.archiveSubtitle.replace('{name}', technician.name)}</p>
               </div>
               <button
                 type="button"
@@ -124,24 +113,47 @@ export function TechnicianConversation({
               <Input
                 inputSize="sm"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setPage(1)
+                }}
                 placeholder={content.search}
                 className="pl-9"
               />
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <Select inputSize="sm" value="30" onChange={() => undefined} options={[{ value: '30', label: 'Last 30 days' }]} />
-              <Select inputSize="sm" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All rounds' }]} />
-              <Select inputSize="sm" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All statuses' }]} />
-            </div>
-
             <p className="mt-5 text-[10px] font-semibold tracking-wide text-muted uppercase">{content.recentPhotos}</p>
             <div className="mt-3 space-y-3">
-              {filteredJobs.map((job) => (
-                <PhotoJobCard key={job.id} job={job} onClick={() => onOpenJob(job.id)} />
-              ))}
+              {query.isPending ? (
+                <Skeleton className="h-32 w-full rounded-xl" />
+              ) : query.error && !query.data ? (
+                <div role="alert" className="rounded-lg border border-border bg-surface px-4 py-6 text-center text-xs">
+                  <p className="font-semibold text-foreground">{content.loadError}</p>
+                  <p className="mt-1 text-muted">{errorMessage(query.error)}</p>
+                  <button type="button" onClick={() => void query.refetch()} className="mt-3 font-semibold text-primary underline">
+                    {content.retry}
+                  </button>
+                </div>
+              ) : groups.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-xs text-muted">
+                  {debouncedSearch ? content.emptySearch : content.empty}
+                </p>
+              ) : (
+                groups.map((group) => (
+                  <PhotoVisitCard
+                    key={group.key}
+                    group={group}
+                    canReview={canMutate}
+                    reviewPending={reviewPhotos.isPending}
+                    onClick={() => onOpenVisit(group.visitId as string)}
+                    onReview={(status) => void reviewVisit(group, status)}
+                  />
+                ))
+              )}
             </div>
+            {query.data && query.data.pagination.totalPages > 1 ? (
+              <Pager pagination={query.data.pagination} loading={query.isFetching} onPage={setPage} />
+            ) : null}
           </aside>
         ) : (
           <button
@@ -153,49 +165,93 @@ export function TechnicianConversation({
           </button>
         )}
       </div>
-      </ComingSoonOverlay>
     </div>
   )
 }
 
-function PhotoJobCard({ job, onClick }: { job: TechnicianPhotoJob; onClick: () => void }) {
+function PhotoVisitCard({
+  group,
+  canReview,
+  reviewPending,
+  onClick,
+  onReview,
+}: {
+  group: PhotoGroup
+  canReview: boolean
+  reviewPending: boolean
+  onClick: () => void
+  onReview: (status: 'APPROVED' | 'REJECTED') => void
+}) {
+  const content = techniciansContent.conversation
+  const tiles: { photo: PhotoRow; label: string }[] = []
+  if (group.before[0]) tiles.push({ photo: group.before[0], label: content.before })
+  if (group.after[0]) tiles.push({ photo: group.after[0], label: content.after })
+  const title = group.address ?? content.visitFallback
+  const status = groupReviewStatus(group)
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        dashboardPressableClass,
-        'w-full rounded-xl border border-border p-3 text-left transition-colors hover:border-primary/30',
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-foreground">{job.property}</p>
-          <p className="text-[10px] text-muted">{job.date}</p>
-        </div>
-        <PhotoStatus status={job.status} />
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {[job.before[0], job.after[0]].map((src, index) => (
-          <div key={src}>
-            <img src={src} alt="" className="h-20 w-full rounded-lg object-cover" />
-            <span className="mt-1 block text-[10px] text-muted">{index ? 'After' : 'Before'}</span>
+    <div className="rounded-xl border border-border p-3 transition-colors hover:border-primary/30">
+      <button type="button" onClick={onClick} className={cn(dashboardPressableClass, 'w-full text-left')}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+            <p className="text-[10px] text-muted">
+              {[group.jobRef, group.customerName, formatInvoiceDate(group.visitDate)].filter(Boolean).join(' · ')}
+            </p>
           </div>
-        ))}
-      </div>
-    </button>
+          <PhotoStatus status={status} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {tiles.map(({ photo, label }) => {
+            const src = photo.thumbnailUrl ?? photo.url
+            return (
+              <div key={photo.id}>
+                {src ? (
+                  <img src={src} alt="" loading="lazy" className="h-20 w-full rounded-lg object-cover" />
+                ) : (
+                  <div className="h-20 w-full rounded-lg bg-surface" />
+                )}
+                <span className="mt-1 block text-[10px] text-muted">{label}</span>
+              </div>
+            )
+          })}
+        </div>
+      </button>
+      {canReview && status !== 'APPROVED' ? (
+        <div className="mt-3 flex justify-end gap-2">
+          {status !== 'REJECTED' ? (
+            <button
+              type="button"
+              disabled={reviewPending}
+              onClick={() => onReview('REJECTED')}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-danger disabled:opacity-50"
+            >
+              {content.reject}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            disabled={reviewPending}
+            onClick={() => onReview('APPROVED')}
+            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {content.approve}
+          </button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
-function PhotoStatus({ status }: { status: TechnicianPhotoJob['status'] }) {
-  const classes = {
-    approved: 'bg-success/10 text-success',
-    pending: 'bg-primary/10 text-primary',
-    flagged: 'bg-danger/10 text-danger',
-  }
+const STATUS_CLASSES: Record<PhotoReviewStatus, string> = {
+  APPROVED: 'bg-success/10 text-success',
+  PENDING: 'bg-primary/10 text-primary',
+  REJECTED: 'bg-danger/10 text-danger',
+}
+
+function PhotoStatus({ status }: { status: PhotoReviewStatus }) {
   return (
-    <span className={cn('rounded-lg px-2 py-1 text-[10px] font-semibold capitalize', classes[status])}>
-      {status}
+    <span className={cn('rounded-lg px-2 py-1 text-[10px] font-semibold', STATUS_CLASSES[status])}>
+      {techniciansContent.conversation.status[status]}
     </span>
   )
 }

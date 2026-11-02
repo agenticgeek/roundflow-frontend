@@ -56,6 +56,7 @@ export function AssignToRoundModal({ open, record, onClose }: AssignToRoundModal
 
   async function handleConfirm() {
     if (!roundId || !canMutate || !record?.propertyId || updateProperty.isPending) return
+    setError(null)
     try {
       await updateProperty.mutateAsync({
         id: record.propertyId,
@@ -69,7 +70,10 @@ export function AssignToRoundModal({ open, record, onClose }: AssignToRoundModal
         setError(caught.message)
         return
       }
-      if (caught instanceof ApiError && caught.status === 400) return
+      if (caught instanceof ApiError && caught.status === 400) {
+        setError(caught.message)
+        return
+      }
       showToast(caught instanceof Error ? caught.message : assignToRoundModal.failed)
     }
   }

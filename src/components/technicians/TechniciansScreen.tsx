@@ -7,7 +7,6 @@ import {
   technicianEditPath,
   technicianPhotosPath,
 } from '@/config/routes'
-import { techniciansContent } from '@/content/technicians'
 import { useToast } from '@/components/ui/toast'
 import {
   TechnicianDetail,
@@ -29,6 +28,7 @@ import {
   TechnicianDetailSkeleton,
   TechnicianFormSkeleton,
 } from '@/components/technicians/TechniciansSkeletons'
+import { useApproveTechnicianPhotos } from '@/features/photos/hooks/usePhotos'
 import { useResendTechnicianInvite } from '@/features/invites/hooks/useResendTechnicianInvite'
 import {
   useCreateTechnician,
@@ -52,6 +52,7 @@ export function TechniciansScreen() {
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const [approveOpen, setApproveOpen] = useState(false)
+  const [approveIds, setApproveIds] = useState<string[]>([])
   const [removeOpen, setRemoveOpen] = useState(false)
 
   const newMatch = matchPath(ROUTES.technicianNew, location.pathname)
@@ -75,6 +76,7 @@ export function TechniciansScreen() {
   const createTechnician = useCreateTechnician()
   const updateTechnician = useUpdateTechnician()
   const resendInvite = useResendTechnicianInvite()
+  const approvePhotos = useApproveTechnicianPhotos(routeTechnicianId)
 
   const listRows = useMemo(() => technicianListToUi(listQuery.data), [listQuery.data])
   const metrics = useMemo(
@@ -86,9 +88,19 @@ export function TechniciansScreen() {
   const listFallback = listRows.find((row) => row.id === routeTechnicianId) ?? null
   const technician = detailUi ?? listFallback
 
-  function approveAll() {
-    setApproveOpen(false)
-    showToast('All photos approved successfully.')
+  async function approveAll() {
+    if (!canMutate || approvePhotos.isPending) return
+    try {
+      const { updated } = await approvePhotos.mutateAsync(approveIds)
+      setApproveOpen(false)
+      showToast(
+        updated === 0
+          ? 'No pending photos to approve.'
+          : `${updated} ${updated === 1 ? 'photo' : 'photos'} approved.`,
+      )
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not approve photos')
+    }
   }
 
   async function deactivateTechnician() {
@@ -219,8 +231,10 @@ export function TechniciansScreen() {
     // GAP-019: the route's last segment is the visit id.
     content = (
       <TechnicianVisitPhotos
+        technicianId={technician.id}
         technicianName={technician.name}
-        visitId={photosMatch.params.photoJobId ?? ''}
+        canMutate={canMutate}
+        visitId={photosMatch.params.visitId ?? ''}
         onBack={() => navigate(technicianDetailPath(technician.id))}
       />
     )
@@ -228,10 +242,13 @@ export function TechniciansScreen() {
     content = (
       <TechnicianConversation
         technician={technician}
-        jobs={techniciansContent.photoJobs}
+        canMutate={canMutate}
         onBack={() => navigate(technicianDetailPath(technician.id))}
-        onOpenJob={(jobId) => navigate(technicianPhotosPath(technician.id, jobId))}
-        onApproveAll={() => setApproveOpen(true)}
+        onOpenVisit={(visitId) => navigate(technicianPhotosPath(technician.id, visitId))}
+        onApproveAll={(pendingPhotoIds) => {
+          setApproveIds(pendingPhotoIds)
+          setApproveOpen(true)
+        }}
       />
     )
   } else if (detailMatch) {
@@ -290,8 +307,10 @@ export function TechniciansScreen() {
       {content}
       <ApprovePhotosModal
         open={approveOpen}
+        count={approveIds.length}
+        pending={approvePhotos.isPending}
         onClose={() => setApproveOpen(false)}
-        onConfirm={approveAll}
+        onConfirm={() => void approveAll()}
       />
       <RemoveTechnicianModal
         open={removeOpen}

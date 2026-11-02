@@ -4,9 +4,11 @@ import type {
   CustomerListRow,
   LifecycleStatus,
   NoteType,
-  PaymentMethod,
   ServicePlanView,
 } from '@/api/types'
+import type { PropertyDetailResponse } from '@/api/properties.api'
+import { todayIso } from '@/lib/round-dates'
+import { PAYMENT_METHOD_LABELS } from '@/lib/payment-methods'
 import type {
   CustomerPropertyRecord,
   CustomerStatus,
@@ -38,14 +40,6 @@ const FREQUENCY_LABELS: Record<CleaningFrequency, string> = {
   TWELVE_WEEKLY: 'Every 12 weeks',
 }
 
-const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  GOCARDLESS: 'GoCardless',
-  STRIPE: 'Stripe',
-  CASH: 'Cash',
-  BACS: 'Bank transfer',
-  CHEQUE: 'Cheque',
-}
-
 function formatMoney(value: number | null | undefined) {
   if (value == null) return undefined
   return `£${value.toFixed(value % 1 === 0 ? 0 : 2)}`
@@ -74,7 +68,8 @@ function mapListStatus(
 
 export function customerListRowToRecord(row: CustomerListRow): CustomerPropertyRecord {
   const customerId = row.customerId ?? ''
-  const propertyId = row.propertyId ?? customerId
+  const hasNoProperty = Boolean(row.hasNoProperty) || !row.propertyId
+  const propertyId = row.propertyId ?? ''
   const address = [row.addressLine, row.postcode].filter(Boolean).join(', ')
   const amountDue =
     row.amountDue != null && row.amountDue > 0 ? formatMoney(row.amountDue) : undefined
@@ -93,7 +88,8 @@ export function customerListRowToRecord(row: CustomerListRow): CustomerPropertyR
     nextDue: formatDate(row.nextDue ?? row.nextDueDate),
     paymentStatus: mapCustomerPaymentBadge(row.paymentStatus),
     amountDue,
-    needsAssignment: !row.roundId,
+    needsAssignment: !hasNoProperty && !row.roundId,
+    hasNoProperty,
   }
 }
 
@@ -167,6 +163,7 @@ function servicePlanToRecord(
       : null
   return {
     id: plan.id ?? '',
+    serviceId: plan.serviceId ?? null,
     serviceName: plan.serviceName?.trim() || '',
     frequency: plan.cleaningFrequency ? FREQUENCY_LABELS[plan.cleaningFrequency] : '—',
     price: formatMoney(plan.price) ?? '—',
@@ -226,6 +223,12 @@ export function customerDetailToPropertyRecord(
     paymentMethod: plan?.paymentMethod
       ? PAYMENT_METHOD_LABELS[plan.paymentMethod]
       : '—',
+    paymentMethodCode: plan?.paymentMethod ?? null,
+    planPaused: property?.status === 'PAUSED' || plan?.status === 'PAUSED',
+    pauseScheduledFor:
+      plan && plan.status !== 'PAUSED' && plan.pauseStartDate && plan.pauseStartDate > todayIso()
+        ? formatDate(plan.pauseStartDate)
+        : null,
     lastPayment: formatDate(standing?.lastPaymentDate),
     issuesCount: standing?.issuesCount ?? 0,
     nextVisitStatus: standing?.nextVisitStatus ?? '—',
@@ -362,3 +365,56 @@ export function categoryToNoteType(category: PropertyNoteCategory): NoteType {
 }
 
 export { FREQUENCY_LABELS, PAYMENT_METHOD_LABELS, formatDate, formatMoney }
+
+/**
+ * GET /properties/:id → the shape the record page already maps. The customer-level parts
+ * (visit history, payments, notes tabs) stay from `GET /customers/:id`; the property, its plans
+ * and the payment standing come from the property itself, so a customer's 2nd property shows its
+ * own data instead of the primary property's.
+ */
+export function mergePropertyIntoCustomerDetail(
+  detail: CustomerDetail,
+  property: PropertyDetailResponse,
+): CustomerDetail {
+  const primary = property.servicePlans.find((plan) => plan.isPrimary) ?? property.servicePlans[0]
+  return {
+    ...detail,
+    property: {
+      ...detail.property,
+      id: property.id,
+      addressLine: property.addressLine,
+      postcode: property.postcode,
+      propertyType: (property.propertyType ?? undefined) as never,
+      roundId: property.roundId,
+      roundName: property.roundName,
+      accessNotes: property.accessNotes,
+      riskNotes: property.riskNotes,
+      status: property.status,
+    },
+    servicePlans: property.servicePlans.map((plan) => ({
+      id: plan.id,
+      serviceId: plan.serviceId,
+      serviceName: plan.serviceName,
+      price: plan.price,
+      cleanMethod: plan.cleanMethod,
+      paymentMethod: plan.paymentMethod,
+      cleaningFrequency: plan.cleaningFrequency,
+      status: plan.status,
+      nextDueDate: plan.nextDueDate,
+      lastCompleted: plan.lastCompleted,
+      pauseStartDate: plan.pauseStartDate,
+      pauseEndDate: plan.pauseEndDate,
+      isPrimary: plan.isPrimary,
+    })) as ServicePlanView[],
+    standingInfo: {
+      ...detail.standingInfo,
+      frequency: primary?.cleaningFrequency ?? null,
+      assignedRound: property.roundName,
+      technicianName: property.assignedTechnicianName,
+      paymentStatus: property.paymentStatus as never,
+      amountDue: property.amountDue,
+      outstandingBalance: property.amountDue,
+      nextDue: primary?.nextDueDate ?? property.nextVisit?.date ?? null,
+    },
+  } as CustomerDetail
+}

@@ -123,7 +123,7 @@ export function TechnicianForm({
           {editing ? content.editTitle : content.addTitle}
         </h1>
         <p className="mt-1 text-xs text-muted">
-          {editing ? content.editSubtitle : content.addSubtitle}
+          {editing ? content.editSubtitle.replace('{name}', technician?.name ?? name) : content.addSubtitle}
         </p>
       </header>
 
@@ -137,7 +137,7 @@ export function TechnicianForm({
                 inputSize="sm"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. James Smith"
+                placeholder="Full name"
                 disabled={!canMutate || pending}
               />
             </Field>
@@ -146,7 +146,7 @@ export function TechnicianForm({
                 inputSize="sm"
                 value={phone}
                 onValueChange={setPhone}
-                placeholder="e.g. 07700 900000"
+                placeholder="Mobile number"
                 disabled={!canMutate || pending}
               />
             </Field>
@@ -156,7 +156,7 @@ export function TechnicianForm({
                 inputSize="sm"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="e.g. james@example.com"
+                placeholder="name@company.com"
                 disabled={!canMutate || pending}
               />
             </Field>

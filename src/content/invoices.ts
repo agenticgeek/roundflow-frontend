@@ -1,3 +1,4 @@
+import { PAYMENT_METHOD_OPTIONS } from '@/lib/payment-methods'
 /** Copy for the Invoices page — invoice and payment lists, send, mark paid, CSV export (GAP-028). */
 export const invoicesContent = {
   title: 'Invoices',
@@ -31,14 +32,7 @@ export const invoicesContent = {
     { value: 'NOT_DUE', label: 'Not due' },
     { value: 'CANCELLED', label: 'Cancelled' },
   ],
-  paymentMethods: [
-    { value: '', label: 'All methods' },
-    { value: 'GOCARDLESS', label: 'GoCardless' },
-    { value: 'STRIPE', label: 'Stripe' },
-    { value: 'BACS', label: 'Bank transfer' },
-    { value: 'CHEQUE', label: 'Cheque' },
-    { value: 'CASH', label: 'Cash' },
-  ],
+  paymentMethods: [{ value: '', label: 'All methods' }, ...PAYMENT_METHOD_OPTIONS],
   invoiceTable: {
     number: 'Invoice',
     customer: 'Customer',

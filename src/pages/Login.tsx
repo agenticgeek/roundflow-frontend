@@ -2,7 +2,7 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '@/components/AuthLayout'
-import { supabase } from '@/lib/supabase'
+import { setRememberSession, supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
 // === DEV AUTH BACKDOOR START — comment out this import + the block in handleSubmit to disable ===
@@ -34,7 +34,7 @@ export default function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [rememberMe, setRememberMe] = useState(false)
+  const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [googleError, setGoogleError] = useState<string | null>(null)
@@ -57,6 +57,7 @@ export default function Login() {
       }
       // === DEV AUTH BACKDOOR END ===
 
+      setRememberSession(rememberMe)
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
 
       if (signInError) {
@@ -74,6 +75,7 @@ export default function Login() {
     setGoogleError(null)
     setGoogleLoading(true)
     try {
+      setRememberSession(rememberMe)
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: `${window.location.origin}${ROUTES.authCallback}` },
@@ -99,7 +101,7 @@ export default function Login() {
             type="email"
             required
             autoComplete="email"
-            placeholder="jane@company.com"
+            placeholder="name@company.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />

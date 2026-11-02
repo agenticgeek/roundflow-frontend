@@ -489,8 +489,9 @@ function ComplaintCard({
           <DashboardIcon name="user" className="h-3.5 w-3.5" />
           {technicianName ?? complaintsContent.detail.unassigned}
         </span>
-        <span className="inline-flex items-center gap-1" title="Messages (count not yet available)">
+        <span className="inline-flex items-center gap-1" title="Messages">
           <DashboardIcon name="message" className="h-3.5 w-3.5" />
+          {record.messageCount ?? 0}
         </span>
         {record.status === 'REVISIT_BOOKED' && record.revisitDate ? (
           <span className="inline-flex items-center gap-1">

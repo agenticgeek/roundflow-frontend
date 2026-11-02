@@ -208,7 +208,7 @@ function RoundDetailsStep({
           inputSize="sm"
           value={roundName}
           onChange={(event) => onRoundName(event.target.value)}
-          placeholder="e.g. Alnwick Monday"
+          placeholder="Round name"
         />
       </Field>
 
@@ -676,13 +676,13 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
                   inputSize="sm"
                   value={newAreaName}
                   onChange={(event) => setNewAreaName(event.target.value)}
-                  placeholder="Area Name: Alnwick"
+                  placeholder="Area name"
                 />
                 <Input
                   inputSize="sm"
                   value={newAreaPostcodes}
                   onChange={(event) => setNewAreaPostcodes(event.target.value)}
-                  placeholder="Postcode sector (e.g. NE66)"
+                  placeholder="Postcode sector"
                 />
                 <div className="flex gap-2">
                   <button

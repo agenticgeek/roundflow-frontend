@@ -57,5 +57,8 @@ export const sharedActionsContent = {
     previous: 'Previous photo',
     next: 'Next photo',
     counter: '{index} of {total}',
+    approve: 'Approve',
+    reject: 'Reject',
+    reviewStatus: { PENDING: 'Pending review', APPROVED: 'Approved', REJECTED: 'Rejected' },
   },
 } as const

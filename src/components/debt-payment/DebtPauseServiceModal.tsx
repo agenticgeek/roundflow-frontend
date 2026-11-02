@@ -39,12 +39,14 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
   const [pauseFrom, setPauseFrom] = useState<string>(todayIsoDate)
   const [notifySms, setNotifySms] = useState(true)
   const [message, setMessage] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open || !record) return
     setReason(pauseModal.reasons[0]?.value ?? '')
     setPauseFrom(todayIsoDate())
     setNotifySms(true)
+    setError(null)
     setMessage(
       pauseModal.defaultMessage.replace('{firstName}', firstName(record.customer)),
     )
@@ -54,6 +56,11 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
 
   async function handlePause() {
     if (!canMutate || !record || setHold.isPending) return
+    setError(null)
+    if (pauseFrom && pauseFrom < todayIsoDate()) {
+      setError(pauseModal.validation.startInPast)
+      return
+    }
     try {
       const reasonLabel = pauseModal.reasons.find((item) => item.value === reason)?.label ?? reason
       await setHold.mutateAsync({
@@ -68,7 +75,7 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
       showToast(pauseModal.successToast.replace('{customer}', record.customer))
     } catch (error) {
       if (error instanceof ApiError && (error.status === 400 || error.status === 404)) {
-        showToast(error.message)
+        setError(error.message)
         return
       }
       showToast(error instanceof Error ? error.message : 'Could not pause service')
@@ -113,6 +120,12 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
         <DashboardIcon name="pause" className="h-5 w-5" />
       </span>
 
+      {error ? (
+        <p role="alert" className="rounded-lg border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+
       <div className="flex items-center justify-between rounded-xl border border-border px-4 py-3 text-sm">
         <span className="text-muted">{pauseModal.fields.customer}</span>
         <span className="font-semibold text-foreground">{record.customer}</span>
@@ -133,6 +146,7 @@ export function DebtPauseServiceModal({ open, record, onClose }: DebtPauseServic
         <Input
           type="date"
           inputSize="sm"
+          min={todayIsoDate()}
           value={pauseFrom}
           onChange={(event) => setPauseFrom(event.target.value)}
           className={cn(modalInputClass, 'rounded-lg border-accent/25 bg-accent-surface')}

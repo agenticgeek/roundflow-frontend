@@ -1,5 +1,6 @@
 import type { components } from '@/api/types.gen'
 import type {
+  PaymentMethod,
   BusinessSettings,
   CleaningFrequency,
   Service,
@@ -34,6 +35,7 @@ import type {
 } from '@/types/setup-wizard'
 import { setupWizardContent, type BusinessProfileForm } from '@/content/setup-wizard'
 import {
+  acceptedMethodsToForm,
   cleanMethodFromForm,
   cleanMethodToForm,
   noDirectDebitFromForm,
@@ -133,11 +135,13 @@ export function wizardPaymentToForm(data: BusinessSettings | null | undefined): 
   if (!data) return defaults
   const goCardlessConnected = data.gocardlessConnected ?? defaults.goCardlessConnected
   const stripeConnected = data.stripeConnected ?? defaults.stripeConnected
+  const defaultPaymentMethod =
+    data.defaultPaymentMethod ?? (goCardlessConnected ? 'GOCARDLESS' : defaults.defaultPaymentMethod)
   return {
     goCardlessConnected,
     stripeConnected,
-    defaultPaymentMethod:
-      data.defaultPaymentMethod ?? (goCardlessConnected ? 'GOCARDLESS' : defaults.defaultPaymentMethod),
+    defaultPaymentMethod,
+    acceptedPaymentMethods: acceptedMethodsToForm(data.acceptedPaymentMethods, defaultPaymentMethod),
     paymentTiming: paymentTimingToForm(data.paymentRule),
     invoiceDueDays: data.invoiceDueDays != null ? String(data.invoiceDueDays) : defaults.invoiceDueDays,
     noDirectDebitAction: noDirectDebitToForm(data.noDirectDebitAction, defaults.noDirectDebitAction),
@@ -159,6 +163,7 @@ export function wizardPaymentFromForm(
     debtHoldEnabled: values.debtHoldEnabled,
     vatInInvoices: vatRegistered,
     defaultPaymentMethod: values.defaultPaymentMethod as SetupStep2Input['defaultPaymentMethod'],
+    acceptedPaymentMethods: values.acceptedPaymentMethods as PaymentMethod[],
     invoiceDueDays: Number(values.invoiceDueDays),
     noDirectDebitAction: noDirectDebitFromForm(values.noDirectDebitAction),
   }

@@ -19,6 +19,8 @@ export type Complaint = {
   technicianId: string | null
   revisitDate: string | null
   createdAt: string
+  /** Messages in the complaint's thread (the list returns it too). */
+  messageCount?: number
   /** Set on resolve; an upheld complaint with a technician counts as a strike (GAP-025). */
   upheld?: boolean | null
 }

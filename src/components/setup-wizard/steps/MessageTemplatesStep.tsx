@@ -61,7 +61,7 @@ export function MessageTemplatesStep({
   const catalogueDefault = content.catalogue.find((message) => message.key === selected?.key)
 
   const previewValues = useMemo(
-    () => ({ ...content.previewValues, business_name: businessName || content.previewValues.business_name }),
+    () => ({ ...content.previewValues, businessName: businessName || content.previewValues.businessName }),
     [content.previewValues, businessName],
   )
 

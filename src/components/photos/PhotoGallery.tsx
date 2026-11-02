@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { PhotoPage, PhotoRow } from '@/api/photos.api'
+import { cn } from '@/lib/utils'
 import { Pager } from '@/components/ui/pager'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -45,11 +46,17 @@ function PhotoTile({ photo, onOpen }: { photo: PhotoRow; onOpen: () => void }) {
   )
 }
 
-function Lightbox({ photos, index, onIndex, onClose }: {
+export type PhotoReviewActions = {
+  pending: boolean
+  onReview: (photo: PhotoRow, status: 'APPROVED' | 'REJECTED') => void
+}
+
+function Lightbox({ photos, index, onIndex, onClose, review }: {
   photos: PhotoRow[]
   index: number
   onIndex: (index: number) => void
   onClose: () => void
+  review?: PhotoReviewActions
 }) {
   const photo = photos[index]
   useEffect(() => {
@@ -69,6 +76,32 @@ function Lightbox({ photos, index, onIndex, onClose }: {
       ) : (
         <p className="py-10 text-center text-sm text-muted">{copy.unavailable}</p>
       )}
+      {review && photo.reviewStatus ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <span
+            className={cn(
+              'rounded-lg px-2 py-1 text-xs font-semibold',
+              photo.reviewStatus === 'APPROVED' && 'bg-success/10 text-success',
+              photo.reviewStatus === 'PENDING' && 'bg-primary/10 text-primary',
+              photo.reviewStatus === 'REJECTED' && 'bg-danger/10 text-danger',
+            )}
+          >
+            {copy.reviewStatus[photo.reviewStatus]}
+          </span>
+          <div className="flex gap-2">
+            {photo.reviewStatus !== 'REJECTED' ? (
+              <ModalButton compact variant="danger" disabled={review.pending} onClick={() => review.onReview(photo, 'REJECTED')}>
+                {copy.reject}
+              </ModalButton>
+            ) : null}
+            {photo.reviewStatus !== 'APPROVED' ? (
+              <ModalButton compact variant="primary" disabled={review.pending} onClick={() => review.onReview(photo, 'APPROVED')}>
+                {copy.approve}
+              </ModalButton>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       <div className="mt-4 flex items-center justify-between gap-3">
         <ModalButton compact aria-label={copy.previous} disabled={index === 0} onClick={() => onIndex(index - 1)}>
           ‹
@@ -101,6 +134,7 @@ export function PhotoGallery({
   error,
   onRetry,
   onPage,
+  review,
 }: {
   data: PhotoPage | undefined
   isLoading: boolean
@@ -108,6 +142,8 @@ export function PhotoGallery({
   error: unknown
   onRetry: () => void
   onPage: (page: number) => void
+  /** Per-photo Approve / Reject in the lightbox (admins only — omit to hide). */
+  review?: PhotoReviewActions
 }) {
   const [open, setOpen] = useState<{ photos: PhotoRow[]; index: number } | null>(null)
 
@@ -163,8 +199,9 @@ export function PhotoGallery({
       ) : null}
       {open ? (
         <Lightbox
-          photos={open.photos}
+          photos={open.photos.map((p) => data.rows.find((row) => row.id === p.id) ?? p)}
           index={open.index}
+          review={review}
           onIndex={(index) => setOpen({ photos: open.photos, index })}
           onClose={() => setOpen(null)}
         />

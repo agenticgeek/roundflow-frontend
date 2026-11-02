@@ -1,8 +1,9 @@
 import type { FormEvent, ReactNode } from 'react'
 import { useState } from 'react'
-import type { ReminderSchedule, RoundSettingsData } from '@/types/setup-wizard'
+import type { RoundSettingsData } from '@/types/setup-wizard'
+import { ReminderChecklist } from '@/components/setup-wizard/ReminderChecklist'
 import { setupWizardContent } from '@/content/setup-wizard'
-import { Select, Toggle } from '@/components/ui'
+import { Toggle } from '@/components/ui'
 import { useReportWizardDirty } from '@/features/setup/lib/wizard-dirty'
 import { cn } from '@/lib/utils'
 
@@ -104,30 +105,6 @@ export function RoundSettingsStep({ initialValues, onSubmit }: RoundSettingsStep
     onSubmit(values)
   }
 
-  /** Time picker for a reminder option — `null` for "Don't send reminders". */
-  function reminderTimeSelect(schedule: ReminderSchedule) {
-    if (schedule === 'none') return null
-    const key = schedule === 'evening-before' ? 'eveningReminderTime' : 'morningReminderTime'
-    const options =
-      schedule === 'evening-before'
-        ? roundSettings.eveningReminderTimes
-        : roundSettings.morningReminderTimes
-    return (
-      <Select
-        aria-label={fields.reminderTime.label}
-        value={values[key]}
-        onChange={(event) => {
-          updateField(key, event.target.value)
-          // Picking a time implies that's the reminder they want.
-          updateField('reminderSchedule', schedule)
-        }}
-        options={options}
-        inputSize="sm"
-        className="w-32 shrink-0"
-      />
-    )
-  }
-
   return (
     <form id="setup-wizard-step-form" onSubmit={handleSubmit} noValidate className="space-y-6">
       <div className="flex items-start gap-4">
@@ -157,47 +134,11 @@ export function RoundSettingsStep({ initialValues, onSubmit }: RoundSettingsStep
       </SettingsSection>
 
       <SettingsSection heading={sections.reminder.heading} description={sections.reminder.description}>
-        <div role="radiogroup" aria-label={sections.reminder.heading} className="space-y-3">
-          {roundSettings.reminderOptions.map((option) => {
-            const active = values.reminderSchedule === option.id
-            return (
-              <div
-                key={option.id}
-                className={cn(
-                  'flex items-center gap-4 rounded-xl border px-4 py-3.5 transition-colors duration-150 sm:px-5',
-                  active ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-surface',
-                )}
-              >
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => updateField('reminderSchedule', option.id)}
-                  className="flex min-w-0 flex-1 items-center gap-4 text-left"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-                      active ? 'border-primary' : 'border-muted/50',
-                    )}
-                  >
-                    {active ? <span className="h-2.5 w-2.5 rounded-full bg-primary" /> : null}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground sm:text-[15px]">
-                      {option.label}
-                    </span>
-                    {option.description ? (
-                      <span className="mt-0.5 block text-sm text-muted">{option.description}</span>
-                    ) : null}
-                  </span>
-                </button>
-                {reminderTimeSelect(option.id)}
-              </div>
-            )
-          })}
-        </div>
+        <ReminderChecklist
+          ariaLabel={sections.reminder.heading}
+          values={values}
+          onChange={(patch) => setValues((prev) => ({ ...prev, ...patch }))}
+        />
       </SettingsSection>
 
       <SettingsSection heading={sections.keepGoing.heading}>

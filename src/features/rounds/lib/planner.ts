@@ -1,3 +1,4 @@
+import { isoDateInTenantZone } from '@/lib/timezone'
 import type { PlannerOccurrence, PlannerStop, RoundListItem } from '@/api/rounds.api'
 
 /**
@@ -76,7 +77,7 @@ export function addDays(value: string, days: number): string {
 }
 
 export function todayIsoDate(): string {
-  return toIsoDate(new Date())
+  return isoDateInTenantZone()
 }
 
 /** Monday of the week containing `value` (UTC). */

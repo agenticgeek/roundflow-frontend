@@ -229,7 +229,7 @@ describe('InvoicesScreen (GAP-028)', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Payments' }))
     expect(await screen.findByText('INV-001')).toBeInTheDocument()
-    expect(screen.getByText('GoCardless')).toBeInTheDocument()
+    expect(screen.getByText('Direct Debit (GoCardless)')).toBeInTheDocument()
     expect(screen.getByText('Failed')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(await screen.findByText('INV-P2')).toBeInTheDocument()

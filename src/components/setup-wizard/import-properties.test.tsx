@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type userEvent from '@testing-library/user-event'
 import { fireEvent, screen } from '@testing-library/react'
 import { ImportPropertiesPanel, type BulkSaveResult } from '@/components/setup-wizard/ImportPropertiesPanel'
 import { setupWizardContent } from '@/content/setup-wizard'
@@ -15,6 +16,12 @@ const csv = [
   'No,Phone,,1 High Street,Alnwick,NE66 1AA',
   'Bad,Phone,12ab,2 High Street,Alnwick,NE66 1AB',
 ].join('\n')
+
+/** Offers one 'Windows' (£18) service for the import and ticks it, so each row's price becomes £18. */
+async function pickWindows(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /Select services/ }))
+  await user.click(screen.getByRole('option', { name: /Windows/ }))
+}
 
 describe('parsePropertyCsv (GAP-009)', () => {
   it('a missing or invalid mobile is a row error, as on the single-add form', () => {
@@ -37,8 +44,8 @@ describe('ImportPropertiesPanel (GAP-009)', () => {
         roundOptions={[{ value: 'r6', label: 'Amble 6-weekly' }]}
         roundFrequencies={{ r6: 'SIX_WEEKLY' }}
         serviceAreaOptions={[{ value: 'a1', label: 'Alnwick' }]}
-        serviceOptions={[]}
-        servicePrices={{}}
+        serviceOptions={[{ value: 's1', label: 'Windows' }]}
+        servicePrices={{ s1: 18 }}
         draftDefaults={draftDefaults}
         onSaveProperty={vi.fn()}
         onSaveProperties={onSaveProperties}
@@ -54,7 +61,7 @@ describe('ImportPropertiesPanel (GAP-009)', () => {
     await user.click(screen.getByRole('option', { name: 'Alnwick' }))
     await user.click(screen.getByRole('button', { name: 'Select a round' }))
     await user.click(screen.getByRole('option', { name: 'Amble 6-weekly' }))
-    await user.type(screen.getByPlaceholderText('e.g. 20'), '18')
+    await pickWindows(user)
     await user.click(screen.getByRole('button', { name: 'Import 1 properties' }))
 
     expect(screen.getByText('Starting 1…')).toBeInTheDocument()
@@ -78,8 +85,8 @@ describe('ImportPropertiesPanel (GAP-009)', () => {
       <ImportPropertiesPanel
         roundOptions={[{ value: 'r1', label: 'Round' }]}
         serviceAreaOptions={[{ value: 'a1', label: 'Alnwick' }]}
-        serviceOptions={[]}
-        servicePrices={{}}
+        serviceOptions={[{ value: 's1', label: 'Windows' }]}
+        servicePrices={{ s1: 18 }}
         draftDefaults={draftDefaults}
         onSaveProperty={onSaveProperty}
         onClose={vi.fn()}
@@ -91,7 +98,7 @@ describe('ImportPropertiesPanel (GAP-009)', () => {
     await user.click(screen.getByRole('option', { name: 'Alnwick' }))
     await user.click(screen.getByRole('button', { name: 'Select a round' }))
     await user.click(screen.getByRole('option', { name: 'Round' }))
-    for (const input of screen.getAllByPlaceholderText('e.g. 20')) await user.type(input, '10')
+    await pickWindows(user)
     await user.click(screen.getByRole('button', { name: 'Import 2 properties' }))
 
     expect(await screen.findByText('1 of 2 saved')).toBeInTheDocument()

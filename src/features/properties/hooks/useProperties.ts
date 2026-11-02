@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { propertiesApi } from '@/api/properties.api'
+import { propertiesApi, type PropertyServicesInput } from '@/api/properties.api'
 import type {
   NoteCreateInput,
   PauseServiceInput,
@@ -56,6 +56,35 @@ export function useResumeProperty() {
   return useMutation({
     mutationFn: (id: string) => propertiesApi.resume(id),
     onSuccess: () => invalidateServiceChange(queryClient),
+  })
+}
+
+/** PUT /properties/:id/services — changes plans, visits and prices, so everything service-related refetches. */
+export function useSetPropertyServices() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: PropertyServicesInput }) =>
+      propertiesApi.setServices(id, input),
+    onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ['properties', 'services-history', id] })
+      return invalidateServiceChange(queryClient)
+    },
+  })
+}
+
+export function usePropertyServicesHistory(propertyId: string, page = 1, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.properties.servicesHistory(propertyId, page),
+    queryFn: ({ signal }) => propertiesApi.servicesHistory(propertyId, page, signal),
+    enabled: enabled && Boolean(propertyId),
+  })
+}
+
+export function useProperty(propertyId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.properties.detail(propertyId),
+    queryFn: ({ signal }) => propertiesApi.get(propertyId, signal),
+    enabled: enabled && Boolean(propertyId),
   })
 }
 

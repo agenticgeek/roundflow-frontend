@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DebtCustomerRecord, DebtStatusTab } from '@/content/debt-payment'
 import { debtPaymentContent } from '@/content/debt-payment'
+import { DebtBulkBar } from '@/components/debt-payment/DebtBulkBar'
 import { DebtCustomerDetailPanel } from '@/components/debt-payment/DebtCustomerDetailPanel'
 import { DebtInvoicePreviewModal } from '@/components/debt-payment/DebtInvoicePreviewModal'
 import { DebtPauseServiceModal } from '@/components/debt-payment/DebtPauseServiceModal'
@@ -342,6 +343,15 @@ export function DebtPaymentScreen() {
           {debtPaymentContent.selectAll}
         </label>
       </div>
+
+      {canMutate ? (
+        <DebtBulkBar
+          selected={filteredRecords
+            .filter((record) => selectedIds.includes(record.id))
+            .map((record) => ({ invoiceId: record.invoiceId ?? record.id, label: record.customer }))}
+          onClear={() => setSelectedIds([])}
+        />
+      ) : null}
 
       <div key={activeTab} className="animate-fade-in">
         {boardQuery.isPending ? (

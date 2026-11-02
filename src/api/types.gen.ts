@@ -2349,8 +2349,8 @@ export interface paths {
         };
         put?: never;
         /**
-         * Create a standalone customer (no property)
-         * @description Creates a Customer record without an attached property. Use POST /properties to create a Customer+Property+ServicePlan in one shot.
+         * Create a customer, optionally with its first property and plan
+         * @description Without `property`: a Customer with no property (it is still listed by GET /customers as a `hasNoProperty` row). With `property` (same fields as POST /customers/{id}/properties): customer + property + first plan in ONE transaction; the response then also carries `propertyId`, `servicePlanId`, `assigned`. 400/404 as for the property endpoints (ROUND_SERVICE_AREA_MISMATCH, SERVICE_INACTIVE).
          */
         post: {
             parameters: {
@@ -2366,17 +2366,23 @@ export interface paths {
                         phone?: string | null;
                         email?: string | null;
                         paymentMethod?: components["schemas"]["PaymentMethod"] | null;
+                        /** @description Optional first property + plan: addressLine, postcode, serviceAreaId, price (required) and serviceId, propertyName, propertyType, cleanMethod, paymentMethod, nextDueDate, lastCleanedDate, accessNotes, riskNotes, roundId. */
+                        property?: {
+                            [key: string]: unknown;
+                        };
                     };
                 };
             };
             responses: {
-                /** @description Created customer. */
+                /** @description Created customer (+ propertyId/servicePlanId/assigned when a property was sent). */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["CustomerListRow"];
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 400: components["responses"]["BadRequest"];
@@ -3237,6 +3243,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/messages/bulk/recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview who a round broadcast would reach
+         * @description Read-only (GoHighLevel need not be connected). One row per distinct customer of the round with a per-customer `status` for the channel (default sms): ok, opted_out or no_contact. `excludePaymentHold=true` applies the same payment-hold filter as the broadcast. Use `customerIds` on POST /messages/bulk to message a subset.
+         */
+        get: {
+            parameters: {
+                query: {
+                    roundId: string;
+                    channel?: "sms" | "email" | "whatsapp";
+                    excludePaymentHold?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Recipients. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BulkRecipientsResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages/bulk": {
         parameters: {
             query?: never;
@@ -3248,7 +3301,7 @@ export interface paths {
         put?: never;
         /**
          * Broadcast one message to every customer in a round
-         * @description Sends right now — no scheduling. `excludePaymentHold: true` drops any customer whose round properties all have a payment-hold visit. Best-effort: a per-recipient failure is logged and skipped; `queued` counts successes, not attempts. 409 if GoHighLevel isn't connected.
+         * @description `{{variables}}` (customerName, firstName, address, date, technicianName, roundName, businessName, amount) are rendered per customer — never sent literally. Sends now, or queues each message on the outbox when `scheduledFor` is given (the Message row is then recorded at send time). Customers with `messagesOptOut` are skipped; each success is recorded as an OUTBOUND Message. `excludePaymentHold: true` drops any customer whose round properties all have a payment-hold visit. Best-effort per recipient: the outcome of every customer is in `recipients`. 409 if GoHighLevel isn't connected; 404 for an unknown round.
          */
         post: {
             parameters: {
@@ -3275,6 +3328,7 @@ export interface paths {
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
                 /** @description GoHighLevel is not connected. */
                 409: {
                     headers: {
@@ -5315,6 +5369,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mobile/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's visits over a date range (upcoming and past)
+         * @description Only the signed-in technician's own visits, CANCELLED excluded, COMPLETED/SKIPPED included. Dates are tenant-local days (BusinessSettings.timezone, default Europe/London); defaults `from` = today, `to` = from + 13 days. Max span 62 days. Rows are ordered by date, then round, then round order (`position`), paged (`pageSize` default 100, max 200). `summary` covers the WHOLE range (per day with visits: `count`, `completedCount`) so a calendar can be drawn without paging. 400 `INVALID_DATE_RANGE` (malformed date or from > to), 400 `RANGE_TOO_LARGE`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Schedule page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            from?: string;
+                            to?: string;
+                            timeZone?: string;
+                            rows?: {
+                                [key: string]: unknown;
+                            }[];
+                            summary?: {
+                                date?: string;
+                                count?: number;
+                                completedCount?: number;
+                            }[];
+                            pagination?: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mobile/visits/today": {
         parameters: {
             query?: never;
@@ -5364,6 +5494,150 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's end-of-day state
+         * @description Default today (tenant-local); `date` = YYYY-MM-DD for an earlier day. 400 INVALID_DATE / FUTURE_DATE.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    date?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Day state. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileDayStatus"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/day/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Technician end-of-day sign-off
+         * @description Records that the caller has nothing left open for the day (default today): every visit is COMPLETED or SKIPPED. Changes no visit and does not close the office's business day (POST /today/close); a TECHNICIAN_DAY_CLOSED entry appears in the activity log. Idempotent: closing a closed day returns the stored sign-off with `alreadyClosed: true`. 409 UNFINISHED_VISITS (body is the day state, `remaining` lists what is left) while any visit is SCHEDULED/IN_PROGRESS.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional offline-replay key (stored 7 days). A repeat with the same key + route returns the original 2xx response without re-running the action. 400 INVALID_IDEMPOTENCY_KEY (blank / >200 chars), 403 IDEMPOTENCY_KEY_CONFLICT (another technician's key), 409 IDEMPOTENCY_KEY_REUSED (same key, different route). */
+                    "X-Idempotency-Key"?: string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /**
+                         * Format: date
+                         * @description Defaults to today; future days are rejected.
+                         */
+                        date?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Day closed. */
+                200: {
+                    headers: {
+                        /** @description "true" when this is a stored replay for the X-Idempotency-Key. */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileDayStatus"] & {
+                            alreadyClosed: boolean;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Visits still open (code UNFINISHED_VISITS), or the idempotency key was reused. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MobileDayStatus"] & {
+                            error: string;
+                            /** @example UNFINISHED_VISITS */
+                            code: string;
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -5502,6 +5776,379 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ChatMessage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk debt action on up to 100 invoices
+         * @description `action`: remind | hold | bad-debt. Each id runs the same service call as the single-row endpoint; failures are reported per id in `results` (HTTP 200) and never abort the batch. Optional `channel`, `message`, `reason`, `notify` as on the single endpoints.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids: string[];
+                        /** @enum {string} */
+                        action: "remind" | "hold" | "bad-debt";
+                        channel?: string;
+                        message?: string;
+                        reason?: string;
+                        notify?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Per-id outcome. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            action?: string;
+                            total?: number;
+                            succeeded?: number;
+                            failed?: number;
+                            results?: {
+                                id?: string;
+                                ok?: boolean;
+                                error?: string;
+                                code?: string;
+                            }[];
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inbound customer replies (from GHL), newest first
+         * @description `{ rows: [{ id, customerId, customerName, channel, body, receivedAt, unread }], unreadCount, pagination }`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    customerId?: string;
+                    unreadOnly?: boolean;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Inbox page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/inbox/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark inbound replies read
+         * @description By `ids` and/or `customerId` (all that customer's unread replies). 400 when neither is sent. -> `{ updated }`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids?: string[];
+                        customerId?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Rows updated. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            updated?: number;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Office chat: rounds that have messages (ADMIN/MANAGER only)
+         * @description `{ threads: [{ roundId, roundName, technicians, lastMessage, unreadCount }] }`, most recent activity first. Technicians get 403 (they use /mobile/chat/*).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Threads. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Office chat: unread totals for the signed-in user
+         * @description `{ total, rounds: [{ roundId, unread }] }` (rounds with unread > 0).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unread counts. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/chat/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unread chat messages for the technician
+         * @description `{ total, rounds: [{ roundId, unread }] }` over the rounds the technician is on (or just `roundId`). Unread = messages from others newer than the last POST /mobile/chat/read.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    roundId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unread counts. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "This job is not assigned to you",
+                         *       "code": "NOT_YOUR_VISIT"
+                         *     }
+                         */
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mobile/chat/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a round's chat read for the technician */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        roundId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Read marker. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            roundId?: string;
+                            /** Format: date-time */
+                            lastReadAt?: string;
+                        };
                     };
                 };
                 400: components["responses"]["BadRequest"];
@@ -6719,7 +7366,37 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        /**
+         * One property with customer summary, plans, round, technician, payment status, pause state and next visit
+         * @description Contract: docs/BACKEND_CHANGES_2026-11-03.md section 19. `pause.state` is NONE | PAUSED | SCHEDULED (primary plan; SCHEDULED = ACTIVE plan with a stored future pause window). 404 when unknown.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Property detail. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         put?: never;
         post?: never;
         /** Soft-delete property (status → CANCELLED, cancels service plan) */
@@ -6806,7 +7483,7 @@ export interface paths {
         put?: never;
         /**
          * M9 — Pause Service
-         * @description Pauses the property's primary plan. SCHEDULED visits of the plan inside [pauseStartDate, pauseEndDate] (end inclusive; open-ended = every visit from the start) are CANCELLED with `cancelReason: "PAUSED"`. A start on/before today sets the plan PAUSED now; a future start keeps it ACTIVE with the window stored (`pauseScheduled: true`) and the nightly job pauses it on the day. 409 if the plan is already PAUSED. `reason` is validated but not persisted (no column).
+         * @description Pauses the property's primary plan. SCHEDULED visits of the plan inside [pauseStartDate, pauseEndDate] (end inclusive; open-ended = every visit from the start) are CANCELLED with `cancelReason: "PAUSED"`. A start on/before today sets the plan PAUSED now; a future start keeps it ACTIVE with the window stored (`pauseScheduled: true`) and the nightly job pauses it on the day. 400 `PAUSE_START_IN_PAST` when pauseStartDate is before today (tenant time zone). 409 if the plan is already PAUSED or cancelled. A scheduled pause is cancelled with POST /properties/{id}/resume. `reason` is validated but not persisted (no column).
          */
         post: {
             parameters: {
@@ -8122,6 +8799,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rounds/{id}/weather-hold/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Preview a weather hold
+         * @description Read-only. Returns how many SCHEDULED visits / customers the hold would affect on `date`, the new date, and the customer message rendered for the first affected customer (tenant "Weather Hold" template, else the built-in wording).
+         */
+        get: {
+            parameters: {
+                query: {
+                    date: string;
+                    condition: "heavy-rain" | "high-winds" | "snow-ice" | "technician-safety";
+                    rescheduling: "next-available" | "next-cycle" | "manual";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Preview. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeatherHoldPreview"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/weather-hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hold a round-day for the weather
+         * @description Acts on the round's SCHEDULED visits on `date` (IN_PROGRESS / finished visits are left alone): `next-available` moves them to the next working day; `next-cycle` moves each to its next regular cycle date and advances its plan's nextDueDate a cycle; `manual` marks them SKIPPED with reason "Weather hold: <condition>". Moved visits get their pre-clean reminder markers cleared. Writes a WEATHER_HOLD activity-log entry (entityId = round id). With `notifyCustomers`, each affected customer is messaged through the shared broadcast path (opt-out honoured, Message rows recorded); a delivery failure never undoes the hold — see `notification.recipients`. GoHighLevel must be connected when notifying (409 before anything changes). 409 NO_VISITS_TO_HOLD when nothing is scheduled; 409 if the operational day is already closed (date = today).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WeatherHoldInput"];
+                };
+            };
+            responses: {
+                /** @description Hold applied. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeatherHoldResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description GoHighLevel is not connected, no visits to hold, or the operational day is closed. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rounds/{id}/generate-visits": {
         parameters: {
             query?: never;
@@ -8329,11 +9117,14 @@ export interface paths {
         };
         /**
          * Photos from the technician's visits (B4 · GAP-019)
-         * @description Newest first, 1-hour signed URLs. `pageSize` default 24, max 100.
+         * @description Paged by VISIT, newest visit first: `page`/`pageSize` count visits, and `rows` holds every (matching) photo of the visits on the page, so a visit never splits across pages; `pagination.total` is the number of visits. 1-hour signed URLs. `pageSize` default 24, max 100. `search` matches the visit's customer name, property address / postcode / name, job ref (`JOB-000123`, `123`) or visit id, case-insensitive. `reviewStatus` keeps only visits with, and only returns, photos in that state.
          */
         get: {
             parameters: {
                 query?: {
+                    /** @description Customer name, address / postcode, job ref (`JOB-000123`) or visit id. */
+                    search?: string;
+                    reviewStatus?: components["schemas"]["PhotoReviewStatus"];
                     page?: number;
                     pageSize?: number;
                 };
@@ -8370,6 +9161,69 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/technicians/{id}/photos/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk-approve the technician's pending photos
+         * @description Marks PENDING photos on the technician's visits APPROVED (stamping `reviewedAt` / `reviewedById`). Pass `photoIds` to approve only those (ids that aren't the technician's or aren't PENDING are ignored); omit it to approve every pending photo. ADMIN / MANAGER only.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        photoIds?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description How many photos changed. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            updated: number;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Technician not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -9440,7 +10294,7 @@ export interface paths {
         put?: never;
         /**
          * Pause a service plan
-         * @description Mirrors POST /properties/{id}/pause (cancels SCHEDULED visits in the window with cancelReason PAUSED; a future start is stored as a scheduled pause). `reason` is required by the UI but not persisted (no column).
+         * @description Mirrors POST /properties/{id}/pause (cancels SCHEDULED visits in the window with cancelReason PAUSED; a future start is stored as a scheduled pause). `reason` is required by the UI but not persisted (no column). 400 `PAUSE_START_IN_PAST` when pauseStartDate is before today in the tenant time zone. To cancel a scheduled (future) pause call POST /service-plans/{id}/resume.
          */
         post: {
             parameters: {
@@ -10600,6 +11454,438 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/properties/{id}/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the property's service list (add / remove / re-price)
+         * @description One transaction. Added services get a plan at the catalogue price (or `prices[serviceId]`) inheriting frequency, payment method, clean method and nextDueDate from the primary plan, plus a mirrored SCHEDULED visit when the primary plan has an upcoming one. Removed services: plan CANCELLED and its SCHEDULED visits CANCELLED (reason SERVICE_REMOVED). Kept services named in `prices` are re-priced (plan + upcoming un-adjusted SCHEDULED visits). Completed visits and invoices are never touched. Writes an ActivityLog entry (PROPERTY_SERVICES_CHANGED). 400 SERVICES_REQUIRED (empty list) / SERVICE_INACTIVE; 404 unknown property or service; 409 cancelled property.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        serviceIds: string[];
+                        /** @description serviceId -> price override. */
+                        prices?: {
+                            [key: string]: number;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description New plan list and total. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            propertyId?: string;
+                            servicePlans?: {
+                                [key: string]: unknown;
+                            }[];
+                            totalPrice?: number;
+                            added?: string[];
+                            removed?: string[];
+                            cancelledVisits?: number;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/properties/{id}/services/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * History of service-list changes (newest first)
+         * @description `{ rows: [{ id, changedAt, actorId, actorRole, oldServices, newServices, added, removed }], pagination }`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description History page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rounds/{id}/properties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * The round's properties, paged (any page; pageSize max 100)
+         * @description `{ rows: [{ propertyId, addressLine, postcode, status, customerId, customerName, assignedTechnicianId, servicePlans }], pagination: { page, pageSize, total, totalPages } }`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Properties page. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/visits/{id}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Assign or unassign one SCHEDULED visit
+         * @description `technicianId: null` unassigns. The change is a manual override (later restamps leave the visit alone). 409 VISIT_NOT_SCHEDULED for any other status; 400 technician inactive / invite not accepted; 404 unknown visit or technician.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        technicianId: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description The visit's assignment. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: string;
+                            status?: string;
+                            technicianId?: string | null;
+                            technicianName?: string | null;
+                            technicianOverride?: boolean;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        trace?: never;
+    };
+    "/visits/{id}/reschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Reschedule a SCHEDULED or SKIPPED visit
+         * @description Moves the visit to `date` (today or later). A SKIPPED visit (e.g. after a manual weather hold) becomes SCHEDULED again and its skip reason is cleared. The visit's reminder markers are reset, reminders still queued with the old date are cancelled, and a VISIT_RESCHEDULED activity-log entry (entityId = visit id) is written. 404 unknown visit; 409 VISIT_NOT_RESCHEDULABLE for completed / in-progress / cancelled visits; 409 if `date` is today and the operational day is closed.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["VisitRescheduleInput"];
+                };
+            };
+            responses: {
+                /** @description The rescheduled visit. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VisitRescheduleResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        trace?: never;
+    };
+    "/chat/rounds/{roundId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roundId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Office chat: a round's messages (oldest first)
+         * @description `since` polls for newer messages; otherwise the newest `limit` (default 100, max 200), or those older than `before`. -> `{ messages, hasMore }`. 404 unknown round; 400 invalid since/before/limit or both since and before.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    since?: string;
+                    before?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    roundId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Messages. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Office chat: send a message to a round
+         * @description `text` 1..2000 chars (optional when `photoUrls` given), `photoUrls` = this round's chat attachment paths (max 10), `clientMsgId` makes a retry idempotent (existing message returned with 200). senderRole OFFICE; the round's technicians are notified (in-app + push when registered).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    roundId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        text?: string;
+                        photoUrls?: string[];
+                        clientMsgId?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Duplicate clientMsgId: the existing message. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Created message. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/rounds/{roundId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roundId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Office chat: mark a round's thread read for the signed-in user */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    roundId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Read marker. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            roundId?: string;
+                            /** Format: date-time */
+                            lastReadAt?: string;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rounds/{id}/planner/occurrences/{date}": {
         parameters: {
             query?: never;
@@ -10644,6 +11930,75 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/technicians/{id}/photos/{photoId}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                photoId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Approve or reject one of the technician's photos
+         * @description Can be re-run to change an earlier decision. ADMIN / MANAGER only.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    photoId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "APPROVED" | "REJECTED";
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated review state. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            reviewStatus: components["schemas"]["PhotoReviewStatus"];
+                            /** Format: date-time */
+                            reviewedAt: string | null;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Photo not found for this technician. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/technicians/{id}/availability/{availabilityId}": {
@@ -10737,6 +12092,11 @@ export interface components {
         InvoiceStatus: "DRAFT" | "SENT" | "PAID" | "VOID";
         /** @enum {string} */
         IssueType: "ACCESS_PROBLEM" | "GATE_LOCKED" | "PAYMENT_ISSUE" | "DOG_LOOSE" | "NO_REAR_ACCESS" | "UNSAFE_CONDITIONS" | "WRONG_ADDRESS" | "OTHER";
+        /**
+         * @description Admin review state of a photo. New uploads start PENDING; photos that existed before review was added are APPROVED.
+         * @enum {string}
+         */
+        PhotoReviewStatus: "PENDING" | "APPROVED" | "REJECTED";
         /**
          * @description ACCESS_ISSUE: photo attached to a technician's access-issue report (POST /mobile/visits/{id}/access-issues `photoPaths`).
          * @enum {string}
@@ -10885,9 +12245,21 @@ export interface components {
              * @example 19:00
              */
             reminderTime?: string;
+            /** @description BUG-01: pre-clean reminders, one message per entry per visit. [] = no reminders. Defaults 19:00 (EVENING_BEFORE) / 07:00 (MORNING_OF). Wins over the legacy reminderMode/reminderTime, which stay in sync with the first entry. */
+            preCleanReminders?: {
+                /** @enum {string} */
+                type: "EVENING_BEFORE" | "MORNING_OF";
+                /**
+                 * @description HH:mm, tenant-local.
+                 * @example 19:00
+                 */
+                time?: string;
+            }[];
             defaultCleanMethod?: components["schemas"]["CleanMethod"] | null;
             autoCreateNextVisit?: boolean;
             defaultPaymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** @description BUG-05: methods the business accepts (no provider connection needed). defaultPaymentMethod must be one of them; new customers/properties/imports default to it. */
+            acceptedPaymentMethods?: components["schemas"]["PaymentMethod"][];
             /** @example 7 */
             invoiceDueDays?: number;
             noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
@@ -10962,6 +12334,8 @@ export interface components {
             description?: string | null;
             status?: components["schemas"]["RoundStatus"];
             serviceAreaId?: string | null;
+            /** @description BUG-04: postcode sectors the round covers (upper-cased). Must sit inside the service area's postcodeSector(s) when the area records any (400 otherwise). */
+            postcodeSectors?: string[];
             /** @description Fallback service for invoice line text (visit service → plan service → round default service → "Window cleaning"). No endpoint sets it yet. */
             defaultServiceId?: string | null;
             /** Format: date-time */
@@ -11750,6 +13124,8 @@ export interface components {
             status: components["schemas"]["RoundStatus"];
             serviceAreaId?: string | null;
             serviceAreaName?: string | null;
+            /** @description BUG-04: postcode sectors the round covers (upper-cased). Must sit inside the service area's postcodeSector(s) when the area records any (400 otherwise). */
+            postcodeSectors?: string[];
             technicianCount: number;
             propertyCount: number;
         };
@@ -12046,9 +13422,132 @@ export interface components {
             messageId: string;
             channel: components["schemas"]["MessageChannel"];
         };
+        BroadcastRecipient: {
+            customerId: string;
+            customerName: string;
+            /** @enum {string} */
+            status: "sent" | "scheduled" | "skipped_opted_out" | "skipped_no_contact" | "failed";
+            /**
+             * @description The channel used / queued (absent when skipped for opt-out).
+             * @enum {string}
+             */
+            channel?: "SMS" | "EMAIL" | "WHATSAPP";
+            /** @description Why the recipient was skipped (no contact detail) or failed. */
+            error?: string;
+        };
+        /** @description Per-recipient outcome of a round broadcast (POST /messages/bulk) or of the customer notification in a weather hold. */
         MessageBulkResult: {
-            /** @description Number of recipients the message was actually sent to. Best-effort: a per-recipient failure is logged and skipped, not surfaced as an error. */
+            /** @description sent + scheduled (older clients read only this). */
             queued: number;
+            /** @description Delivered to GoHighLevel now; a Message row was recorded for each. */
+            sent: number;
+            /** @description Queued on the outbox for `scheduledFor`; the Message row is recorded when it is actually sent. */
+            scheduled: number;
+            /** @description Customers with messagesOptOut — never contacted. */
+            skippedOptedOut: number;
+            /** @description No mobile / email on file for the channel. */
+            skippedNoContact: number;
+            /** @description GHL rejected the send or it could not be queued. */
+            failed: number;
+            /** Format: date-time */
+            scheduledFor: string | null;
+            recipients: components["schemas"]["BroadcastRecipient"][];
+        };
+        BulkRecipient: {
+            customerId: string;
+            customerName: string;
+            /** @description The first property of the customer in the round. */
+            address: string;
+            /**
+             * @description ok = would be messaged on the channel; opted_out = messagesOptOut; no_contact = no mobile / email for the channel.
+             * @enum {string}
+             */
+            status: "ok" | "opted_out" | "no_contact";
+        };
+        BulkRecipientsResult: {
+            total: number;
+            /** @description Recipients with status ok. */
+            reachable: number;
+            recipients: components["schemas"]["BulkRecipient"][];
+        };
+        /**
+         * @example {
+         *       "date": "2026-11-10"
+         *     }
+         */
+        VisitRescheduleInput: {
+            /**
+             * Format: date
+             * @description Today or later.
+             */
+            date: string;
+        };
+        VisitRescheduleResult: {
+            id: string;
+            /** @enum {string} */
+            status: "SCHEDULED";
+            /** Format: date */
+            date: string;
+        };
+        /**
+         * @example {
+         *       "date": "2026-11-05",
+         *       "condition": "heavy-rain",
+         *       "rescheduling": "next-available",
+         *       "notifyCustomers": true
+         *     }
+         */
+        WeatherHoldInput: {
+            /**
+             * Format: date
+             * @description The round-day to hold. Today or later.
+             */
+            date: string;
+            /** @enum {string} */
+            condition: "heavy-rain" | "high-winds" | "snow-ice" | "technician-safety";
+            /**
+             * @description next-available: SCHEDULED visits move to the next working day. next-cycle: each visit moves to its next regular cycle date (and its plan's nextDueDate moves a cycle on). manual: visits are marked SKIPPED ("Weather hold: ...") with no new date.
+             * @enum {string}
+             */
+            rescheduling: "next-available" | "next-cycle" | "manual";
+            /** @default false */
+            notifyCustomers: boolean;
+        };
+        WeatherHoldPreview: {
+            /** Format: date */
+            date: string;
+            /** @description The round's SCHEDULED visits on `date`. */
+            affectedVisits: number;
+            affectedCustomers: number;
+            /** @description Affected customers who will not be messaged (messagesOptOut). */
+            optedOutCustomers: number;
+            /**
+             * Format: date
+             * @description Earliest new visit date; null for manual.
+             */
+            newDate: string | null;
+            /** @description The customer message rendered for the first affected customer; empty when nothing is affected. */
+            message: string;
+            characterCount: number;
+            /** @description The tenant message template used ("Weather Hold"), or null for the built-in wording. */
+            templateName: string | null;
+        };
+        WeatherHoldResult: {
+            roundId: string;
+            /** Format: date */
+            date: string;
+            /** @enum {string} */
+            condition: "heavy-rain" | "high-winds" | "snow-ice" | "technician-safety";
+            /** @enum {string} */
+            rescheduling: "next-available" | "next-cycle" | "manual";
+            /** @description Visits actually moved (or skipped for manual). */
+            held: number;
+            /** Format: date */
+            newDate: string | null;
+            /** @description null when notifyCustomers was false, or the notification step failed (see notificationError). */
+            notification: components["schemas"]["MessageBulkResult"] | null;
+            /** @description The hold was applied but notifying customers failed as a whole. */
+            notificationError?: string;
         };
         /** @description Raw Customer row, as created by Setup step 9 (not the transformed CustomerListRow/CustomerDetail shapes used elsewhere). */
         Customer: {
@@ -12808,6 +14307,29 @@ export interface components {
             /** @enum {string} */
             method: "CASH" | "CHEQUE";
         };
+        /** @description The caller's own end-of-day state (POST /mobile/day/close). Not the office's business-day close. */
+        MobileDayStatus: {
+            /**
+             * Format: date
+             * @description Tenant-local day.
+             */
+            date: string;
+            closed: boolean;
+            /** Format: date-time */
+            closedAt: string | null;
+            /** @description Stored at close time once closed; live count otherwise. */
+            completedCount: number;
+            skippedCount: number;
+            /** @description The caller's visits still SCHEDULED or IN_PROGRESS that day (must be completed or skipped before closing). */
+            remaining: {
+                visitId: string;
+                /** @enum {string} */
+                status: "SCHEDULED" | "IN_PROGRESS";
+                customerName: string;
+                addressLine: string;
+                roundName: string | null;
+            }[];
+        };
         MobileUpsell: {
             id: string;
             /** @enum {string} */
@@ -12894,6 +14416,16 @@ export interface components {
              * @example 19:00
              */
             reminderTime?: string;
+            /** @description BUG-01: pre-clean reminders, one message per entry per visit. [] = no reminders. Defaults 19:00 (EVENING_BEFORE) / 07:00 (MORNING_OF). Wins over the legacy reminderMode/reminderTime, which stay in sync with the first entry. */
+            preCleanReminders?: {
+                /** @enum {string} */
+                type: "EVENING_BEFORE" | "MORNING_OF";
+                /**
+                 * @description HH:mm, tenant-local.
+                 * @example 19:00
+                 */
+                time?: string;
+            }[];
             defaultCleanMethod?: components["schemas"]["CleanMethod"] | null;
             autoCreateNextVisit?: boolean;
         };
@@ -12912,6 +14444,8 @@ export interface components {
             /** @description Include VAT in invoices by default. */
             vatInInvoices?: boolean;
             defaultPaymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** @description BUG-05: accepted methods; defaultPaymentMethod must be one of them (400). */
+            acceptedPaymentMethods?: components["schemas"]["PaymentMethod"][];
             invoiceDueDays?: number;
             noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
         };
@@ -13016,6 +14550,16 @@ export interface components {
              * @example 19:00
              */
             reminderTime?: string;
+            /** @description BUG-01: pre-clean reminders, one message per entry per visit. [] = no reminders. Defaults 19:00 (EVENING_BEFORE) / 07:00 (MORNING_OF). Wins over the legacy reminderMode/reminderTime, which stay in sync with the first entry. */
+            preCleanReminders?: {
+                /** @enum {string} */
+                type: "EVENING_BEFORE" | "MORNING_OF";
+                /**
+                 * @description HH:mm, tenant-local.
+                 * @example 19:00
+                 */
+                time?: string;
+            }[];
             defaultCleanMethod?: components["schemas"]["CleanMethod"] | null;
             autoCreateNextVisit?: boolean;
             /**
@@ -13115,6 +14659,8 @@ export interface components {
             /** @description Mobile debt gate: max unpaid total before Start is blocked. null = any unpaid amount blocks (when debtHoldEnabled). */
             debtHoldMaxAmount?: number | null;
             defaultPaymentMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** @description BUG-05: accepted methods; defaultPaymentMethod must be one of them (400). Setting only a default seeds an empty list with it. */
+            acceptedPaymentMethods?: components["schemas"]["PaymentMethod"][];
             invoiceDueDays?: number;
             noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
         };
@@ -13173,10 +14719,13 @@ export interface components {
         CustomerListRow: {
             customerId?: string;
             customerName?: string;
+            /** @description PAUSED when the customer is ACTIVE but the displayed plan is PAUSED. */
             status?: components["schemas"]["LifecycleStatus"];
-            propertyId?: string;
-            addressLine?: string;
-            postcode?: string;
+            /** @description true for a customer with no property yet: propertyId/addressLine/postcode (and round/price/technician fields) are null. */
+            hasNoProperty?: boolean;
+            propertyId?: string | null;
+            addressLine?: string | null;
+            postcode?: string | null;
             /** @description Null until the next geocoding backfill tick picks up the new postcode. */
             latitude?: number | null;
             longitude?: number | null;
@@ -13584,6 +15133,8 @@ export interface components {
             serviceAreaId: string;
             defaultDay?: components["schemas"]["DayOfWeek"] | null;
             description?: string | null;
+            /** @description BUG-04: postcode sectors the round covers (upper-cased). Must sit inside the service area's postcodeSector(s) when the area records any (400 otherwise). */
+            postcodeSectors?: string[];
         };
         /** @description Partial update. frequency: null clears it. serviceAreaId: null unassigns the area. Omitted fields are left unchanged. */
         RoundUpdateInput: {
@@ -13593,6 +15144,8 @@ export interface components {
             defaultDay?: components["schemas"]["DayOfWeek"] | null;
             description?: string | null;
             status?: components["schemas"]["RoundStatus"];
+            /** @description BUG-04: postcode sectors the round covers (upper-cased). Must sit inside the service area's postcodeSector(s) when the area records any (400 otherwise). */
+            postcodeSectors?: string[];
         };
         /**
          * @example {
@@ -13740,7 +15293,7 @@ export interface components {
          * @example {
          *       "roundId": "r1",
          *       "channel": "sms",
-         *       "body": "Your clean has been rescheduled due to weather.",
+         *       "body": "Hi {{firstName}}, your clean at {{address}} is on {{date}}.",
          *       "excludePaymentHold": true
          *     }
          */
@@ -13757,6 +15310,15 @@ export interface components {
              * @default false
              */
             excludePaymentHold: boolean;
+            /** @description Message only these customers. Each must be one of the round's recipients (400 UNKNOWN_RECIPIENT otherwise); from GET /messages/bulk/recipients. Omit for everyone. */
+            customerIds?: string[];
+            /** @description Message template the body came from — recorded on each Message row. */
+            templateId?: string | null;
+            /**
+             * Format: date-time
+             * @description Send later: a future time within 90 days. Omit to send now.
+             */
+            scheduledFor?: string | null;
         };
         /**
          * @description Setup step 9 — one-time property creation during the wizard. Does not reuse POST /properties.
@@ -14176,7 +15738,7 @@ export interface components {
             type: components["schemas"]["PhotoType"];
             /** @description 1-hour signed read URL (null if signing failed). */
             url: string | null;
-            /** @description Same signed URL — no server-side thumbnails yet. */
+            /** @description 1-hour signed URL of a resized (480px wide) copy via Storage image transformation. Falls back to the full `url` when Storage cannot transform it (plan tier / error). */
             thumbnailUrl: string | null;
             /** Format: date-time */
             takenAt: string;
@@ -14187,6 +15749,13 @@ export interface components {
                 id?: string;
                 name?: string | null;
             } | null;
+            /** @description The visit's human-readable job reference, e.g. `JOB-000123`. Set by the property and technician galleries. */
+            jobRef?: string | null;
+            reviewStatus?: components["schemas"]["PhotoReviewStatus"];
+            /** @description Address of the visit's property. Set by the property and technician galleries. */
+            propertyAddress?: string | null;
+            /** @description Customer of the visit's property. Set by the property and technician galleries. */
+            customerName?: string | null;
         };
         PhotoPage: {
             rows: components["schemas"]["PhotoRow"][];

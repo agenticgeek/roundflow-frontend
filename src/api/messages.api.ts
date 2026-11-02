@@ -1,6 +1,7 @@
 import { api } from '@/api/client'
+import type { components } from '@/api/types.gen'
 
-/** CONTRACT-DIFF: `/messages/*` not in generated OpenAPI yet — live per the 2026-10-13 backend response. */
+/** `send` is hand-typed (live per the 2026-10-13 backend response); the bulk types come from the generated OpenAPI. */
 
 export type MessageChannel = 'sms' | 'email' | 'whatsapp'
 
@@ -14,15 +15,18 @@ export type MessageSendInput = {
 
 export type MessageSendResult = { status: 'sent' }
 
-export type MessageBulkInput = {
-  roundId: string
-  channel: MessageChannel
-  body: string
+type Schemas = components['schemas']
+
+/** `excludePaymentHold` defaults to false server-side, so callers may omit it. */
+export type MessageBulkInput = Omit<Schemas['MessageBulkInput'], 'excludePaymentHold'> & {
   excludePaymentHold?: boolean
 }
-
-/** `queued` = recipients it was actually sent to (deduped by customer). */
-export type MessageBulkResult = { queued: number }
+export type BroadcastRecipient = Schemas['BroadcastRecipient']
+export type BroadcastRecipientStatus = BroadcastRecipient['status']
+/** Per-recipient outcome of a round broadcast (also the notification part of a weather hold). */
+export type MessageBulkResult = Schemas['MessageBulkResult']
+export type BulkRecipient = Schemas['BulkRecipient']
+export type BulkRecipientsResult = Schemas['BulkRecipientsResult']
 
 function jsonRequest(method: 'POST', body?: unknown): RequestInit {
   return {
@@ -37,4 +41,14 @@ export const messagesApi = {
 
   bulk: (input: MessageBulkInput) =>
     api<MessageBulkResult>('/messages/bulk', jsonRequest('POST', input)),
+
+  /** The server-confirmed audience of a round broadcast, with a per-customer status for the channel. */
+  bulkRecipients: (
+    query: { roundId: string; channel: MessageChannel; excludePaymentHold: boolean },
+    signal?: AbortSignal,
+  ) =>
+    api<BulkRecipientsResult>(
+      `/messages/bulk/recipients?${new URLSearchParams({ ...query, excludePaymentHold: String(query.excludePaymentHold) })}`,
+      { signal },
+    ),
 }

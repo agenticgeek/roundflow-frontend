@@ -457,7 +457,7 @@ describe('technician photos (GAP-019)', () => {
       ),
     )
     const onBack = vi.fn()
-    const { user } = renderWithProviders(<TechnicianVisitPhotos technicianName="Sam" visitId="v1" onBack={onBack} />)
+    const { user } = renderWithProviders(<TechnicianVisitPhotos technicianId="t1" technicianName="Sam" visitId="v1" canMutate onBack={onBack} />)
     expect(await screen.findByRole('button', { name: 'Open photo: Before' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Next' }))
     await user.click(screen.getByRole('button', { name: /Back to Sam/ }))
@@ -472,7 +472,7 @@ describe('technician photos (GAP-019)', () => {
         return apiError(404, 'Visit not found')
       }),
     )
-    const { user } = renderWithProviders(<TechnicianVisitPhotos technicianName="Sam" visitId="v1" onBack={vi.fn()} />)
+    const { user } = renderWithProviders(<TechnicianVisitPhotos technicianId="t1" technicianName="Sam" visitId="v1" canMutate onBack={vi.fn()} />)
     expect(await screen.findByText('Visit not found')).toBeInTheDocument()
     await act(() => user.click(screen.getByRole('button', { name: 'Retry' })))
     await waitFor(() => expect(calls).toBe(2))

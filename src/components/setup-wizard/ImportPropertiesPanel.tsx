@@ -2,7 +2,7 @@ import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { PropertyDraft } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import type { SelectOption } from '@/content/setup-wizard'
-import { Field, FieldError, Input, MultiSelect, Select, Textarea } from '@/components/ui'
+import { Field, FieldError, MultiSelect, Select, Textarea } from '@/components/ui'
 import { Spinner } from '@/components/ui/spinner'
 import { ApiError } from '@/lib/errors'
 import { toBulkRowErrors, type BulkRowError } from '@/features/setup/lib/bulk-errors'
@@ -100,12 +100,9 @@ interface FailedRow {
   error: string
 }
 
-/** Per-row services + price the user can edit before importing. */
+/** Per-row services the user can tick before importing — the price is always their sum. */
 interface RowEdit {
   serviceIds: string[]
-  price: string
-  /** True once the user typed a custom price, so service toggles stop overwriting it. */
-  priceEdited: boolean
 }
 
 export function ImportPropertiesPanel({
@@ -156,11 +153,6 @@ export function ImportPropertiesPanel({
     return map
   }, [serviceOptions])
 
-  function rowPriceFor(serviceIds: string[], previous?: RowEdit): string {
-    if (previous?.priceEdited) return previous.price
-    return serviceIds.length > 0 ? String(sumServicePrices(serviceIds, servicePrices)) : ''
-  }
-
   // Seed one editable row per parsed property whenever the parsed set changes,
   // applying the currently selected services filter.
   const rowKey = result ? result.properties.map((property) => property.rowNumber).join(',') : ''
@@ -173,15 +165,11 @@ export function ImportPropertiesPanel({
     const seeded: Record<number, RowEdit> = {}
     for (const property of result.properties) {
       const serviceIds = [...selectedServiceIds]
-      seeded[property.rowNumber] = {
-        serviceIds,
-        price: rowPriceFor(serviceIds),
-        priceEdited: false,
-      }
+      seeded[property.rowNumber] = { serviceIds }
     }
     setRowEdits(seeded)
     // Reseed only when the parsed rows change — filter changes are applied via
-    // applyServiceFilter so custom prices survive.
+    // applyServiceFilter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowKey])
 
@@ -192,13 +180,7 @@ export function ImportPropertiesPanel({
     setRowEdits((prev) => {
       const next = { ...prev }
       for (const property of result.properties) {
-        const current = prev[property.rowNumber]
-        const serviceIds = [...nextIds]
-        next[property.rowNumber] = {
-          serviceIds,
-          price: rowPriceFor(serviceIds, current),
-          priceEdited: current?.priceEdited ?? false,
-        }
+        next[property.rowNumber] = { serviceIds: [...nextIds] }
       }
       return next
     })
@@ -206,26 +188,15 @@ export function ImportPropertiesPanel({
 
   function toggleRowService(rowNumber: number, serviceId: string) {
     setRowEdits((prev) => {
-      const current = prev[rowNumber] ?? { serviceIds: [...selectedServiceIds], price: '', priceEdited: false }
+      const current = prev[rowNumber] ?? { serviceIds: [...selectedServiceIds] }
       const serviceIds = current.serviceIds.includes(serviceId)
         ? current.serviceIds.filter((id) => id !== serviceId)
         : [...current.serviceIds, serviceId]
       return {
         ...prev,
-        [rowNumber]: { ...current, serviceIds, price: rowPriceFor(serviceIds, current) },
+        [rowNumber]: { ...current, serviceIds },
       }
     })
-  }
-
-  function setRowPrice(rowNumber: number, price: string) {
-    setRowEdits((prev) => ({
-      ...prev,
-      [rowNumber]: {
-        ...(prev[rowNumber] ?? { serviceIds: [...selectedServiceIds], price: '', priceEdited: false }),
-        price,
-        priceEdited: true,
-      },
-    }))
   }
 
   function toggleRowRemoved(rowNumber: number) {
@@ -296,7 +267,7 @@ export function ImportPropertiesPanel({
   const activeCount = activeProperties.length
 
   function rowPriceValue(rowNumber: number): number {
-    return Number(String(rowEdits[rowNumber]?.price ?? '').replace(/[^0-9.]/g, ''))
+    return sumServicePrices(rowEdits[rowNumber]?.serviceIds ?? [], servicePrices)
   }
 
   async function handleImport() {
@@ -330,7 +301,7 @@ export function ImportPropertiesPanel({
 
     // The final per-row drafts, in preview order (the bulk endpoint reports errors by row).
     const drafts: PropertyDraft[] = activeProperties.map((property) => {
-      const edit = rowEdits[property.rowNumber] ?? { serviceIds: [], price: '', priceEdited: false }
+      const edit = rowEdits[property.rowNumber] ?? { serviceIds: [] }
       return {
         ...property.draft,
         round,
@@ -617,9 +588,7 @@ export function ImportPropertiesPanel({
                   </thead>
                   <tbody className="divide-y divide-border">
                     {activeProperties.map((property, position) => {
-                      const edit =
-                        rowEdits[property.rowNumber] ??
-                        ({ serviceIds: [], price: '', priceEdited: false } as RowEdit)
+                      const edit = rowEdits[property.rowNumber] ?? ({ serviceIds: [] } as RowEdit)
                       return (
                         <tr key={property.rowNumber}>
                           {/* 1-based position in the import — the row the bulk endpoint reports errors against. */}
@@ -673,17 +642,9 @@ export function ImportPropertiesPanel({
                             </td>
                           ) : null}
                           <td className="px-3 py-1.5 align-top">
-                            <Input
-                              inputSize="sm"
-                              inputMode="decimal"
-                              value={edit.price}
-                              onChange={(event) =>
-                                setRowPrice(property.rowNumber, event.target.value)
-                              }
-                              placeholder={importCsv.pricePlaceholder}
-                              disabled={importing}
-                              className="w-24"
-                            />
+                            <span className="tabular-nums text-foreground">
+                              £{rowPriceValue(property.rowNumber).toFixed(2)}
+                            </span>
                           </td>
                           <td className="px-2 py-1.5 align-top">
                             <button

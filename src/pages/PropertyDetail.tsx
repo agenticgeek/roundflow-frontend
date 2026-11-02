@@ -10,13 +10,15 @@ import {
   PropertyDetailScreen,
 } from '@/components/property-detail/PropertyDetailScreen'
 import { PropertyDetailSkeleton } from '@/components/property-detail/PropertyDetailSkeleton'
-import { useCustomer, useCustomers } from '@/features/customers/hooks/useCustomers'
+import { useCustomer } from '@/features/customers/hooks/useCustomers'
+import { useProperty } from '@/features/properties/hooks/useProperties'
+import { ApiError } from '@/lib/errors'
 import {
   customerDetailToNotes,
   customerDetailToPayments,
   customerDetailToPropertyRecord,
   customerDetailToVisits,
-  customerListRowToRecord,
+  mergePropertyIntoCustomerDetail,
 } from '@/features/customers/lib/mappers'
 import { mapCustomerPaymentBadge } from '@/features/customers/lib/payment-status'
 import { useCustomerInvoices } from '@/features/invoices/hooks/useInvoices'
@@ -42,21 +44,24 @@ export default function PropertyDetail() {
   const quickActions = useAppQuickActions()
   const state = (location.state as LocationState | null) ?? null
 
-  // Resolve customerId from navigation state, or look up by propertyId in the list.
-  const listQuery = useCustomers({ pageSize: 100 }, !state?.customerId && Boolean(propertyId))
-  const customerId = useMemo(() => {
-    if (state?.customerId) return state.customerId
-    const match = (listQuery.data?.customers ?? []).find((row) => row.propertyId === propertyId)
-    return match?.customerId ?? ''
-  }, [listQuery.data?.customers, propertyId, state?.customerId])
+  // GET /properties/:id is this page's source for the property; it also names the customer.
+  const propertyQuery = useProperty(propertyId ?? '')
+  const customerId = propertyQuery.data?.customerId ?? state?.customerId ?? ''
 
   const { canMutate } = useAppBootstrap()
   const detailQuery = useCustomer(customerId, Boolean(customerId))
   const invoicesQuery = useCustomerInvoices(customerId, Boolean(customerId) && canMutate)
 
+  const mergedDetail = useMemo(
+    () =>
+      detailQuery.data && propertyQuery.data
+        ? mergePropertyIntoCustomerDetail(detailQuery.data, propertyQuery.data)
+        : null,
+    [detailQuery.data, propertyQuery.data],
+  )
   const property = useMemo(
-    () => (detailQuery.data ? customerDetailToPropertyRecord(detailQuery.data) : null),
-    [detailQuery.data],
+    () => (mergedDetail ? customerDetailToPropertyRecord(mergedDetail) : null),
+    [mergedDetail],
   )
 
   const tabData = useMemo(() => {
@@ -78,10 +83,6 @@ export default function PropertyDetail() {
 
   const customerRecordForModal = useMemo((): CustomerPropertyRecord | null => {
     if (!detailQuery.data?.customer?.id || !property) return null
-    const listRow = (listQuery.data?.customers ?? []).find(
-      (row) => row.customerId === detailQuery.data?.customer?.id,
-    )
-    if (listRow) return customerListRowToRecord(listRow)
     return {
       id: detailQuery.data.customer.id,
       propertyId: property.id,
@@ -96,7 +97,7 @@ export default function PropertyDetail() {
       paymentStatus: mapCustomerPaymentBadge(detailQuery.data.standingInfo?.paymentStatus),
       needsAssignment: property.needsAssignment,
     }
-  }, [detailQuery.data, listQuery.data?.customers, property])
+  }, [detailQuery.data, property])
 
   async function handleSignOut() {
     setSigningOut(true)
@@ -108,15 +109,14 @@ export default function PropertyDetail() {
   }
 
   function handleBack() {
-    if (state?.from === 'customers') {
-      navigate(ROUTES.customers)
-      return
-    }
-    navigate(ROUTES.roundPlanner, { state: { view: 'list' } })
+    // Deep links and cancelled records land on the customer list, not the planner.
+    navigate(state?.from === 'round-planner' ? ROUTES.roundPlanner : ROUTES.customers, {
+      state: state?.from === 'round-planner' ? { view: 'list' } : undefined,
+    })
   }
 
   const resolving =
-    (!state?.customerId && listQuery.isPending) ||
+    propertyQuery.isPending ||
     (Boolean(customerId) && detailQuery.isPending)
 
   return (
@@ -128,7 +128,7 @@ export default function PropertyDetail() {
     >
       {resolving ? (
         <PropertyDetailSkeleton />
-      ) : detailQuery.isError ? (
+      ) : detailQuery.isError || (propertyQuery.isError && !(propertyQuery.error instanceof ApiError && propertyQuery.error.status === 404)) ? (
         <PanelCard interactive={false} className="py-16 text-center text-sm text-muted">
           <p>Could not load this customer.</p>
           <button

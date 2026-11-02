@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import type { PhotoRow } from '@/api/photos.api'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { PhotoGallery } from '@/components/photos/PhotoGallery'
 import { technicianRecordsContent } from '@/content/technician-records'
-import { useTechnicianPhotos, useVisitPhotos } from '@/features/photos/hooks/usePhotos'
+import { useToast } from '@/components/ui/toast'
+import { useReviewTechnicianPhotos, useTechnicianPhotos, useVisitPhotos } from '@/features/photos/hooks/usePhotos'
 
 /** Technician detail › Photos: before/after photos from the technician's visits (GAP-019). */
 export function TechnicianPhotoGallery({ technicianId }: { technicianId: string }) {
@@ -27,16 +29,31 @@ export function TechnicianPhotoGallery({ technicianId }: { technicianId: string 
 
 /** `/technicians/:technicianId/photos/:visitId` — one visit's before / after photos (GAP-019). */
 export function TechnicianVisitPhotos({
+  technicianId,
   technicianName,
   visitId,
+  canMutate,
   onBack,
 }: {
+  technicianId: string
   technicianName: string
   visitId: string
+  canMutate: boolean
   onBack: () => void
 }) {
   const copy = technicianRecordsContent.photos
   const query = useVisitPhotos(visitId)
+  const { showToast } = useToast()
+  const reviewPhotos = useReviewTechnicianPhotos(technicianId)
+
+  async function review(photo: PhotoRow, status: 'APPROVED' | 'REJECTED') {
+    try {
+      await reviewPhotos.mutateAsync({ photoIds: [photo.id], status })
+      showToast(status === 'APPROVED' ? 'Photo approved.' : 'Photo rejected.')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not update the photo')
+    }
+  }
   return (
     <div className="animate-slide-in-right space-y-5">
       <header className="border-b border-border pb-5">
@@ -51,7 +68,8 @@ export function TechnicianVisitPhotos({
         isLoading={query.isPending}
         error={query.error}
         onRetry={() => void query.refetch()}
-        onPage={() => undefined}
+        onPage={() => undefined} // GET /visits/:id/photos is a single, unpaginated page
+        review={canMutate ? { pending: reviewPhotos.isPending, onReview: (photo, status) => void review(photo, status) } : undefined}
       />
     </div>
   )

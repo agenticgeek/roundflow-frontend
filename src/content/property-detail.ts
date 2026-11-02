@@ -1,4 +1,5 @@
 import type { PaymentStanding } from '@/features/customers/lib/payment-status'
+import { PAYMENT_METHOD_OPTIONS } from '@/lib/payment-methods'
 import type { CleaningFrequency, PaymentMethod } from '@/api/types'
 
 export type PropertyDetailTabId =
@@ -33,6 +34,12 @@ export interface PropertyDetailRecord {
   paymentStatus: PropertyPaymentStatus
   outstandingBalance: string
   paymentMethod: string
+  /** The primary plan is PAUSED — independent of a payment hold, which takes over `serviceStatus`. */
+  planPaused?: boolean
+  /** Formatted start date of a pause that has been scheduled but not started yet. */
+  pauseScheduledFor?: string | null
+  /** Raw API value behind `paymentMethod` — prefills the edit form so every method round-trips. */
+  paymentMethodCode?: PaymentMethod | null
   lastPayment: string
   issuesCount: number
   nextVisitStatus: string
@@ -55,6 +62,8 @@ export type PropertyServicePlanStatus = 'active' | 'paused' | 'cancelled'
 
 export interface PropertyServicePlan {
   id: string
+  /** Catalogue service behind the plan, when the plan has one. */
+  serviceId?: string | null
   serviceName: string
   frequency: string
   price: string
@@ -137,6 +146,9 @@ export const propertyDetailContent = {
   actions: {
     edit: 'Edit',
     pauseService: 'Pause Service',
+    resumeService: 'Resume Service',
+    cancelScheduledPause: 'Cancel scheduled pause',
+    pauseScheduled: 'Pause scheduled for {date}',
     sendMessage: 'Send Message',
   },
   editCustomerModal: {
@@ -146,8 +158,11 @@ export const propertyDetailContent = {
       contactDetails: 'Contact Details',
       propertyAddress: 'Property Address',
       serviceDetails: 'Service Details',
+      services: 'Services',
       notes: 'Notes',
     },
+    notSet: 'Not set',
+    servicesTotal: 'Total per visit: £{total}',
     fields: {
       fullName: 'Full Name',
       phone: 'Phone Number',
@@ -182,11 +197,11 @@ export const propertyDetailContent = {
       { value: 'water-fed-pole', label: 'Water Fed Pole' },
       { value: 'traditional', label: 'Traditional' },
     ],
-    paymentMethodOptions: [
-      { value: 'gocardless', label: 'GoCardless' },
-      { value: 'cash', label: 'Cash' },
-      { value: 'bank-transfer', label: 'Bank Transfer' },
-    ],
+    paymentMethodOptions: PAYMENT_METHOD_OPTIONS,
+    notConnected: {
+      GOCARDLESS: 'GoCardless is not connected yet — connect it in Settings → Payments before relying on Direct Debit.',
+      STRIPE: 'Stripe is not connected yet — connect it in Settings → Payments before sending card links.',
+    },
     actions: {
       cancel: 'Cancel',
       save: 'Save Changes',
@@ -201,6 +216,7 @@ export const propertyDetailContent = {
       postcodeRequired: 'Enter a postcode.',
       postcodeInvalid: 'Enter a valid UK postcode.',
       priceInvalid: 'Enter a price greater than 0.',
+      servicesRequired: 'Pick at least one service.',
     },
     successToast: 'Customer record updated',
   },
@@ -213,6 +229,10 @@ export const propertyDetailContent = {
   pauseServiceModal: {
     title: 'Pause Service',
     subtitle: '{customer}',
+    validation: {
+      startInPast: 'The pause can start today or later.',
+      resumeBeforeStart: 'The resume date must be after the start date.',
+    },
     fields: {
       reason: 'Reason for Pause',
       duration: 'Pause Duration',
@@ -399,6 +419,14 @@ export const propertyDetailContent = {
       { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
     ],
   },
+  servicesHistory: {
+    title: 'Services history',
+    loading: 'Loading history…',
+    empty: 'No service changes yet.',
+    before: 'Before',
+    after: 'After',
+    none: 'No services',
+  },
   servicePlan: {
     title: 'Service Plan Details',
     frequency: 'Frequency',
@@ -448,13 +476,7 @@ export const propertyDetailContent = {
         { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
         { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
       ],
-      paymentMethodOptions: [
-        { value: 'GOCARDLESS', label: 'GoCardless' },
-        { value: 'STRIPE', label: 'Card (Stripe)' },
-        { value: 'BACS', label: 'Bank Transfer' },
-        { value: 'CASH', label: 'Cash' },
-        { value: 'CHEQUE', label: 'Cheque' },
-      ],
+      paymentMethodOptions: PAYMENT_METHOD_OPTIONS,
       cleanMethodOptions: [
         { value: 'Water Fed Pole', label: 'Water Fed Pole' },
         { value: 'Traditional', label: 'Traditional' },

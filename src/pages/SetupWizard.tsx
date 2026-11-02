@@ -71,6 +71,7 @@ import { PaymentSetupStep } from '@/components/setup-wizard/steps/PaymentSetupSt
 import { ServiceCatalogueStep } from '@/components/setup-wizard/steps/ServiceCatalogueStep'
 import { RoundSettingsStep } from '@/components/setup-wizard/steps/RoundSettingsStep'
 import { RoundsStep } from '@/components/setup-wizard/steps/RoundsStep'
+import { useRoundsDraft } from '@/features/setup/hooks/useRoundsDraft'
 import { MessageTemplatesStep } from '@/components/setup-wizard/steps/MessageTemplatesStep'
 import { TechniciansStep } from '@/components/setup-wizard/steps/TechniciansStep'
 import { ServiceAreaStep } from '@/components/setup-wizard/steps/ServiceAreaStep'
@@ -176,6 +177,7 @@ export default function SetupWizard() {
   const completeSetup = useCompleteSetup()
   const disconnectPayment = useDisconnectPayment()
 
+  const roundsDraft = useRoundsDraft()
   const [formError, setFormError] = useState<string | null>(null)
   const [pendingBulkReplace, setPendingBulkReplace] = useState<PendingBulkReplace | null>(null)
   const [stepDirty, setStepDirty] = useState(false)
@@ -740,6 +742,7 @@ export default function SetupWizard() {
             rounds={step8.data ?? []}
             workingDays={step1.data?.defaultWorkingDays ?? []}
             defaultFrequency={defaultRoundFrequency(step4.data?.defaultCycleLength)}
+            draft={roundsDraft}
             saving={createRound.isPending || updateRound.isPending}
             onCreateRound={handleCreateRound}
             onUpdateRound={handleUpdateRound}

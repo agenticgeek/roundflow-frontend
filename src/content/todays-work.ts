@@ -141,6 +141,13 @@ export const todaysWorkContent = {
     scheduled: 'Scheduled',
   },
   detailPanel: {
+    assign: {
+      label: 'Assign this visit',
+      placeholder: 'Assign to…',
+      unassign: 'Unassigned',
+      assigned: 'Assigned to {name}',
+      unassigned: 'Visit unassigned',
+    },
     progress: 'Progress',
     progressMeta: '{completed}/{total} completed',
     summary: {
@@ -227,10 +234,6 @@ export const todaysWorkContent = {
     },
     infoAlert:
       'The new technician will receive these jobs in their schedule. Completed jobs stay with the original technician when using remaining jobs only.',
-    technicianOptions: [
-      { value: 'james', label: 'James' },
-      { value: 'sarah', label: 'Sarah' },
-    ] satisfies TodaysWorkSelectOption[],
     actions: {
       cancel: 'Cancel',
       confirm: 'Reassign Jobs',
@@ -287,14 +290,6 @@ export const todaysWorkContent = {
     subtitle: "Review today's summary and finalize",
     closingDateLabel: 'Closing: {date}',
     summaryTitle: "Today's Summary",
-    summaryCards: [
-      { id: 'completed', label: 'Completed Jobs', value: '5', tone: 'primary', icon: 'check-circle' },
-      { id: 'skipped', label: 'Skipped Jobs', value: '1', tone: 'warning', icon: 'x-circle' },
-      { id: 'outstanding', label: 'Outstanding', value: '7', tone: 'danger', icon: 'alert-circle' },
-      { id: 'issues', label: 'Issues', value: '2', tone: 'default' },
-      { id: 'payment-holds', label: 'Payment Holds', value: '2', tone: 'default' },
-      { id: 'revenue', label: 'Revenue', value: '£178', tone: 'default' },
-    ] satisfies CloseDaySummaryCard[],
     unfinishedJobs: {
       title: 'What to do with {count} unfinished jobs?',
       options: [
@@ -310,9 +305,6 @@ export const todaysWorkContent = {
         },
       ] satisfies CloseDayUnfinishedOption[],
       pushConfirmation: '→ {count} jobs added to {schedule} for {technician}',
-      pushSchedule: 'Tuesday 19 May',
-      technician: 'James',
-      count: 7,
     },
     alerts: {
       unfinished:
@@ -339,9 +331,6 @@ export const todaysWorkContent = {
         revenueEarned: 'Revenue earned',
         activeIssues: 'Active issues',
       },
-      completedToday: '1 job',
-      revenue: '£178',
-      activeIssues: '2 — require follow-up',
       infoTitle: 'What happens when you confirm?',
       infoItems: [
         'A close-of-day summary report will be generated',

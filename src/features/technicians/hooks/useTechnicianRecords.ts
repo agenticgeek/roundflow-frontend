@@ -16,10 +16,11 @@ export function useTechnicianPerformance(id: string, period: PerformancePeriod) 
   })
 }
 
-export function useTechnicianIncidents(id: string) {
+export function useTechnicianIncidents(id: string, page = 1) {
   return useQuery({
-    queryKey: queryKeys.technicians.incidents(id),
-    queryFn: ({ signal }) => technicianRecordsApi.incidents(id, {}, signal),
+    queryKey: [...queryKeys.technicians.incidents(id), page] as const,
+    queryFn: ({ signal }) => technicianRecordsApi.incidents(id, { page }, signal),
+    placeholderData: keepPreviousData,
   })
 }
 

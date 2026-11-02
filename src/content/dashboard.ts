@@ -1,21 +1,6 @@
 import type { DashboardChartRange, DashboardPeriod, DashboardRoundStatus } from '@/api/dashboard.api'
-import type { PaymentMethod } from '@/api/types'
 
 export type DashboardTone = 'default' | 'primary' | 'success' | 'warning' | 'danger'
-
-export interface BulkMessageRoundOption {
-  id: string
-  label: string
-  customerCount: number
-  customersOnHold: number
-}
-
-export interface BulkMessageTemplateOption {
-  id: string
-  label: string
-  body: string
-  smsCreditsPerCustomer: number
-}
 
 export interface DashboardMetric {
   label: string
@@ -196,49 +181,30 @@ export const dashboardContent = {
   },
   bulkMessageModal: {
     title: 'Bulk Message Round',
-    subtitle: 'Send SMS/WhatsApp to customers',
+    subtitle: 'Send SMS to the customers of a round',
     fields: {
       round: { label: 'Round' },
       template: { label: 'Message Template' },
       preview: { label: 'Message Preview' },
       excludeHold: { label: 'Exclude customers on payment hold' },
       sendOptions: { label: 'Send Options' },
+      sendAt: { label: 'Send at' },
     },
     sendOptions: [
       { id: 'now', label: 'Send now' },
       { id: 'schedule', label: 'Schedule' },
     ],
+    templatesLoading: 'Loading templates…',
+    noTemplates: 'No message templates yet — add one in Settings.',
+    variablesHint: 'Variables like {{firstName}} are filled in for each customer when the message is sent.',
+    scheduleInPast: 'Pick a time in the future.',
     actions: {
       cancel: 'Cancel',
+      done: 'Done',
       send: 'Send Message',
+      schedule: 'Schedule Message',
     },
-    creditPricePerSms: 0.1,
-    rounds: [
-      { id: 'alnwick-monday', label: 'Alnwick Monday', customerCount: 32, customersOnHold: 0 },
-      { id: 'alnwick-tuesday', label: 'Alnwick Tuesday', customerCount: 28, customersOnHold: 1 },
-      { id: 'morpeth-wednesday', label: 'Morpeth Wednesday', customerCount: 24, customersOnHold: 0 },
-      { id: 'bamburgh-tuesday', label: 'Bamburgh Tuesday', customerCount: 18, customersOnHold: 1 },
-    ] satisfies BulkMessageRoundOption[],
-    templates: [
-      {
-        id: 'weather-delay',
-        label: 'Weather Delay',
-        body: "Hi, due to adverse weather conditions, we've had to postpone today's window cleaning. We'll reschedule your appointment for the next available slot. Thanks for your understanding!",
-        smsCreditsPerCustomer: 1,
-      },
-      {
-        id: 'job-completed',
-        label: 'Job Completed',
-        body: 'Hi, your windows have been cleaned today. Thank you for your business!',
-        smsCreditsPerCustomer: 1,
-      },
-      {
-        id: 'payment-reminder',
-        label: 'Payment Reminder',
-        body: 'Hi, this is a friendly reminder that your window cleaning payment is due. Please contact us if you have any questions.',
-        smsCreditsPerCustomer: 1,
-      },
-    ] satisfies BulkMessageTemplateOption[],
+    result: { notMessaged: 'Not messaged' },
   },
   oneOffJobModal: {
     title: 'Add One-Off Job',
@@ -280,10 +246,3 @@ export const dashboardContent = {
   },
 } as const
 
-export const oneOffPaymentMethodLabels: Record<PaymentMethod, string> = {
-  GOCARDLESS: 'GoCardless',
-  STRIPE: 'Stripe (card)',
-  CASH: 'Cash',
-  BACS: 'Bank transfer (BACS)',
-  CHEQUE: 'Cheque',
-}

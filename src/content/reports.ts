@@ -81,38 +81,4 @@ export const reportsContent = {
     scheduled: 'Scheduled',
     cancelled: 'Cancelled',
   } as const satisfies Record<VisitStatus, string>,
-  metrics: [
-    {
-      id: 'total-revenue',
-      label: 'Total Revenue',
-      value: '£24,903',
-      trend: '+8.6 vs last 30 days',
-      trendPositive: true,
-      icon: 'calendar',
-    },
-    {
-      id: 'completed-visits',
-      label: 'Completed Visits',
-      value: '1,294',
-      trend: '+8.6 vs last 30 days',
-      trendPositive: true,
-      icon: 'check-circle',
-    },
-    {
-      id: 'completed-rounds',
-      label: 'Completed Rounds',
-      value: '56',
-      trend: '+12.3 vs last 30 days',
-      trendPositive: true,
-      icon: 'refresh',
-    },
-    {
-      id: 'undone-payments',
-      label: 'Undone Payments',
-      value: '£12,345',
-      trend: '-8.3 vs last 30 days',
-      trendPositive: false,
-      icon: 'briefcase',
-    },
-  ] as const satisfies readonly ReportsMetric[],
 } as const

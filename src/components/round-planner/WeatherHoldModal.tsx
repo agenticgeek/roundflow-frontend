@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { RoundPlannerWeatherHoldOption } from '@/content/round-planner'
 import { roundPlannerContent } from '@/content/round-planner'
+import type { WeatherCondition, WeatherHoldResult, WeatherRescheduling } from '@/api/rounds.api'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Select } from '@/components/ui'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
-import { useBulkMessage } from '@/features/messages/hooks/useMessages'
+import { BroadcastResultPanel } from '@/components/messages/BroadcastResultPanel'
+import { useApplyWeatherHold, useWeatherHoldPreview } from '@/features/rounds/hooks/useRounds'
+import { formatLongDate } from '@/features/rounds/lib/planner'
 import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
@@ -20,61 +23,59 @@ export interface PlannerRoundSummary {
 interface WeatherHoldModalProps {
   open: boolean
   round: PlannerRoundSummary | null
+  /** The round-day being held, YYYY-MM-DD. */
+  date: string
   dateLabel?: string
   onClose: () => void
 }
 
 /**
- * Weather hold workflow for postponing a round from the round detail drawer.
- * No backend endpoint yet (push-missed is today-only) — UI only.
+ * Weather hold for one round-day (POST /rounds/:id/weather-hold): the scheduled visits are moved
+ * or taken off the list and, optionally, the affected customers are messaged. The counts and the
+ * customer message come from the preview endpoint, so what is shown is what will happen.
  */
-export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHoldModalProps) {
+export function WeatherHoldModal({ open, round, date, dateLabel, onClose }: WeatherHoldModalProps) {
   const { weatherHoldModal } = roundPlannerContent
   const { showToast } = useToast()
-  const bulkMessage = useBulkMessage()
-  const [condition, setCondition] = useState(weatherHoldModal.conditions[0]?.value ?? '')
-  const [reschedulingId, setReschedulingId] = useState(
-    weatherHoldModal.reschedulingOptions[0]?.id ?? '',
-  )
-  const [notifyCustomers, setNotifyCustomers] = useState(false)
+  const applyHold = useApplyWeatherHold()
+  const [condition, setCondition] = useState<WeatherCondition>(weatherHoldModal.conditions[0].value)
+  const [rescheduling, setRescheduling] = useState<WeatherRescheduling>(weatherHoldModal.reschedulingOptions[0].id)
+  const [notifyCustomers, setNotifyCustomers] = useState(true)
+  const [result, setResult] = useState<WeatherHoldResult | null>(null)
+
+  const preview = useWeatherHoldPreview(round?.id ?? '', { date, condition, rescheduling }, open && !result)
 
   useEffect(() => {
     if (!open) return
-    setCondition(weatherHoldModal.conditions[0]?.value ?? '')
-    setReschedulingId(weatherHoldModal.reschedulingOptions[0]?.id ?? '')
-    setNotifyCustomers(false)
+    setCondition(weatherHoldModal.conditions[0].value)
+    setRescheduling(weatherHoldModal.reschedulingOptions[0].id)
+    setNotifyCustomers(true)
+    setResult(null)
   }, [open, weatherHoldModal.conditions, weatherHoldModal.reschedulingOptions])
 
   if (!round) return null
 
+  const affected = preview.data?.affectedVisits
+  const nothingToHold = affected === 0
+
   async function handleApply() {
-    if (bulkMessage.isPending) return
-    // The weather-hold reschedule itself has no endpoint yet; the only live action
-    // here is notifying customers, which goes through the bulk-message endpoint.
-    if (notifyCustomers && round) {
-      try {
-        const result = await bulkMessage.mutateAsync({
-          roundId: round.id,
-          channel: 'sms',
-          body: weatherHoldModal.messagePreview,
-        })
-        onClose()
-        showToast(weatherHoldModal.successToast, {
-          description: `Notified ${result.queued} customer${result.queued === 1 ? '' : 's'}.`,
-        })
-      } catch (error) {
-        showToast(
-          error instanceof ApiError && error.status === 409
-            ? 'Messaging isn’t connected yet (GoHighLevel). Connect it in Settings first.'
-            : error instanceof Error
-              ? error.message
-              : 'Could not notify customers.',
-        )
-      }
-      return
+    if (!round || applyHold.isPending || !preview.data || nothingToHold) return
+    try {
+      const outcome = await applyHold.mutateAsync({
+        roundId: round.id,
+        input: { date, condition, rescheduling, notifyCustomers },
+      })
+      setResult(outcome)
+      showToast(weatherHoldModal.successToast)
+    } catch (error) {
+      showToast(
+        error instanceof ApiError && error.status === 409
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Could not apply the weather hold.',
+      )
     }
-    onClose()
-    showToast(weatherHoldModal.successToast)
   }
 
   return (
@@ -90,21 +91,31 @@ export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHol
       headerClassName="pl-16"
       bodyClassName="space-y-4"
       footer={
-        <div className="grid grid-cols-2 gap-3">
-          <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
-            {weatherHoldModal.actions.cancel}
+        result ? (
+          <ModalButton compact variant="primary" className="w-full" onClick={onClose}>
+            {weatherHoldModal.actions.done}
           </ModalButton>
-          <ModalButton
-            compact
-            variant="primary"
-            className="flex w-full items-center justify-center gap-2"
-            disabled={bulkMessage.isPending}
-            onClick={() => void handleApply()}
-          >
-            <DashboardIcon name="cloud" className="h-4 w-4" />
-            {bulkMessage.isPending ? 'Applying…' : weatherHoldModal.actions.apply}
-          </ModalButton>
-        </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <ModalButton compact variant="secondary" className="w-full" onClick={onClose}>
+              {weatherHoldModal.actions.cancel}
+            </ModalButton>
+            <ModalButton
+              compact
+              variant="primary"
+              className="flex w-full items-center justify-center gap-2"
+              disabled={applyHold.isPending || !preview.data || nothingToHold}
+              onClick={() => void handleApply()}
+            >
+              <DashboardIcon name="cloud" className="h-4 w-4" />
+              {applyHold.isPending
+                ? weatherHoldModal.actions.applying
+                : notifyCustomers
+                  ? weatherHoldModal.actions.applyNotify
+                  : weatherHoldModal.actions.apply}
+            </ModalButton>
+          </div>
+        )
       }
     >
       <span className="absolute top-4 left-5 flex h-9 w-9 items-center justify-center rounded-full bg-warning-surface text-warning">
@@ -114,95 +125,131 @@ export function WeatherHoldModal({ open, round, dateLabel, onClose }: WeatherHol
       <section>
         <p className="text-sm font-semibold text-foreground">{weatherHoldModal.fields.round}</p>
         <div className="mt-2 rounded-xl border border-border bg-surface px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-foreground">{round.name}</p>
-              <p className="mt-0.5 text-xs text-muted">
-                {dateLabel ? `${dateLabel} · ` : ''}
-                {round.stopCount} stops
-              </p>
-            </div>
-            <span className="shrink-0 text-xs font-medium text-accent">
-              {weatherHoldModal.statusLabel}
-            </span>
-          </div>
+          <p className="text-sm font-semibold text-foreground">{round.name}</p>
+          <p className="mt-0.5 text-xs text-muted">
+            {dateLabel ? `${dateLabel} · ` : ''}
+            {round.stopCount} stops
+          </p>
         </div>
       </section>
 
-      <section>
-        <label
-          htmlFor="weather-condition"
-          className="text-sm font-semibold text-foreground"
-        >
-          {weatherHoldModal.fields.weatherCondition}
-        </label>
-        <Select
-          id="weather-condition"
-          inputSize="sm"
-          value={condition}
-          onChange={(event) => setCondition(event.target.value)}
-          options={[...weatherHoldModal.conditions]}
-          className="mt-2 border-accent/20 bg-accent-surface"
-        />
-      </section>
-
-      <section>
-        <p className="text-sm font-semibold text-foreground">
-          {weatherHoldModal.fields.rescheduling}
-        </p>
-        <div className="mt-2 space-y-2">
-          {weatherHoldModal.reschedulingOptions.map((option) => (
-            <ReschedulingOption
-              key={option.id}
-              option={option}
-              selected={reschedulingId === option.id}
-              onSelect={() => setReschedulingId(option.id)}
+      {result ? (
+        <HoldResult result={result} />
+      ) : (
+        <>
+          <section>
+            <label htmlFor="weather-condition" className="text-sm font-semibold text-foreground">
+              {weatherHoldModal.fields.weatherCondition}
+            </label>
+            <Select
+              id="weather-condition"
+              inputSize="sm"
+              value={condition}
+              onChange={(event) => setCondition(event.target.value as WeatherCondition)}
+              options={[...weatherHoldModal.conditions]}
+              className="mt-2 border-accent/20 bg-accent-surface"
             />
-          ))}
-        </div>
-      </section>
+          </section>
 
-      <section className="border-t border-border pt-4">
-        <button
-          type="button"
-          onClick={() => setNotifyCustomers((current) => !current)}
-          className="flex w-full items-start gap-3 text-left"
-        >
-          <span
-            className={cn(
-              'mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border',
-              notifyCustomers ? 'border-primary bg-primary' : 'border-muted bg-muted/40',
-            )}
-            aria-hidden="true"
-          />
-          <span>
-            <span className="block text-sm font-semibold text-foreground">
-              {weatherHoldModal.fields.notifyCustomers}
-            </span>
-            <span className="mt-1 block text-xs text-muted">
-              Send SMS about weather delay and rescheduling
-            </span>
-          </span>
-        </button>
+          <section>
+            <p className="text-sm font-semibold text-foreground">{weatherHoldModal.fields.rescheduling}</p>
+            <div className="mt-2 space-y-2">
+              {weatherHoldModal.reschedulingOptions.map((option) => (
+                <ReschedulingOption
+                  key={option.id}
+                  option={option}
+                  selected={rescheduling === option.id}
+                  onSelect={() => setRescheduling(option.id)}
+                />
+              ))}
+            </div>
+            {preview.data ? (
+              <p className="mt-2 text-xs text-muted">
+                {preview.data.newDate
+                  ? weatherHoldModal.newDate.replace('{date}', formatLongDate(preview.data.newDate))
+                  : weatherHoldModal.newDateManual}
+              </p>
+            ) : null}
+          </section>
 
-        <div className="mt-3 rounded-xl border border-border bg-surface px-4 py-3 text-xs text-muted">
-          {weatherHoldModal.messagePreview}
-        </div>
-        <p className="mt-2 text-xs text-muted">{weatherHoldModal.messageMeta}</p>
-      </section>
+          <section className="border-t border-border pt-4">
+            <button
+              type="button"
+              onClick={() => setNotifyCustomers((current) => !current)}
+              className="flex w-full items-start gap-3 text-left"
+            >
+              <span
+                className={cn(
+                  'mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border',
+                  notifyCustomers ? 'border-primary bg-primary' : 'border-muted bg-muted/40',
+                )}
+                aria-hidden="true"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-foreground">
+                  {weatherHoldModal.fields.notifyCustomers}
+                </span>
+                <span className="mt-1 block text-xs text-muted">{weatherHoldModal.notifyHint}</span>
+              </span>
+            </button>
 
-      <div className="flex gap-3 rounded-xl border border-warning-border bg-warning-surface px-4 py-3">
-        <DashboardIcon name="alert" className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-        <div className="text-sm">
-          <p className="font-semibold text-warning">
-            {round.stopCount} {weatherHoldModal.affectedJobsLabel}
-          </p>
-          <p className="mt-0.5 text-warning-foreground">
-            {weatherHoldModal.affectedJobsDescription}
-          </p>
-        </div>
-      </div>
+            {notifyCustomers ? (
+              <>
+                <div className="mt-3 rounded-xl border border-border bg-surface px-4 py-3 text-xs text-muted">
+                  {preview.isError
+                    ? weatherHoldModal.previewError
+                    : !preview.data
+                      ? weatherHoldModal.previewLoading
+                      : preview.data.message || weatherHoldModal.noMessage}
+                </div>
+                {preview.data?.message ? (
+                  <p className="mt-2 text-xs text-muted">
+                    {weatherHoldModal.messageMeta.replace('{count}', String(preview.data.characterCount))}
+                  </p>
+                ) : null}
+                {preview.data && preview.data.optedOutCustomers > 0 ? (
+                  <p className="mt-1 text-xs text-muted">
+                    {weatherHoldModal.optedOut.replace('{count}', String(preview.data.optedOutCustomers))}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+          </section>
+
+          <div className="flex gap-3 rounded-xl border border-warning-border bg-warning-surface px-4 py-3">
+            <DashboardIcon name="alert" className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div className="text-sm">
+              <p className="font-semibold text-warning">
+                {affected === undefined ? '…' : affected}{' '}
+                {affected === 1 ? weatherHoldModal.affectedJobsLabelOne : weatherHoldModal.affectedJobsLabel}
+              </p>
+              <p className="mt-0.5 text-warning-foreground">{weatherHoldModal.affectedJobsDescription}</p>
+            </div>
+          </div>
+        </>
+      )}
     </Modal>
+  )
+}
+
+/** What the hold actually did: visits held, the new date, and the per-recipient notification outcome. */
+function HoldResult({ result }: { result: WeatherHoldResult }) {
+  const { result: copy } = roundPlannerContent.weatherHoldModal
+
+  return (
+    <section aria-label="Weather hold result" className="space-y-3">
+      <p className="rounded-xl border border-accent/20 bg-accent-surface px-4 py-3 text-sm font-medium text-accent">
+        {result.held === 1 ? copy.heldOne : copy.held.replace('{count}', String(result.held))}
+        {result.newDate ? copy.moved.replace('{date}', formatLongDate(result.newDate)) : copy.skipped}
+      </p>
+      {result.notification ? (
+        <BroadcastResultPanel result={result.notification} notMessagedTitle={copy.notMessaged} />
+      ) : result.notificationError ? (
+        <p className="text-sm text-danger">{copy.notifyFailed.replace('{error}', result.notificationError)}</p>
+      ) : (
+        <p className="text-sm text-muted">{copy.notNotified}</p>
+      )}
+    </section>
   )
 }
 

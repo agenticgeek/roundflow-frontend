@@ -259,7 +259,7 @@ export default function AcceptInvite() {
               inputSize="sm"
               value={fullName}
               onChange={(event) => setFullName(event.target.value)}
-              placeholder="e.g. Dave Smith"
+              placeholder="Full name"
               disabled={pending}
               autoComplete="name"
             />

@@ -69,7 +69,7 @@ export type ReportsVisitsParams = PageParams & {
   status?: ReportsVisitStatusParam
 }
 
-export type ReportsActivityParams = {
+export type ReportsActivityParams = PageParams & {
   type?: string
 }
 
@@ -148,7 +148,7 @@ export const reportsApi = {
   ): Promise<Paginated<ReportsActivityRow>> =>
     toPaginated(
       await api<Paginated<ReportsActivityRow> | ReportsActivityRow[]>(
-        `/reports/activity${toQuery({ type: params.type })}`,
+        `/reports/activity${toQuery({ type: params.type, page: params.page ? String(params.page) : undefined })}`,
         { signal },
       ),
     ),

@@ -88,24 +88,43 @@ describe('useIntegrationReturn', () => {
 })
 
 describe('business rules (GAP-001 / GAP-003 / GAP-008)', () => {
-  const defaults = { reminderSchedule: 'evening-before' as const, eveningReminderTime: '18:00', morningReminderTime: '07:00' }
+  const defaults = {
+    eveningReminderEnabled: true,
+    eveningReminderTime: '18:00',
+    morningReminderEnabled: false,
+    morningReminderTime: '07:00',
+  }
 
-  it('maps reminders both ways, keeping a time per schedule', () => {
-    expect(reminderToForm({ reminderMode: 'MORNING_OF', reminderTime: '06:30' }, defaults)).toEqual({
-      reminderSchedule: 'morning-of',
-      eveningReminderTime: '18:00',
+  it('maps the reminder list both ways, keeping a tick and a time per reminder', () => {
+    expect(
+      reminderToForm({ preCleanReminders: [{ type: 'MORNING_OF', time: '06:30' }, { type: 'EVENING_BEFORE', time: '19:00' }] }, defaults),
+    ).toEqual({
+      eveningReminderEnabled: true,
+      eveningReminderTime: '19:00',
+      morningReminderEnabled: true,
       morningReminderTime: '06:30',
     })
-    expect(reminderToForm({ reminderMode: 'EVENING_BEFORE', reminderTime: '19:00' }, defaults).eveningReminderTime).toBe('19:00')
-    expect(reminderToForm({ reminderMode: 'NONE' }, defaults).reminderSchedule).toBe('none')
+    expect(reminderToForm({ preCleanReminders: [] }, defaults)).toMatchObject({
+      eveningReminderEnabled: false,
+      morningReminderEnabled: false,
+    })
+    // Legacy single value from an older backend.
+    expect(reminderToForm({ reminderMode: 'MORNING_OF', reminderTime: '06:30' }, defaults)).toMatchObject({
+      eveningReminderEnabled: false,
+      morningReminderEnabled: true,
+      morningReminderTime: '06:30',
+    })
+    expect(reminderToForm({ reminderMode: 'NONE' }, defaults).eveningReminderEnabled).toBe(false)
     expect(reminderToForm(null, defaults)).toEqual(defaults)
-    expect(reminderToForm({ reminderMode: 'EVENING_BEFORE' }, defaults).eveningReminderTime).toBe('18:00')
+    expect(reminderToForm({}, defaults)).toEqual(defaults)
 
-    expect(reminderFromForm({ ...defaults, reminderSchedule: 'none' })).toEqual({ reminderMode: 'NONE' })
-    expect(reminderFromForm(defaults)).toEqual({ reminderMode: 'EVENING_BEFORE', reminderTime: '18:00' })
-    expect(reminderFromForm({ ...defaults, reminderSchedule: 'morning-of' })).toEqual({
-      reminderMode: 'MORNING_OF',
-      reminderTime: '07:00',
+    expect(reminderFromForm({ ...defaults, eveningReminderEnabled: false })).toEqual({ preCleanReminders: [] })
+    expect(reminderFromForm(defaults)).toEqual({ preCleanReminders: [{ type: 'EVENING_BEFORE', time: '18:00' }] })
+    expect(reminderFromForm({ ...defaults, morningReminderEnabled: true })).toEqual({
+      preCleanReminders: [
+        { type: 'EVENING_BEFORE', time: '18:00' },
+        { type: 'MORNING_OF', time: '07:00' },
+      ],
     })
   })
 
