@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { RoundListItem } from '@/api/rounds.api'
+import type { RoundListItem, SetRoundTechniciansInput } from '@/api/rounds.api'
 import type { TechnicianListItem } from '@/api/technicians.api'
 import { ROUTES } from '@/config/routes'
 import { assignTechniciansContent as content } from '@/content/round-planner'
+import { PendingInviteResend } from '@/components/round-planner/PendingInviteResend'
 import { Select } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
+import { AllocationSummary, RoundSplitCard } from '@/components/round-planner/RoundSplitCard'
 import {
   ChoiceChip,
   InfoNote,
-  OptionCard,
   StatusPill,
   WarningNote,
   WizardStepTitle,
@@ -17,7 +18,6 @@ import {
 import { primaryButtonClass, secondaryButtonClass } from '@/components/setup-wizard/wizard-styles'
 import {
   useRoundDetails,
-  useRoundOccurrenceDay,
   useRounds,
   useRoundsOccurrences,
   useSetRoundTechnicians,
@@ -25,10 +25,10 @@ import {
 import { useServiceAreas } from '@/features/settings/hooks/useSettings'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
 import { useUnassignedRoundsAlert } from '@/features/rounds/hooks/useUnassignedRoundsAlert'
+import { assignFailureMessage, isPendingInvite } from '@/features/rounds/lib/assign'
+import { buildSplitInput, type RoundSplit } from '@/features/rounds/lib/split'
 import { addDays, formatShortDate, todayIso } from '@/lib/round-dates'
 import { cn, fillCopy } from '@/lib/utils'
-
-type AssignMode = 'one' | 'split'
 
 interface FirstVisit {
   date: string
@@ -41,67 +41,6 @@ function TeamIcon() {
       <circle cx="9" cy="8" r="3.5" />
       <path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.4a6.5 6.5 0 0 1 3.5 5.6" strokeLinecap="round" />
     </svg>
-  )
-}
-
-/** `4 Hotspur Street, Alnwick` → `Hotspur Street` — the part of the address jobs are grouped by. */
-function streetOf(addressLine: string): string {
-  const firstPart = addressLine.split(',')[0] ?? addressLine
-  return firstPart.replace(/^\s*(flat|apartment|unit)\s+\w+\s*/i, '').replace(/^\s*\d+[a-z]?\s+/i, '').trim() || firstPart.trim()
-}
-
-/** Keeps each street with one technician, giving the next-biggest street to whoever has fewest jobs. */
-function splitByStreet(addresses: readonly string[], technicianIds: readonly string[]) {
-  const streets = new Map<string, number>()
-  for (const address of addresses) {
-    const street = streetOf(address)
-    streets.set(street, (streets.get(street) ?? 0) + 1)
-  }
-  const shares = technicianIds.map((id) => ({ id, jobs: 0, streets: [] as string[] }))
-  for (const [street, jobs] of [...streets].sort((a, b) => b[1] - a[1])) {
-    const target = shares.reduce((min, share) => (share.jobs < min.jobs ? share : min), shares[0]!)
-    target.jobs += jobs
-    target.streets.push(street)
-  }
-  return shares
-}
-
-function SplitPreview({
-  roundId,
-  date,
-  technicianIds,
-  technicianName,
-}: {
-  roundId: string
-  date: string
-  technicianIds: string[]
-  technicianName: (id: string) => string
-}) {
-  const day = useRoundOccurrenceDay(roundId, date)
-  const shares = useMemo(
-    () => splitByStreet((day.data?.stops ?? []).map((stop) => stop.addressLine), technicianIds),
-    [day.data, technicianIds],
-  )
-  if (day.isPending) return <div className="h-20 animate-pulse rounded-xl bg-foreground/[0.04]" />
-  if (!day.data) return null
-
-  return (
-    <>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {shares.map((share) => (
-          <div key={share.id} className="rounded-xl border border-border bg-foreground/[0.02] px-5 py-4">
-            <p className="text-[15px] font-medium text-foreground">{technicianName(share.id)}</p>
-            <p className="mt-0.5 text-sm text-muted">
-              {fillCopy(content.round.splitSummary, {
-                count: share.jobs,
-                streets: share.streets.slice(0, 3).join(', ') + (share.streets.length > 3 ? '…' : ''),
-              })}
-            </p>
-          </div>
-        ))}
-      </div>
-      <p className="text-sm text-muted">{content.round.splitNote}</p>
-    </>
   )
 }
 
@@ -154,7 +93,7 @@ function RoundCard({
           <p className="text-sm text-muted">{content.round.noTechnicians}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {ordered.map((technician) => (
+            {ordered.filter((technician) => !isPendingInvite(technician)).map((technician) => (
               <ChoiceChip
                 key={technician.id}
                 label={technician.name ?? '—'}
@@ -164,6 +103,17 @@ function RoundCard({
             ))}
           </div>
         )}
+        {/* GAP-011: pending invites can't be assigned (the API rejects them) — offer a resend. */}
+        {ordered.some(isPendingInvite) ? (
+          <ul className="mt-3 space-y-1.5">
+            {ordered.filter(isPendingInvite).map((technician) => (
+              <li key={technician.id} className="flex flex-wrap items-center gap-2">
+                <ChoiceChip label={technician.name ?? '—'} />
+                <PendingInviteResend technician={technician} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
 
       {selected.length === 0 && firstVisit ? (
@@ -173,42 +123,11 @@ function RoundCard({
   )
 }
 
-/** Step 2 — one technician does it all, or the jobs are split by street. */
-function SplitRoundCard({
-  round,
-  firstVisit,
-  selected,
-  mode,
-  technicianName,
-  onModeChange,
-}: {
-  round: RoundListItem
-  firstVisit: FirstVisit | null
-  selected: string[]
-  mode: AssignMode
-  technicianName: (id: string) => string
-  onModeChange: (mode: AssignMode) => void
-}) {
-  return (
-    <section className="space-y-4 rounded-2xl border border-border bg-card p-5 sm:p-6">
-      <div>
-        <h3 className="text-base font-semibold text-foreground sm:text-lg">{round.name}</h3>
-        <p className="mt-0.5 text-sm text-muted">{selected.map(technicianName).join(', ')}</p>
-      </div>
-      <div role="radiogroup" className="grid gap-3 sm:grid-cols-2">
-        <OptionCard selected={mode === 'one'} onSelect={() => onModeChange('one')} title={content.round.oneDoesAll} />
-        <OptionCard
-          selected={mode === 'split'}
-          onSelect={() => onModeChange('split')}
-          title={content.round.split.label}
-          description={content.round.split.description}
-        />
-      </div>
-      {mode === 'split' && firstVisit ? (
-        <SplitPreview roundId={round.id} date={firstVisit.date} technicianIds={selected} technicianName={technicianName} />
-      ) : null}
-    </section>
-  )
+/** Review "Sharing" column for what will be saved. */
+function sharingLabel(pickedCount: number, input: SetRoundTechniciansInput): string {
+  if (pickedCount < 2) return content.review.single
+  if (input.split?.mode === 'SINGLE') return content.review.oneDoesAll
+  return input.split?.mode === 'MANUAL' ? content.review.manual : content.review.split
 }
 
 type AssignStep = 0 | 1 | 2
@@ -298,8 +217,11 @@ export function AssignTechniciansScreen() {
   const [rangeDays, setRangeDays] = useState('7')
   const [onlyUnassigned, setOnlyUnassigned] = useState(true)
   const [selection, setSelection] = useState<Record<string, string[]>>({})
-  const [modes, setModes] = useState<Record<string, AssignMode>>({})
+  /** GAP-012 split per round (`undefined` until prefilled from the saved allocation). */
+  const [splits, setSplits] = useState<Record<string, RoundSplit>>({})
   const [saving, setSaving] = useState(false)
+  /** The server's error from the last save — shown on Review, which stays open (GAP-011). */
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [step, setStep] = useState<AssignStep>(0)
   /** What was saved, kept for the completed screen (the rounds refetch right after). */
   const [savedSummary, setSavedSummary] = useState<{ rounds: number; visits: number } | null>(null)
@@ -395,16 +317,13 @@ export function AssignTechniciansScreen() {
     setSelection((prev) => {
       const current = prev[roundId] ?? []
       if (current.includes(technicianId)) return { ...prev, [roundId]: current.filter((id) => id !== technicianId) }
-      // "One technician does all jobs" — picking someone else swaps them in.
-      if (modes[roundId] === 'one' && current.length > 0) return { ...prev, [roundId]: [technicianId] }
       return { ...prev, [roundId]: [...current, technicianId] }
     })
   }
 
-  function changeMode(roundId: string, mode: AssignMode) {
-    setModes((prev) => ({ ...prev, [roundId]: mode }))
-    if (mode === 'one') setSelection((prev) => ({ ...prev, [roundId]: (prev[roundId] ?? []).slice(0, 1) }))
-  }
+  const changeSplit = useCallback((roundId: string, split: RoundSplit) => {
+    setSplits((prev) => ({ ...prev, [roundId]: split }))
+  }, [])
 
   async function save() {
     if (changedRounds.length === 0) {
@@ -412,14 +331,17 @@ export function AssignTechniciansScreen() {
       return
     }
     setSaving(true)
+    setSaveError(null)
     const results = await Promise.allSettled(
       changedRounds.map((round) =>
-        setTechnicians.mutateAsync({ id: round.id, technicianIds: selection[round.id] ?? [] }),
+        setTechnicians.mutateAsync({ id: round.id, input: buildSplitInput(selection[round.id] ?? [], splits[round.id]) }),
       ),
     )
     setSaving(false)
-    if (results.some((result) => result.status === 'rejected')) {
-      showToast(content.toasts.failed)
+    const failure = assignFailureMessage(results, changedRounds.map((round) => round.name))
+    if (failure) {
+      setSaveError(failure)
+      showToast(content.toasts.failed, { description: failure, tone: 'error' })
       details.refetch()
       return
     }
@@ -558,14 +480,13 @@ export function AssignTechniciansScreen() {
               <InfoNote>{content.splitStep.nothing}</InfoNote>
             ) : (
               sharedRounds.map((round) => (
-                <SplitRoundCard
+                <RoundSplitCard
                   key={round.id}
                   round={round}
-                  firstVisit={firstVisitOf(round.id)}
                   selected={selection[round.id] ?? []}
-                  mode={modes[round.id] ?? 'split'}
+                  split={splits[round.id]}
+                  onChange={(split) => changeSplit(round.id, split)}
                   technicianName={technicianName}
-                  onModeChange={(mode) => changeMode(round.id, mode)}
                 />
               ))
             )}
@@ -589,11 +510,13 @@ export function AssignTechniciansScreen() {
                     <th className="px-5 py-3">{content.review.firstVisit}</th>
                     <th className="px-5 py-3">{content.review.technicians}</th>
                     <th className="px-5 py-3">{content.review.howShared}</th>
+                    <th className="px-5 py-3">{content.review.allocation}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {changedRounds.map((round, index) => {
                     const picked = selection[round.id] ?? []
+                    const input = buildSplitInput(picked, splits[round.id])
                     const first = firstVisitOf(round.id)
                     return (
                       <tr key={round.id} className="animate-reveal-item" style={{ animationDelay: `${index * 60}ms` }}>
@@ -602,14 +525,13 @@ export function AssignTechniciansScreen() {
                           {first ? `${formatShortDate(first.date)} · ${first.visits}` : content.round.noVisits}
                         </td>
                         <td className={cn('px-5 py-3.5', picked.length ? 'text-foreground' : 'text-warning-foreground')}>
-                          {picked.length ? picked.map(technicianName).join(', ') : content.review.removed}
+                          {picked.length ? input.technicianIds.map(technicianName).join(', ') : content.review.removed}
                         </td>
-                        <td className="px-5 py-3.5 text-muted">
-                          {picked.length < 2
-                            ? content.review.single
-                            : (modes[round.id] ?? 'split') === 'one'
-                              ? content.review.oneDoesAll
-                              : content.review.split}
+                        <td className="px-5 py-3.5 text-muted">{sharingLabel(picked.length, input)}</td>
+                        <td className="px-5 py-3.5">
+                          {picked.length ? (
+                            <AllocationSummary roundId={round.id} input={input} technicianName={technicianName} />
+                          ) : null}
                         </td>
                       </tr>
                     )
@@ -617,6 +539,11 @@ export function AssignTechniciansScreen() {
                 </tbody>
               </table>
             </div>
+            {saveError ? (
+              <p role="alert" className="rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+                {saveError}
+              </p>
+            ) : null}
           </div>
         )}
       </div>

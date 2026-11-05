@@ -1,65 +1,22 @@
 import { api } from '@/api/client'
 
-/** CONTRACT-DIFF: `/dashboard/*` not in generated OpenAPI yet — live per DASHBOARD handoff. */
+import type { components } from '@/api/types.gen'
 
-export type DashboardKpis = {
-  jobsScheduledToday: number
-  openComplaints: number
-  openComplaintsByPriority: { high: number; medium: number; low: number }
-  cleanUnpaidAmount: number
-  cleanUnpaidCount: number
-  monthlyRevenue: number
-}
+type Schemas = components['schemas']
 
-export type DashboardAlerts = {
-  skippedNeedingReview: number
-  failedPayments: number
-  complaintRevisitsDue: number
-}
-
-export type DashboardRoundStatus = 'not_started' | 'in_progress' | 'complete'
-
-export type DashboardRoundRow = {
-  roundId: string
-  roundName: string
-  technicianId: string | null
-  technicianName: string | null
-  status: DashboardRoundStatus
-  total: number
-  completed: number
-  skipped: number
-  issueCount: number
-  paymentHolds: number
-  value: number
-  /** Always null — Phase 2 stub. */
-  etaMinutes: number | null
-}
-
+export type DashboardKpis = Schemas['DashboardKpis']
+/** Counts plus `kpiAlerts` — KPI thresholds crossed this month (GAP-025). */
+export type DashboardAlerts = Schemas['DashboardAlerts']
+export type DashboardKpiAlert = Schemas['KpiThresholdAlert']
+export type DashboardRoundStatus = Schemas['DashboardRoundRow']['status']
+/** `scheduledValue` / `completedValue` replace the deprecated `value`; `etaMinutes` is always null. */
+export type DashboardRoundRow = Schemas['DashboardRoundRow']
 export type DashboardPeriod = 'monthly' | 'yearly'
-
-export type DashboardTechnicianKpi = {
-  technicianId: string
-  technicianName: string
-  jobsCompleted: number
-  valueCompleted: number
-  openComplaints: number
-  issueCount: number
-  /** Phase 2 stubs — always null. */
-  timeOnJobMinutes: number | null
-  strikes: number | null
-  damages: number | null
-  upsells: number | null
-}
-
+/** `timeOnJobMinutes` / `revenuePerHour` are computed (null = no timed visit in the period). */
+export type DashboardTechnicianKpi = Schemas['TechnicianKpi']
 export type DashboardChartRange = '6m' | '12m'
-
-export type DashboardCharts = {
-  months: string[]
-  valueCompleted: number[]
-  issueCount: number[]
-  /** Always null — Phase 2 stub. */
-  revenuePerHour: number[] | null
-}
+/** `revenuePerHour` is one figure for the range (null without timed visits). */
+export type DashboardCharts = Schemas['DashboardChartData']
 
 export const dashboardApi = {
   kpis: (signal?: AbortSignal) => api<DashboardKpis>('/dashboard/kpis', { signal }),

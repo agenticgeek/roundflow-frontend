@@ -10,9 +10,12 @@ import {
   type RoundDetail,
   type RoundStatus,
   type RoundUpdateInput,
+  type SetRoundTechniciansInput,
+  type WeatherHoldInput,
+  type WeatherHoldQuery,
 } from '@/api/rounds.api'
 import { ApiError } from '@/lib/errors'
-import { invalidateCustomers, invalidateRounds, queryKeys } from '@/lib/query-keys'
+import { invalidateCustomers, invalidateRounds, invalidateToday, queryKeys } from '@/lib/query-keys'
 
 /** Per-round fan-out queries reuse cached results this long before refetching. */
 const FAN_OUT_STALE_TIME = 60_000
@@ -55,19 +58,16 @@ export function useUpdateRound() {
   })
 }
 
+/** PUT /rounds/:id/technicians with an optional split (GAP-012); returns the allocation. */
 export function useSetRoundTechnicians() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({
-      id,
-      technicianIds,
-    }: {
-      id: string
-      technicianIds: string[]
-    }) => roundsApi.setTechnicians(id, technicianIds),
-    onSuccess: (_data, { id }) => {
+    mutationFn: ({ id, input }: { id: string; input: SetRoundTechniciansInput }) =>
+      roundsApi.setTechnicians(id, input),
+    onSuccess: () => {
+      // Round detail + allocation (both under `rounds`), and restamped visits on Today's Work.
       void invalidateRounds(queryClient)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.rounds.detail(id) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today.all })
       // Every property assigned to this round shows its technician on Customers / Property Detail.
       void invalidateCustomers(queryClient)
     },
@@ -82,6 +82,28 @@ export function useGenerateRoundVisits() {
     onSuccess: () => {
       void invalidateRounds(queryClient)
       void queryClient.invalidateQueries({ queryKey: queryKeys.today.all })
+    },
+  })
+}
+
+/** GET /rounds/:id/weather-hold/preview — what a hold would affect, plus the rendered customer message. */
+export function useWeatherHoldPreview(roundId: string, query: WeatherHoldQuery, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.rounds.weatherHoldPreview(roundId, query.date, query.condition, query.rescheduling),
+    queryFn: ({ signal }) => roundsApi.weatherHoldPreview(roundId, query, signal),
+    enabled: enabled && Boolean(roundId) && Boolean(query.date),
+  })
+}
+
+/** POST /rounds/:id/weather-hold — visits move, so planner, Today's Work and customers all refresh. */
+export function useApplyWeatherHold() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ roundId, input }: { roundId: string; input: WeatherHoldInput }) =>
+      roundsApi.weatherHold(roundId, input),
+    onSuccess: () => {
+      void invalidateToday(queryClient)
+      void invalidateCustomers(queryClient)
     },
   })
 }

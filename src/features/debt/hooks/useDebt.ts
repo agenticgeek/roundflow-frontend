@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   debtApi,
   type DebtBoardParams,
+  type DebtBulkInput,
   type DebtBucket,
   type DebtHoldInput,
   type DebtPaymentLinkInput,
@@ -9,7 +10,7 @@ import {
   type DebtRemindInput,
 } from '@/api/debt.api'
 import { ApiError } from '@/lib/errors'
-import { DEBT_BOARD_PAGE_SIZE, invalidateDebt, queryKeys } from '@/lib/query-keys'
+import { DEBT_BOARD_PAGE_SIZE, invalidateDebt, invalidateServiceChange, queryKeys } from '@/lib/query-keys'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { DEBT_BUCKETS } from '@/features/debt/lib/mappers'
 
@@ -104,6 +105,8 @@ export function useDebtRemind() {
       invoiceId: string
       input: DebtRemindInput
     }) => debtApi.remind(invoiceId, input),
+    // The modal shows the error inline with its fix (GAP-034).
+    meta: { silenceGlobalError: true },
     onSuccess: () => invalidateDebt(queryClient),
   })
 }
@@ -118,7 +121,17 @@ export function useDebtPaymentLink() {
       invoiceId: string
       input: DebtPaymentLinkInput
     }) => debtApi.paymentLink(invoiceId, input),
+    meta: { silenceGlobalError: true },
     onSuccess: () => invalidateDebt(queryClient),
+  })
+}
+
+export function useDebtBulk() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: DebtBulkInput) => debtApi.bulk(input),
+    // Hold flags upcoming visits too, so refresh everything service-related.
+    onSuccess: () => invalidateServiceChange(queryClient),
   })
 }
 
@@ -136,7 +149,9 @@ export function useDebtSetHold() {
   return useMutation({
     mutationFn: ({ invoiceId, ...input }: { invoiceId: string } & DebtHoldInput) =>
       debtApi.setHold(invoiceId, input),
-    onSuccess: () => invalidateDebt(queryClient),
+    // GAP-026: the hold flags the customer's upcoming visits — Today's Work, the planner and
+    // the customer page all show it.
+    onSuccess: () => invalidateServiceChange(queryClient),
   })
 }
 

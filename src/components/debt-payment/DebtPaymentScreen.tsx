@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DebtCustomerRecord, DebtStatusTab } from '@/content/debt-payment'
 import { debtPaymentContent } from '@/content/debt-payment'
+import { DebtBulkBar } from '@/components/debt-payment/DebtBulkBar'
 import { DebtCustomerDetailPanel } from '@/components/debt-payment/DebtCustomerDetailPanel'
 import { DebtInvoicePreviewModal } from '@/components/debt-payment/DebtInvoicePreviewModal'
 import { DebtPauseServiceModal } from '@/components/debt-payment/DebtPauseServiceModal'
@@ -8,6 +9,7 @@ import { DebtResumeServiceModal } from '@/components/debt-payment/DebtResumeServ
 import { SendPaymentLinkModal } from '@/components/debt-payment/SendPaymentLinkModal'
 import { SendPaymentReminderModal } from '@/components/debt-payment/SendPaymentReminderModal'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
+import { MarkInvoicePaidModal } from '@/components/invoices/MarkInvoicePaidModal'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Input, Select } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
@@ -39,7 +41,7 @@ import {
   DebtPaymentScreenSkeleton,
 } from '@/components/debt-payment/DebtPaymentSkeletons'
 
-type DebtActionModal = 'reminder' | 'payment-link' | 'pause' | 'resume' | 'invoice'
+type DebtActionModal = 'reminder' | 'payment-link' | 'pause' | 'resume' | 'invoice' | 'mark-paid'
 
 const metricToneClass = {
   accent: 'border-transparent bg-accent-surface',
@@ -139,7 +141,7 @@ export function DebtPaymentScreen() {
   }
 
   const detailRow = filteredRecords.find((record) => record.id === detailId) ?? null
-  const detailQuery = useDebtInvoiceDetail(detailRow?.invoiceId ?? detailRow?.id)
+  const detailQuery = useDebtInvoiceDetail(detailRow?.invoiceId)
   const detailRecord = useMemo(
     () => (detailRow ? withInvoiceDetail(detailRow, detailQuery.data) : null),
     [detailRow, detailQuery.data],
@@ -342,6 +344,15 @@ export function DebtPaymentScreen() {
         </label>
       </div>
 
+      {canMutate ? (
+        <DebtBulkBar
+          selected={filteredRecords
+            .filter((record) => selectedIds.includes(record.id))
+            .map((record) => ({ invoiceId: record.invoiceId ?? record.id, label: record.customer }))}
+          onClear={() => setSelectedIds([])}
+        />
+      ) : null}
+
       <div key={activeTab} className="animate-fade-in">
         {boardQuery.isPending ? (
           <DebtBoardCardsSkeleton />
@@ -375,6 +386,7 @@ export function DebtPaymentScreen() {
                 onToggleChecked={() => toggleSelected(record.id)}
                 onSendReminder={() => openAction('reminder', record)}
                 onViewInvoice={() => openAction('invoice', record)}
+                onMarkPaid={() => openAction('mark-paid', record)}
                 onToggleMenu={() =>
                   setMenuOpenId((current) => (current === record.id ? null : record.id))
                 }
@@ -402,7 +414,21 @@ export function DebtPaymentScreen() {
         onPauseService={(record) => openAction('pause', record)}
         onResumeService={(record) => openAction('resume', record)}
         onExportInvoice={(record) => openAction('invoice', record)}
+        onMarkPaid={(record) => openAction('mark-paid', record)}
       />
+      {actionModal === 'mark-paid' && actionRecord?.invoiceId ? (
+        <MarkInvoicePaidModal
+          invoice={{
+            id: actionRecord.invoiceId,
+            invoiceNumber: actionRecord.invoiceNumber ?? actionRecord.invoiceId,
+            amountLabel: actionRecord.amountOwed,
+            customerName: actionRecord.customer,
+            paymentMethod: actionRecord.paymentMethodCode,
+          }}
+          onClose={closeAction}
+          onPaid={() => setDetailId(null)}
+        />
+      ) : null}
 
       <SendPaymentReminderModal
         open={actionModal === 'reminder'}
@@ -444,6 +470,7 @@ function DebtCustomerCard({
   onToggleChecked,
   onSendReminder,
   onViewInvoice,
+  onMarkPaid,
   onToggleMenu,
   onCloseMenu,
   onFlagBadDebt,
@@ -459,6 +486,7 @@ function DebtCustomerCard({
   onToggleChecked: () => void
   onSendReminder: () => void
   onViewInvoice: () => void
+  onMarkPaid: () => void
   onToggleMenu: () => void
   onCloseMenu: () => void
   onFlagBadDebt: () => void
@@ -466,6 +494,8 @@ function DebtCustomerCard({
 }) {
   const { actions, contactLabels, lastContactLabel, owedSuffix, menu } = debtPaymentContent
   const menuRef = useRef<HTMLDivElement>(null)
+  // ON_HOLD rows can be a held customer with no unpaid invoice (GAP-026).
+  const noInvoice = !record.invoiceId
 
   useEffect(() => {
     if (!menuOpen) return
@@ -495,7 +525,14 @@ function DebtCustomerCard({
             aria-label={`Select ${record.customer}`}
           />
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground">{record.customer}</p>
+            <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-foreground">
+              {record.customer}
+              {record.holdNextClean ? (
+                <span className="rounded-full bg-warning-surface px-2 py-0.5 text-[10px] font-semibold text-warning-foreground">
+                  {debtPaymentContent.onHoldChip}
+                </span>
+              ) : null}
+            </p>
             <p className="mt-0.5 text-xs text-muted">{record.address}</p>
           </div>
         </div>
@@ -504,25 +541,39 @@ function DebtCustomerCard({
           {canMutate ? (
             <button
               type="button"
+              disabled={noInvoice}
               onClick={(event) => {
                 event.stopPropagation()
                 onSendReminder()
               }}
-              className={cn(dashboardCtaClass, 'px-3 py-1.5 text-xs')}
+              className={cn(dashboardCtaClass, 'px-3 py-1.5 text-xs disabled:opacity-50')}
             >
               {actions.sendReminder}
             </button>
           ) : null}
           <button
             type="button"
+            disabled={noInvoice}
             onClick={(event) => {
               event.stopPropagation()
               onViewInvoice()
             }}
-            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface"
+            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-50"
           >
             {actions.viewInvoice}
           </button>
+          {canMutate && !noInvoice ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                onMarkPaid()
+              }}
+              className="rounded-lg border border-success/30 px-2.5 py-1.5 text-xs font-semibold text-success transition-colors hover:bg-success/5"
+            >
+              {actions.markPaid}
+            </button>
+          ) : null}
           {canMutate ? (
             <div ref={menuRef} className="relative">
               <button
@@ -540,7 +591,7 @@ function DebtCustomerCard({
                 <div className="absolute top-full right-0 z-20 mt-1 min-w-[11rem] rounded-lg border border-border bg-card py-1 shadow-lg">
                   <button
                     type="button"
-                    disabled={flagPending}
+                    disabled={flagPending || noInvoice}
                     onClick={(event) => {
                       event.stopPropagation()
                       onFlagBadDebt()
@@ -551,7 +602,7 @@ function DebtCustomerCard({
                   </button>
                   <button
                     type="button"
-                    disabled={flagPending}
+                    disabled={flagPending || noInvoice}
                     onClick={(event) => {
                       event.stopPropagation()
                       onToggleHold()

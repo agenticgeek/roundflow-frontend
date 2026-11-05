@@ -1,3 +1,5 @@
+import type { PaymentStanding } from '@/features/customers/lib/payment-status'
+import { PAYMENT_METHOD_OPTIONS } from '@/lib/payment-methods'
 import type { CleaningFrequency, PaymentMethod } from '@/api/types'
 
 export type PropertyDetailTabId =
@@ -12,7 +14,7 @@ export type PropertyServiceStatus = 'active' | 'paused' | 'unassigned' | 'hold'
 
 export type PropertyPlanStatus = 'active' | 'pending' | 'paused' | 'hold'
 
-export type PropertyPaymentStatus = 'paid' | 'hold' | 'pending'
+export type PropertyPaymentStatus = PaymentStanding
 
 export interface PropertyDetailRecord {
   id: string
@@ -32,6 +34,12 @@ export interface PropertyDetailRecord {
   paymentStatus: PropertyPaymentStatus
   outstandingBalance: string
   paymentMethod: string
+  /** The primary plan is PAUSED — independent of a payment hold, which takes over `serviceStatus`. */
+  planPaused?: boolean
+  /** Formatted start date of a pause that has been scheduled but not started yet. */
+  pauseScheduledFor?: string | null
+  /** Raw API value behind `paymentMethod` — prefills the edit form so every method round-trips. */
+  paymentMethodCode?: PaymentMethod | null
   lastPayment: string
   issuesCount: number
   nextVisitStatus: string
@@ -54,6 +62,8 @@ export type PropertyServicePlanStatus = 'active' | 'paused' | 'cancelled'
 
 export interface PropertyServicePlan {
   id: string
+  /** Catalogue service behind the plan, when the plan has one. */
+  serviceId?: string | null
   serviceName: string
   frequency: string
   price: string
@@ -74,7 +84,12 @@ export interface PropertyServicePlan {
   }
 }
 
-export type VisitStatus = 'completed' | 'scheduled'
+/** Shown when a property has no access / risk notes. */
+export const NO_ACCESS_NOTES = 'No access notes'
+export const NO_RISK_NOTES = 'No risk notes'
+
+/** `cancelled-paused`: cancelled because the plan was paused (A4) — the grey "Cancelled (paused)" chip. */
+export type VisitStatus = 'completed' | 'scheduled' | 'in-progress' | 'skipped' | 'cancelled' | 'cancelled-paused'
 
 export type VisitPaymentStatus = 'paid' | 'pending'
 
@@ -100,6 +115,8 @@ export interface PropertyPaymentRecord {
   payment: PaymentRecordStatus
   invoice: PaymentInvoiceStatus
   action: PaymentRowAction
+  /** The pending BACS / cheque Payment to reconcile — set only when "Mark as paid" applies. */
+  markPaidPaymentId?: string | null
 }
 
 export type PropertyNoteCategory = 'internal' | 'risk' | 'customer' | 'technician'
@@ -129,6 +146,9 @@ export const propertyDetailContent = {
   actions: {
     edit: 'Edit',
     pauseService: 'Pause Service',
+    resumeService: 'Resume Service',
+    cancelScheduledPause: 'Cancel scheduled pause',
+    pauseScheduled: 'Pause scheduled for {date}',
     sendMessage: 'Send Message',
   },
   editCustomerModal: {
@@ -138,8 +158,11 @@ export const propertyDetailContent = {
       contactDetails: 'Contact Details',
       propertyAddress: 'Property Address',
       serviceDetails: 'Service Details',
+      services: 'Services',
       notes: 'Notes',
     },
+    notSet: 'Not set',
+    servicesTotal: 'Total per visit: £{total}',
     fields: {
       fullName: 'Full Name',
       phone: 'Phone Number',
@@ -174,11 +197,11 @@ export const propertyDetailContent = {
       { value: 'water-fed-pole', label: 'Water Fed Pole' },
       { value: 'traditional', label: 'Traditional' },
     ],
-    paymentMethodOptions: [
-      { value: 'gocardless', label: 'GoCardless' },
-      { value: 'cash', label: 'Cash' },
-      { value: 'bank-transfer', label: 'Bank Transfer' },
-    ],
+    paymentMethodOptions: PAYMENT_METHOD_OPTIONS,
+    notConnected: {
+      GOCARDLESS: 'GoCardless is not connected yet — connect it in Settings → Payments before relying on Direct Debit.',
+      STRIPE: 'Stripe is not connected yet — connect it in Settings → Payments before sending card links.',
+    },
     actions: {
       cancel: 'Cancel',
       save: 'Save Changes',
@@ -193,6 +216,7 @@ export const propertyDetailContent = {
       postcodeRequired: 'Enter a postcode.',
       postcodeInvalid: 'Enter a valid UK postcode.',
       priceInvalid: 'Enter a price greater than 0.',
+      servicesRequired: 'Pick at least one service.',
     },
     successToast: 'Customer record updated',
   },
@@ -202,13 +226,13 @@ export const propertyDetailContent = {
       'Assign this property to a round so visits can be scheduled and payments collected.',
     action: 'Assign to Round & Technician',
   },
-  pauseServiceToast: {
-    title: 'Customer/Property paused',
-    description: 'The customer/property you selected has been paused from the recurring round',
-  },
   pauseServiceModal: {
     title: 'Pause Service',
     subtitle: '{customer}',
+    validation: {
+      startInPast: 'The pause can start today or later.',
+      resumeBeforeStart: 'The resume date must be after the start date.',
+    },
     fields: {
       reason: 'Reason for Pause',
       duration: 'Pause Duration',
@@ -241,7 +265,15 @@ export const propertyDetailContent = {
     warning: {
       title: 'Upcoming visits will be cancelled',
       description:
-        'Any scheduled visits during the pause period will not be generated. Payment collection will also be suspended.',
+        'Every scheduled visit in the pause window will be cancelled (they stay in Visit History as "cancelled (paused)") and are not restored on resume. Payment collection is suspended too.',
+    },
+    /** GAP-020: what the pause actually did (`cancelledVisits`, `pauseScheduled`). */
+    outcome: {
+      paused: 'Service paused',
+      scheduled: 'Pause scheduled from {date}',
+      cancelled: '{count} scheduled visits will be cancelled',
+      cancelledOne: '1 scheduled visit will be cancelled',
+      cancelledNone: 'No scheduled visits were in the pause window',
     },
     actions: {
       cancel: 'Cancel',
@@ -297,6 +329,8 @@ export const propertyDetailContent = {
     paid: 'paid',
     hold: 'hold',
     pending: 'pending',
+    unpaid: 'unpaid',
+    none: 'No invoices',
   },
   planStatusLabels: {
     active: 'Active',
@@ -367,12 +401,31 @@ export const propertyDetailContent = {
       submit: 'Change Frequency',
     },
     successToast: 'Service frequency updated',
+    /** GAP-018: where the frequency change moved the property. */
+    movedToast: 'Moved to {round}',
+    createdToast: 'Created {round} and moved the property there',
+    /** 409 NO_MATCHING_ROUND: create the proposed round, or pick an existing one. */
+    noMatch: {
+      create: 'Create “{name}”',
+      pickTitle: 'Or move to an existing round',
+      move: 'Move to {name}',
+      frequency: '{frequency}',
+      working: 'Moving…',
+    },
     options: [
       { value: 'FOUR_WEEKLY', label: 'Every 4 weeks' },
       { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
       { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
       { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
     ],
+  },
+  servicesHistory: {
+    title: 'Services history',
+    loading: 'Loading history…',
+    empty: 'No service changes yet.',
+    before: 'Before',
+    after: 'After',
+    none: 'No services',
   },
   servicePlan: {
     title: 'Service Plan Details',
@@ -423,13 +476,7 @@ export const propertyDetailContent = {
         { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
         { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
       ],
-      paymentMethodOptions: [
-        { value: 'GOCARDLESS', label: 'GoCardless' },
-        { value: 'STRIPE', label: 'Card (Stripe)' },
-        { value: 'BACS', label: 'Bank Transfer' },
-        { value: 'CASH', label: 'Cash' },
-        { value: 'CHEQUE', label: 'Cheque' },
-      ],
+      paymentMethodOptions: PAYMENT_METHOD_OPTIONS,
       cleanMethodOptions: [
         { value: 'Water Fed Pole', label: 'Water Fed Pole' },
         { value: 'Traditional', label: 'Traditional' },
@@ -455,6 +502,10 @@ export const propertyDetailContent = {
     statusLabels: {
       completed: 'completed',
       scheduled: 'scheduled',
+      'in-progress': 'in progress',
+      skipped: 'skipped',
+      cancelled: 'cancelled',
+      'cancelled-paused': 'cancelled (paused)',
     },
     paymentLabels: {
       paid: 'paid',
@@ -466,6 +517,9 @@ export const propertyDetailContent = {
       draft: 'Draft',
     },
     emptyLabel: 'No visits recorded yet.',
+    loadError: 'Visit history could not be loaded.',
+    retry: 'Retry',
+    loading: 'Loading visits…',
   },
   paymentHistory: {
     title: 'Payment History',
@@ -492,6 +546,15 @@ export const propertyDetailContent = {
       download: 'View',
       generate: 'Generate',
       send: 'Send',
+    },
+    /** BACS / cheque rows have no settlement webhook — the admin reconciles them (GAP-027). */
+    markPaid: {
+      action: 'Mark as paid',
+      confirm: 'Received {amount}?',
+      yes: 'Yes, mark paid',
+      saving: 'Saving…',
+      cancel: 'Cancel',
+      done: 'Payment of {amount} marked as paid',
     },
     emptyLabel: 'No payment records yet.',
     downloadToast: 'Invoice PDF downloaded',
@@ -595,15 +658,53 @@ export const propertyDetailContent = {
       save: 'Save Note',
     },
     saveToast: 'Note saved',
+    /** The property's access / risk notes, pinned above the note history (GAP-022). */
+    pinned: {
+      badge: 'Pinned',
+      access: 'Access Notes',
+      risk: 'Risk Notes',
+      source: 'From the property record',
+    },
   },
   placeholders: {
     payments: 'Payment history will appear here.',
     photos: 'Property photos will appear here.',
   },
-  photosComingSoon: {
-    badge: 'Coming Soon',
-    title: 'Property photos are on the way',
-    description: 'Before/after photos from each visit will appear here soon.',
+  /** GAP-019: before / after photos from the technician app. */
+  photos: {
+    title: 'Photos',
+    filterLabel: 'Show',
+    filters: [
+      { value: 'ALL', label: 'All' },
+      { value: 'BEFORE', label: 'Before' },
+      { value: 'AFTER', label: 'After' },
+      { value: 'PROPERTY', label: 'Property' },
+      { value: 'ACCESS_ISSUE', label: 'Access issue' },
+    ],
+  },
+  /** GAP-022: flag a customer as bad debt (PATCH /customers/:id/bad-debt). */
+  badDebt: {
+    badge: 'Bad debt',
+    flag: 'Flag bad debt',
+    clear: 'Clear bad debt',
+    flagTitle: 'Flag as bad debt',
+    clearTitle: 'Clear bad-debt flag',
+    flagDescription: 'The customer is moved to the Bad Debt tab of the debt board.',
+    clearDescription: 'The customer goes back to the normal debt buckets.',
+    reasonLabel: 'Reason (optional)',
+    reasonPlaceholder: 'Recorded in the activity log',
+    cancel: 'Cancel',
+    confirmFlag: 'Flag bad debt',
+    confirmClear: 'Clear flag',
+    saving: 'Saving…',
+    flaggedToast: '{customer} flagged as bad debt',
+    clearedToast: 'Bad-debt flag cleared for {customer}',
+  },
+  /** GAP-034: send a saved invoice on a chosen channel. */
+  sendInvoice: {
+    alreadySent: 'This invoice was already sent.',
+    sendAgain: 'Send again',
+    sentToast: 'Invoice sent by {channel}',
   },
   notFound: {
     title: 'Property not found',

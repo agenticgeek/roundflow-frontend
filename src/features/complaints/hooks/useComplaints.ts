@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { complaintsApi } from '@/api/complaints.api'
-import type { ComplaintCreateInput, ComplaintListParams } from '@/api/complaints.api'
-import { invalidateComplaints, queryKeys } from '@/lib/query-keys'
+import type { ComplaintCreateInput, ComplaintListParams, ComplaintResolveInput } from '@/api/complaints.api'
+import { invalidateComplaints, invalidateDashboard, invalidateRounds, queryKeys } from '@/lib/query-keys'
 
 export function useComplaints(params: ComplaintListParams = {}, enabled = true) {
   return useQuery({
@@ -47,15 +47,22 @@ export function useScheduleComplaintRevisit() {
   return useMutation({
     mutationFn: ({ id, revisitDate }: { id: string; revisitDate: string }) =>
       complaintsApi.scheduleRevisit(id, revisitDate),
-    onSuccess: () => invalidateComplaints(queryClient),
+    // The free revisit visit shows in the planner (GAP-029).
+    onSuccess: () => Promise.all([invalidateComplaints(queryClient), invalidateRounds(queryClient)]),
   })
 }
 
 export function useResolveComplaint() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, notes }: { id: string; notes?: string }) => complaintsApi.resolve(id, notes),
-    onSuccess: () => invalidateComplaints(queryClient),
+    mutationFn: ({ id, ...input }: { id: string } & ComplaintResolveInput) => complaintsApi.resolve(id, input),
+    // Upheld complaints count as strikes on the technician KPIs (GAP-025).
+    onSuccess: () =>
+      Promise.all([
+        invalidateComplaints(queryClient),
+        invalidateDashboard(queryClient),
+        queryClient.invalidateQueries({ queryKey: queryKeys.technicians.all }),
+      ]),
   })
 }
 

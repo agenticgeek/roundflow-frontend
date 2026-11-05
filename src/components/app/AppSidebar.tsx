@@ -12,6 +12,7 @@ import {
   dashboardQuickActionClass,
 } from '@/components/dashboard/dashboard-styles'
 import { cn } from '@/lib/utils'
+import { useChatUnread } from '@/features/chat/hooks/useChat'
 import { useRoutePrefetch } from '@/hooks/use-route-prefetch'
 
 interface AppSidebarNavProps {
@@ -42,6 +43,7 @@ export function AppSidebarNav({
 }: AppSidebarNavProps) {
   const { signOut, signingOut: signingOutLabel, collapse, expand } = appShellContent.sidebar
   const prefetchRoute = useRoutePrefetch()
+  const unreadChats = useChatUnread().data?.total ?? 0
 
   return (
     <>
@@ -89,6 +91,14 @@ export function AppSidebarNav({
           >
             <DashboardIcon name={item.icon} className="h-4 w-4 shrink-0" />
             <span className={cn('truncate', collapsed && 'sr-only')}>{item.label}</span>
+            {item.id === 'technicians' && unreadChats > 0 ? (
+              <span
+                aria-label={`${unreadChats} unread chat messages`}
+                className="ml-auto rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+              >
+                {unreadChats > 99 ? '99+' : unreadChats}
+              </span>
+            ) : null}
           </NavLink>
         ))}
       </nav>

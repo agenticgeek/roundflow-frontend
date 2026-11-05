@@ -2,14 +2,14 @@ import type {
   CleaningFrequency,
   CustomerDetail,
   CustomerListRow,
-  CustomerListRowPaymentStatus,
   LifecycleStatus,
   NoteType,
-  PaymentMethod,
   ServicePlanView,
 } from '@/api/types'
+import type { PropertyDetailResponse } from '@/api/properties.api'
+import { todayIso } from '@/lib/round-dates'
+import { PAYMENT_METHOD_LABELS } from '@/lib/payment-methods'
 import type {
-  CustomerPaymentStatus,
   CustomerPropertyRecord,
   CustomerStatus,
 } from '@/content/customers'
@@ -28,20 +28,16 @@ import type {
   VisitPaymentStatus,
   VisitStatus,
 } from '@/content/property-detail'
+import { NO_ACCESS_NOTES, NO_RISK_NOTES } from '@/content/property-detail'
+import { reconcilablePaymentId } from '@/features/payments/lib/mark-paid'
+import { exhaustiveFallback, type VisitStatus as VisitStatusValue } from '@/lib/visit-status'
+import { mapCustomerPaymentBadge, mapPaymentStanding } from '@/features/customers/lib/payment-status'
 
 const FREQUENCY_LABELS: Record<CleaningFrequency, string> = {
   FOUR_WEEKLY: 'Every 4 weeks',
   SIX_WEEKLY: 'Every 6 weeks',
   EIGHT_WEEKLY: 'Every 8 weeks',
   TWELVE_WEEKLY: 'Every 12 weeks',
-}
-
-const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  GOCARDLESS: 'GoCardless',
-  STRIPE: 'Stripe',
-  CASH: 'Cash',
-  BACS: 'Bank transfer',
-  CHEQUE: 'Cheque',
 }
 
 function formatMoney(value: number | null | undefined) {
@@ -70,17 +66,10 @@ function mapListStatus(
   return 'active'
 }
 
-function mapPaymentStatus(
-  status: CustomerListRowPaymentStatus | string | undefined,
-): CustomerPaymentStatus {
-  if (status === 'hold') return 'hold'
-  if (status === 'pending' || status === 'overdue' || status === 'failed') return 'pending'
-  return 'paid'
-}
-
 export function customerListRowToRecord(row: CustomerListRow): CustomerPropertyRecord {
   const customerId = row.customerId ?? ''
-  const propertyId = row.propertyId ?? customerId
+  const hasNoProperty = Boolean(row.hasNoProperty) || !row.propertyId
+  const propertyId = row.propertyId ?? ''
   const address = [row.addressLine, row.postcode].filter(Boolean).join(', ')
   const amountDue =
     row.amountDue != null && row.amountDue > 0 ? formatMoney(row.amountDue) : undefined
@@ -95,10 +84,12 @@ export function customerListRowToRecord(row: CustomerListRow): CustomerPropertyR
     frequency: row.frequency ? FREQUENCY_LABELS[row.frequency] : '—',
     price: formatMoney(row.price) ?? '—',
     technician: row.technicianName ?? '—',
-    nextDue: formatDate(row.nextDueDate),
-    paymentStatus: mapPaymentStatus(row.paymentStatus),
+    // GAP-021: `nextDue` falls back to the next open visit server-side.
+    nextDue: formatDate(row.nextDue ?? row.nextDueDate),
+    paymentStatus: mapCustomerPaymentBadge(row.paymentStatus),
     amountDue,
-    needsAssignment: !row.roundId,
+    needsAssignment: !hasNoProperty && !row.roundId,
+    hasNoProperty,
   }
 }
 
@@ -128,12 +119,7 @@ function mapPlanStatus(
 function mapDetailPaymentStatus(
   status: string | undefined,
 ): PropertyPaymentStatus {
-  const normalized = (status ?? '').toLowerCase()
-  if (normalized === 'hold') return 'hold'
-  if (normalized === 'pending' || normalized === 'overdue' || normalized === 'failed') {
-    return 'pending'
-  }
-  return 'paid'
+  return mapPaymentStanding(status)
 }
 
 /**
@@ -177,6 +163,7 @@ function servicePlanToRecord(
       : null
   return {
     id: plan.id ?? '',
+    serviceId: plan.serviceId ?? null,
     serviceName: plan.serviceName?.trim() || '',
     frequency: plan.cleaningFrequency ? FREQUENCY_LABELS[plan.cleaningFrequency] : '—',
     price: formatMoney(plan.price) ?? '—',
@@ -208,7 +195,7 @@ export function customerDetailToPropertyRecord(
   if (!customer?.id) return null
 
   const hasRound = Boolean(property?.roundId)
-  const onHold = (standing?.paymentStatus ?? '').toLowerCase() === 'hold'
+  const onHold = mapPaymentStanding(standing?.paymentStatus) === 'hold'
   const addressLine = property?.addressLine ?? ''
   const postcode = property?.postcode ?? ''
   const fullAddress = [addressLine, postcode].filter(Boolean).join(', ') || '—'
@@ -226,23 +213,27 @@ export function customerDetailToPropertyRecord(
       : '—',
     price: formatMoney(plan?.price) ?? '—',
     cleanMethod: plan?.cleanMethod ?? '—',
-    nextDue: formatDate(plan?.nextDueDate),
+    nextDue: formatDate(standing?.nextDue ?? plan?.nextDueDate),
     lastCompleted: formatDate(plan?.lastCompleted),
     assignedRound: standing?.assignedRound ?? property?.roundName ?? 'Not Assigned',
     technician: standing?.technicianName ?? '—',
     paymentStatus: mapDetailPaymentStatus(standing?.paymentStatus),
-    outstandingBalance:
-      standing?.outstandingBalance != null
-        ? (formatMoney(standing.outstandingBalance) ?? '£0')
-        : '—',
+    // GAP-021: `amountDue` (unpaid SENT invoices); `outstandingBalance` is its deprecated alias.
+    outstandingBalance: formatMoney(standing?.amountDue ?? standing?.outstandingBalance) ?? '—',
     paymentMethod: plan?.paymentMethod
       ? PAYMENT_METHOD_LABELS[plan.paymentMethod]
       : '—',
+    paymentMethodCode: plan?.paymentMethod ?? null,
+    planPaused: property?.status === 'PAUSED' || plan?.status === 'PAUSED',
+    pauseScheduledFor:
+      plan && plan.status !== 'PAUSED' && plan.pauseStartDate && plan.pauseStartDate > todayIso()
+        ? formatDate(plan.pauseStartDate)
+        : null,
     lastPayment: formatDate(standing?.lastPaymentDate),
     issuesCount: standing?.issuesCount ?? 0,
     nextVisitStatus: standing?.nextVisitStatus ?? '—',
-    accessNotes: property?.accessNotes?.trim() || 'No access notes',
-    riskNotes: property?.riskNotes?.trim() || 'No risk notes',
+    accessNotes: property?.accessNotes?.trim() || NO_ACCESS_NOTES,
+    riskNotes: property?.riskNotes?.trim() || NO_RISK_NOTES,
     phone: customer.phone ?? '',
     // CONTRACT-DIFF: the generated CustomerDetail.customer response type hasn't caught up
     // with landline yet, even though the Create/Update Customer input schemas already have it.
@@ -266,8 +257,23 @@ function serviceTypeLabel(plans: readonly ServicePlanView[]): string | undefined
   return names.length > 0 ? [...new Set(names)].join(', ') : undefined
 }
 
-function mapVisitStatus(status: string | undefined): VisitStatus {
-  return status === 'COMPLETED' ? 'completed' : 'scheduled'
+export function mapVisitStatus(status: string | undefined, cancelReason?: string | null): VisitStatus {
+  const visitStatus = (status ?? 'SCHEDULED') as VisitStatusValue
+  switch (visitStatus) {
+    case 'COMPLETED':
+      return 'completed'
+    case 'SCHEDULED':
+      return 'scheduled'
+    case 'IN_PROGRESS':
+      return 'in-progress'
+    case 'SKIPPED':
+      return 'skipped'
+    case 'CANCELLED':
+      // Visit History shows pause-cancelled visits as a grey "Cancelled (paused)" chip (A4).
+      return cancelReason === 'PAUSED' ? 'cancelled-paused' : 'cancelled'
+    default:
+      return exhaustiveFallback(visitStatus, 'scheduled')
+  }
 }
 
 function mapVisitPayment(status: string | null | undefined): VisitPaymentStatus {
@@ -279,6 +285,8 @@ export function customerDetailToVisits(detail: CustomerDetail): PropertyVisitRec
     const extra = row as typeof row & {
       invoiceId?: string | null
       invoiceStatus?: string | null
+      /** A4: why a CANCELLED visit was cancelled. */
+      cancelReason?: string | null
     }
     const invoiceStatus = extra.invoiceStatus
     const invoice: VisitInvoiceAction =
@@ -295,7 +303,7 @@ export function customerDetailToVisits(detail: CustomerDetail): PropertyVisitRec
       visitDate: formatDate(row.date),
       round: row.roundName ?? '—',
       technician: '—',
-      status: mapVisitStatus(row.status),
+      status: mapVisitStatus(row.status, extra.cancelReason),
       payment: mapVisitPayment(row.paymentStatus),
       price: '—',
       invoice,
@@ -309,6 +317,7 @@ export function customerDetailToPayments(
 ): PropertyPaymentRecord[] | undefined {
   const payments = detail.tabs?.payments
   if (payments === undefined) return undefined
+  const planMethod = primaryServicePlan(customerServicePlans(detail))?.paymentMethod
 
   return (payments.rows ?? []).map((row, index) => ({
     id: row.paymentId ?? row.visitId ?? `payment-${index}`,
@@ -329,6 +338,7 @@ export function customerDetailToPayments(
           ? 'sent'
           : 'none',
     action: row.canGenerate ? 'generate' : row.invoiceId || row.canDownload ? 'download' : 'generate',
+    markPaidPaymentId: reconcilablePaymentId(row, planMethod),
   }))
 }
 
@@ -355,3 +365,56 @@ export function categoryToNoteType(category: PropertyNoteCategory): NoteType {
 }
 
 export { FREQUENCY_LABELS, PAYMENT_METHOD_LABELS, formatDate, formatMoney }
+
+/**
+ * GET /properties/:id → the shape the record page already maps. The customer-level parts
+ * (visit history, payments, notes tabs) stay from `GET /customers/:id`; the property, its plans
+ * and the payment standing come from the property itself, so a customer's 2nd property shows its
+ * own data instead of the primary property's.
+ */
+export function mergePropertyIntoCustomerDetail(
+  detail: CustomerDetail,
+  property: PropertyDetailResponse,
+): CustomerDetail {
+  const primary = property.servicePlans.find((plan) => plan.isPrimary) ?? property.servicePlans[0]
+  return {
+    ...detail,
+    property: {
+      ...detail.property,
+      id: property.id,
+      addressLine: property.addressLine,
+      postcode: property.postcode,
+      propertyType: (property.propertyType ?? undefined) as never,
+      roundId: property.roundId,
+      roundName: property.roundName,
+      accessNotes: property.accessNotes,
+      riskNotes: property.riskNotes,
+      status: property.status,
+    },
+    servicePlans: property.servicePlans.map((plan) => ({
+      id: plan.id,
+      serviceId: plan.serviceId,
+      serviceName: plan.serviceName,
+      price: plan.price,
+      cleanMethod: plan.cleanMethod,
+      paymentMethod: plan.paymentMethod,
+      cleaningFrequency: plan.cleaningFrequency,
+      status: plan.status,
+      nextDueDate: plan.nextDueDate,
+      lastCompleted: plan.lastCompleted,
+      pauseStartDate: plan.pauseStartDate,
+      pauseEndDate: plan.pauseEndDate,
+      isPrimary: plan.isPrimary,
+    })) as ServicePlanView[],
+    standingInfo: {
+      ...detail.standingInfo,
+      frequency: primary?.cleaningFrequency ?? null,
+      assignedRound: property.roundName,
+      technicianName: property.assignedTechnicianName,
+      paymentStatus: property.paymentStatus as never,
+      amountDue: property.amountDue,
+      outstandingBalance: property.amountDue,
+      nextDue: primary?.nextDueDate ?? property.nextVisit?.date ?? null,
+    },
+  } as CustomerDetail
+}

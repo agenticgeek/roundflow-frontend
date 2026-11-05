@@ -23,17 +23,21 @@ export const ROUTES = {
   todaysWork: '/todays-work',
   customers: '/customers',
   debtPayment: '/debt-payment',
+  /** GAP-028 invoice and payment lists. */
+  invoices: '/invoices',
   reportsHistory: '/reports-history',
   complaints: '/complaints',
   settings: '/settings',
-  /** Where the backend sends admins back after Stripe's OAuth (`?stripe=connected`). */
+  /** Where admins land after Stripe's OAuth completes (`?stripe=connected`). */
   settingsIntegrations: '/settings/integrations',
+  /** Stripe Connect redirect URI — register it in Stripe → Connect → Settings. */
+  stripeCallback: '/settings/stripe/callback',
   technicians: '/technicians',
   technicianNew: '/technicians/new',
   technicianDetail: '/technicians/:technicianId',
   technicianEdit: '/technicians/:technicianId/edit',
   technicianConversation: '/technicians/:technicianId/conversation',
-  technicianPhotos: '/technicians/:technicianId/photos/:photoJobId',
+  technicianPhotos: '/technicians/:technicianId/photos/:visitId',
 } as const
 
 export type RouteKey = keyof typeof ROUTES
@@ -55,6 +59,6 @@ export function technicianConversationPath(technicianId: string) {
   return `/technicians/${technicianId}/conversation`
 }
 
-export function technicianPhotosPath(technicianId: string, photoJobId: string) {
-  return `/technicians/${technicianId}/photos/${photoJobId}`
+export function technicianPhotosPath(technicianId: string, visitId: string) {
+  return `/technicians/${technicianId}/photos/${visitId}`
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReassignApplyToId, ReassignApplyToOption, TodaysWorkRound } from '@/content/todays-work'
 import { todaysWorkContent } from '@/content/todays-work'
+import { reassignContent } from '@/content/round-planner'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Field, Input, Select, Textarea } from '@/components/ui'
 import {
@@ -17,8 +18,9 @@ import { mergeRoundTodayDetail } from '@/features/today/lib/mappers'
 import { useTechnicians } from '@/features/settings/hooks/useSettings'
 import { settingsTechniciansToRows } from '@/features/settings/lib/mappers'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
-import { ApiError } from '@/lib/errors'
-import { cn } from '@/lib/utils'
+import { errorMessage } from '@/lib/errors'
+import { todayIso } from '@/lib/round-dates'
+import { cn, fillCopy } from '@/lib/utils'
 
 interface ReassignTechnicianModalProps {
   open: boolean
@@ -51,6 +53,7 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
   const [applyToId, setApplyToId] = useState<ReassignApplyToId>('remaining')
   const [note, setNote] = useState('')
   const [notifyTechnician, setNotifyTechnician] = useState(false)
+  const [permanent, setPermanent] = useState(false)
 
   const liveRound = useMemo(() => {
     if (!round) return null
@@ -89,6 +92,7 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
     setApplyToId('remaining')
     setNote('')
     setNotifyTechnician(false)
+    setPermanent(false)
   }, [open, round])
 
   if (!liveRound) return null
@@ -99,32 +103,29 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
   )
 
   async function handleConfirm() {
-    if (!canMutate || !liveRound || !fromTechnicianId || !newTechnicianId || reassign.isPending) {
-      if (!fromTechnicianId) showToast('This round has no technician to reassign from')
-      return
-    }
+    if (!canMutate || !liveRound || !newTechnicianId || reassign.isPending) return
 
     try {
+      // GAP-013: no current technician = move the day's unassigned visits (`fromTechnicianId: null`).
       const result = await reassign.mutateAsync({
         id: liveRound.id,
         input: {
-          fromTechnicianId,
+          date: todayIso(),
+          fromTechnicianId: fromTechnicianId || null,
           toTechnicianId: newTechnicianId,
-          scope: applyToId,
+          scope: applyToId === 'all' ? 'ALL' : 'REMAINING',
+          permanent,
           note: note.trim() || null,
           notify: notifyTechnician,
         },
       })
       onClose()
       showToast(reassignTechnicianModal.successToast, {
-        description: `${result.updatedCount} job${result.updatedCount === 1 ? '' : 's'} updated.`,
+        description:
+          result.updated === 1 ? reassignContent.updatedOne : fillCopy(reassignContent.updatedMany, { count: result.updated }),
       })
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) {
-        showToast(error.message)
-        return
-      }
-      showToast(error instanceof Error ? error.message : 'Could not reassign technician')
+      showToast(errorMessage(error), { tone: 'error' })
     }
   }
 
@@ -149,7 +150,7 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
           <ModalButton
             compact
             variant="primary"
-            disabled={!canMutate || !newTechnicianId || !fromTechnicianId || reassign.isPending}
+            disabled={!canMutate || !newTechnicianId || reassign.isPending}
             onClick={() => void handleConfirm()}
           >
             {reassign.isPending ? 'Reassigning…' : reassignTechnicianModal.actions.confirm}
@@ -167,6 +168,13 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
         </p>
       ) : null}
 
+      {/* GAP-013: a round whose visits have no technician reassigns the day's unassigned visits. */}
+      {!fromTechnicianId ? (
+        <p role="status" className="rounded-lg border border-accent/25 bg-accent-surface px-3 py-2.5 text-sm text-foreground">
+          {reassignContent.unassignedHint}
+        </p>
+      ) : null}
+
       <Field label={reassignTechnicianModal.fields.round} size="sm" labelWeight="medium">
         <Input
           inputSize="sm"
@@ -180,7 +188,7 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
         <Input
           inputSize="sm"
           readOnly
-          value={liveRound.technician}
+          value={fromTechnicianId ? liveRound.technician : reassignContent.unassignedFrom}
           className={cn(modalInputClass, 'bg-surface text-foreground')}
         />
       </Field>
@@ -230,6 +238,15 @@ export function ReassignTechnicianModal({ open, round, onClose }: ReassignTechni
         checked={notifyTechnician}
         onChange={setNotifyTechnician}
         ariaLabel={reassignTechnicianModal.fields.notifyTechnician}
+      />
+
+      <ModalToggleRow
+        compact
+        label={reassignContent.permanent}
+        description={reassignContent.permanentHint}
+        checked={permanent}
+        onChange={setPermanent}
+        ariaLabel={reassignContent.permanent}
       />
 
       <div className="flex gap-3 rounded-none border border-accent/25 bg-accent-surface px-4 py-3">

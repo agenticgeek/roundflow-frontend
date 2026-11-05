@@ -7,6 +7,8 @@ import type {
   ReportsVisitRow,
   ReportsVisitStatusParam,
 } from '@/api/reports.api'
+import type { Paginated } from '@/api/pagination'
+import { exhaustiveFallback } from '@/lib/visit-status'
 import type {
   ActivityIcon,
   ActivityLogItem,
@@ -34,6 +36,7 @@ export function uiStatusToApi(status: string): ReportsVisitStatusParam | undefin
   if (status === 'completed') return 'COMPLETED'
   if (status === 'skipped') return 'SKIPPED'
   if (status === 'scheduled' || status === 'pending') return 'SCHEDULED'
+  if (status === 'cancelled') return 'CANCELLED'
   return undefined
 }
 
@@ -55,7 +58,7 @@ function formatVisitDate(iso: string) {
   })
 }
 
-function formatActivityMeta(createdAt: string, actorRole: string | null) {
+function formatActivityMeta(createdAt: string, actor: string | null) {
   const date = new Date(createdAt)
   const when = Number.isNaN(date.getTime())
     ? createdAt
@@ -66,7 +69,7 @@ function formatActivityMeta(createdAt: string, actorRole: string | null) {
         hour: '2-digit',
         minute: '2-digit',
       })
-  return actorRole ? `${when} by ${actorRole}` : when
+  return actor ? `${when} by ${actor}` : when
 }
 
 function formatChartLabel(isoDate: string, period: ReportsPeriodParam) {
@@ -86,7 +89,7 @@ function formatChartLabel(isoDate: string, period: ReportsPeriodParam) {
   })
 }
 
-function mapVisitStatus(status: ReportsVisitRow['status']): VisitStatus {
+export function mapVisitStatus(status: ReportsVisitRow['status']): VisitStatus {
   switch (status) {
     case 'COMPLETED':
       return 'completed'
@@ -94,8 +97,12 @@ function mapVisitStatus(status: ReportsVisitRow['status']): VisitStatus {
       return 'skipped'
     case 'IN_PROGRESS':
       return 'in-progress'
-    default:
+    case 'SCHEDULED':
       return 'scheduled'
+    case 'CANCELLED':
+      return 'cancelled'
+    default:
+      return exhaustiveFallback(status, 'scheduled')
   }
 }
 
@@ -189,11 +196,11 @@ export function visitsToRows(rows: ReportsVisitRow[] | undefined): VisitHistoryR
   }))
 }
 
-export function activityToItems(rows: ReportsActivityRow[] | undefined): ActivityLogItem[] {
-  return (rows ?? []).map((row) => ({
+export function activityToItems(page: Paginated<ReportsActivityRow> | undefined): ActivityLogItem[] {
+  return (page?.rows ?? []).map((row) => ({
     id: row.id,
     title: row.message,
-    meta: formatActivityMeta(row.createdAt, row.actorRole),
+    meta: formatActivityMeta(row.createdAt, row.actorName || row.actorRole),
     icon: activityIcon(row.type),
   }))
 }

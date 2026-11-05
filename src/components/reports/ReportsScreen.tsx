@@ -62,6 +62,7 @@ const VISIT_STATUS_CLASS: Record<VisitStatus, string> = {
   'in-progress': 'border-success/40 bg-success/5 text-success',
   pending: 'border-border bg-surface text-muted',
   scheduled: 'border-border bg-surface text-muted',
+  cancelled: 'border-border bg-muted/15 text-muted',
 }
 
 type FocusedReport = 'technicians' | 'visits' | 'activity'
@@ -81,6 +82,7 @@ export function ReportsScreen() {
   const visitsKey = `${apiPeriod}|${visitStatus ?? ''}`
   const [technicianPageState, setTechnicianPageState] = useState({ key: techniciansKey, page: 1 })
   const [visitPageState, setVisitPageState] = useState({ key: visitsKey, page: 1 })
+  const [activityPage, setActivityPage] = useState(1)
   const technicianPage = technicianPageState.key === techniciansKey ? technicianPageState.page : 1
   const visitPage = visitPageState.key === visitsKey ? visitPageState.page : 1
 
@@ -88,7 +90,7 @@ export function ReportsScreen() {
   const revenueQuery = useReportsRevenue({ period: apiPeriod, granularity: 'daily' })
   const techniciansQuery = useReportsTechnicians({ period: apiPeriod, page: technicianPage })
   const visitsQuery = useReportsVisits({ period: apiPeriod, status: visitStatus, page: visitPage })
-  const activityQuery = useReportsActivity()
+  const activityQuery = useReportsActivity({ page: activityPage })
   const reportsExport = useReportsExport()
 
   async function handleExport() {
@@ -123,7 +125,9 @@ export function ReportsScreen() {
     setFocusedReport(null)
     setTechnicianPageState({ key: techniciansKey, page: 1 })
     setVisitPageState({ key: visitsKey, page: 1 })
+    setActivityPage(1)
   }
+  const activityPagination = activityQuery.data?.pagination
   const activity = useMemo(() => activityToItems(activityQuery.data), [activityQuery.data])
 
   if (!canMutate) {
@@ -215,6 +219,16 @@ export function ReportsScreen() {
             error={activityQuery.isError}
             onRetry={() => void activityQuery.refetch()}
             onBack={showOverview}
+            footer={
+              activityPagination && activityPagination.totalPages > 1 ? (
+                <Pager
+                  className="mt-4"
+                  pagination={activityPagination}
+                  loading={activityQuery.isFetching}
+                  onPage={setActivityPage}
+                />
+              ) : null
+            }
           />
         ) : null}
       </div>
@@ -707,8 +721,10 @@ function SystemActivityLogCard({
   onRetry,
   onViewAll,
   onBack,
+  footer,
 }: {
   items: readonly ActivityLogItem[]
+  footer?: ReactNode
   loading?: boolean
   error?: boolean
   onRetry?: () => void
@@ -750,6 +766,7 @@ function SystemActivityLogCard({
           ))}
         </ul>
       )}
+      {footer}
     </PanelCard>
   )
 }

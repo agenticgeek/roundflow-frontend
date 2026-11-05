@@ -28,6 +28,7 @@ export const appShellContent = {
       { id: 'todays-work', label: "Today's Work", icon: 'briefcase', route: ROUTES.todaysWork },
       { id: 'customers', label: 'Customers', icon: 'users', route: ROUTES.customers },
       { id: 'debt-payment', label: 'Debt/Payment', icon: 'card', route: ROUTES.debtPayment },
+      { id: 'invoices', label: 'Invoices', icon: 'file', route: ROUTES.invoices },
       { id: 'reports-history', label: 'Reports/History', icon: 'chart', route: ROUTES.reportsHistory },
       { id: 'complaints', label: 'Complaints', icon: 'message', route: ROUTES.complaints },
       { id: 'settings', label: 'Settings', icon: 'settings', route: ROUTES.settings },

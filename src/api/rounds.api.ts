@@ -1,5 +1,7 @@
 import { api } from '@/api/client'
+import type { VisitStatus } from '@/lib/visit-status'
 import type { CleaningFrequency, DayOfWeek } from '@/api/types'
+import type { components } from '@/api/types.gen'
 
 export type RoundStatus = 'ACTIVE' | 'DRAFT' | 'ARCHIVED'
 
@@ -13,6 +15,7 @@ export interface RoundListItem {
   serviceAreaName: string | null
   technicianCount: number
   propertyCount: number
+  postcodeSectors?: string[]
 }
 
 export interface RoundDetail {
@@ -26,6 +29,7 @@ export interface RoundDetail {
   serviceAreaName: string | null
   technicians: { id: string; name: string; active: boolean }[]
   propertyCount: number
+  postcodeSectors?: string[]
 }
 
 export type RoundCreateInput = {
@@ -34,6 +38,8 @@ export type RoundCreateInput = {
   serviceAreaId: string
   defaultDay?: DayOfWeek | null
   description?: string | null
+  /** BUG-04: postcode sectors the round covers (inside the service area's sectors). */
+  postcodeSectors?: string[]
 }
 
 export type RoundUpdateInput = {
@@ -43,6 +49,7 @@ export type RoundUpdateInput = {
   defaultDay?: DayOfWeek | null
   description?: string | null
   status?: RoundStatus
+  postcodeSectors?: string[]
 }
 
 export type PlannerOccurrence = {
@@ -106,7 +113,7 @@ export type RoundTodayStop = {
   visitId: string
   customerName: string
   addressLine: string
-  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED'
+  status: VisitStatus
   paymentHold: boolean
   hasIssue: boolean
   issueFlag: string | null
@@ -141,17 +148,39 @@ export type PushMissedResult = {
   pushedCount: number
 }
 
-export type ReassignInput = {
-  fromTechnicianId: string
-  toTechnicianId: string
-  scope: 'remaining' | 'all'
-  note?: string | null
-  notify?: boolean
+/**
+ * POST /rounds/:id/reassign (A1 · GAP-013). `fromTechnicianId: null` = the date's unassigned
+ * visits; `permanent` also moves the properties' allocation so future visits follow.
+ */
+export type ReassignInput = components['schemas']['ReassignTechnicianInput']
+
+/** BREAKING (A1): `{ updated }`, was `{ updatedCount }`. */
+export type ReassignResult = components['schemas']['ReassignResult']
+
+/** GAP-012 technician split — `allocations` only for MANUAL. */
+export type SetRoundTechniciansInput = components['schemas']['SetRoundTechniciansInput']
+export type SplitMode = NonNullable<SetRoundTechniciansInput['split']>['mode']
+export type AllocationEntry = components['schemas']['AllocationEntry']
+/** BREAKING (A1): PUT /rounds/:id/technicians no longer returns the round. */
+export type SetTechniciansResult = components['schemas']['SetTechniciansResult']
+export type RoundAllocation = components['schemas']['RoundAllocation']
+
+/** A property on a round, for the MANUAL split table (from GET /customers?roundId=). */
+export type RoundPropertyRow = {
+  propertyId: string
+  addressLine: string
+  customerName: string
+  price: number
 }
 
-export type ReassignResult = {
-  updatedCount: number
-}
+type CustomerListResult = components['schemas']['CustomerListResult']
+
+export type WeatherHoldInput = components['schemas']['WeatherHoldInput']
+export type WeatherCondition = WeatherHoldInput['condition']
+export type WeatherRescheduling = WeatherHoldInput['rescheduling']
+export type WeatherHoldQuery = Pick<WeatherHoldInput, 'date' | 'condition' | 'rescheduling'>
+export type WeatherHoldPreview = components['schemas']['WeatherHoldPreview']
+export type WeatherHoldResult = components['schemas']['WeatherHoldResult']
 
 function jsonRequest(method: 'POST' | 'PATCH' | 'PUT', body?: unknown): RequestInit {
   return {
@@ -173,11 +202,39 @@ export const roundsApi = {
   update: (id: string, input: RoundUpdateInput) =>
     api<RoundDetail>(`/rounds/${id}`, jsonRequest('PATCH', input)),
 
-  setTechnicians: (id: string, technicianIds: string[]) =>
-    api<RoundDetail>(
-      `/rounds/${id}/technicians`,
-      jsonRequest('PUT', { technicianIds }),
-    ),
+  /** `dryRun` computes the allocation without saving (AUTO preview, Review totals). */
+  setTechnicians: (id: string, input: SetRoundTechniciansInput, options: { dryRun?: boolean; signal?: AbortSignal } = {}) =>
+    api<SetTechniciansResult>(`/rounds/${id}/technicians${options.dryRun ? '?dryRun=true' : ''}`, {
+      ...jsonRequest('PUT', input),
+      signal: options.signal,
+    }),
+
+  /** GET /rounds/:id/allocation — the saved split, to prefill the wizard. */
+  getAllocation: (id: string, signal?: AbortSignal) =>
+    api<RoundAllocation>(`/rounds/${id}/allocation`, { signal }),
+
+  /** Every property on the round for the MANUAL split — GET /customers?roundId=, paged 100 at a time. */
+  listProperties: async (id: string, signal?: AbortSignal): Promise<RoundPropertyRow[]> => {
+    const customers: NonNullable<CustomerListResult['customers']> = []
+    for (let page = 1; ; page += 1) {
+      const result = await api<CustomerListResult>(
+        `/customers?roundId=${encodeURIComponent(id)}&pageSize=100&page=${page}`,
+        { signal },
+      )
+      customers.push(...(result.customers ?? []))
+      if (page >= (result.pagination?.totalPages ?? 1)) break
+    }
+    return customers.flatMap((row) =>
+      row.propertyId
+        ? [{
+            propertyId: row.propertyId,
+            addressLine: row.addressLine ?? '',
+            customerName: row.customerName ?? '',
+            price: row.price ?? 0,
+          }]
+        : [],
+    )
+  },
 
   getOccurrences: (
     id: string,
@@ -237,4 +294,10 @@ export const roundsApi = {
 
   reassign: (id: string, input: ReassignInput) =>
     api<ReassignResult>(`/rounds/${id}/reassign`, jsonRequest('POST', input)),
+
+  weatherHoldPreview: (id: string, query: WeatherHoldQuery, signal?: AbortSignal) =>
+    api<WeatherHoldPreview>(`/rounds/${id}/weather-hold/preview?${new URLSearchParams(query)}`, { signal }),
+
+  weatherHold: (id: string, input: WeatherHoldInput) =>
+    api<WeatherHoldResult>(`/rounds/${id}/weather-hold`, jsonRequest('POST', input)),
 }

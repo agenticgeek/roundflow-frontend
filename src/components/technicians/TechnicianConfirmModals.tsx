@@ -9,13 +9,19 @@ interface ConfirmModalProps {
   onConfirm: () => void
 }
 
-export function ApprovePhotosModal({ open, onClose, onConfirm }: ConfirmModalProps) {
+export function ApprovePhotosModal({
+  open,
+  count,
+  pending = false,
+  onClose,
+  onConfirm,
+}: ConfirmModalProps & { count: number }) {
   const content = techniciansContent.modals
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={pending ? () => undefined : onClose}
       title={content.approveTitle}
       showHeader={false}
       maxWidthClass="max-w-sm"
@@ -26,21 +32,27 @@ export function ApprovePhotosModal({ open, onClose, onConfirm }: ConfirmModalPro
         <DashboardIcon name="check-circle" className="h-7 w-7" />
       </span>
       <h2 className="mt-5 text-lg font-semibold text-foreground">{content.approveTitle}</h2>
-      <p className="mt-2 text-xs leading-relaxed text-muted">{content.approveDescription}</p>
+      <p className="mt-2 text-xs leading-relaxed text-muted">
+        {content.approveDescription
+          .replace('{count}', String(count))
+          .replace('{photos}', count === 1 ? 'photo' : 'photos')}
+      </p>
       <div className="mt-5 grid grid-cols-2 gap-3">
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-border px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface"
+          disabled={pending}
+          className="rounded-lg border border-border px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-50"
         >
           {content.cancel}
         </button>
         <button
           type="button"
           onClick={onConfirm}
-          className="rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          disabled={pending}
+          className="rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {content.approve}
+          {pending ? content.approving : content.approve}
         </button>
       </div>
     </Modal>

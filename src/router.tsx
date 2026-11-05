@@ -1,16 +1,18 @@
 /* eslint-disable react-refresh/only-export-components -- route module: lazy page
    consts live beside the `router` export; this file isn't hot-reloaded as a component. */
 import { lazy, Suspense, type ReactNode } from 'react'
-import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
 import {
   GuestRoute,
   IntegrationsReturnRoute,
   ProtectedRoute,
   SetupRoute,
+  StripeCallbackRoute,
   TechnicianAppRoute,
 } from '@/providers/RouteGuards'
 import { FullScreenLoader } from '@/components/FullScreenLoader'
+import { RouteError } from '@/components/RouteError'
 
 // Auth / entry pages stay eager — they're the first paint for a logged-out user,
 // and small, so a lazy chunk would only add a loading flash.
@@ -30,9 +32,11 @@ const PropertyDetail = lazy(() => import('@/pages/PropertyDetail'))
 const TodaysWork = lazy(() => import('@/pages/TodaysWork'))
 const Customers = lazy(() => import('@/pages/Customers'))
 const DebtPayment = lazy(() => import('@/pages/DebtPayment'))
+const Invoices = lazy(() => import('@/pages/Invoices'))
 const Reports = lazy(() => import('@/pages/Reports'))
 const Complaints = lazy(() => import('@/pages/Complaints'))
 const Settings = lazy(() => import('@/pages/Settings'))
+const StripeCallback = lazy(() => import('@/pages/StripeCallback'))
 const Technicians = lazy(() => import('@/pages/Technicians'))
 const SetupWizard = lazy(() => import('@/pages/SetupWizard'))
 const SetupLive = lazy(() => import('@/pages/SetupLive'))
@@ -54,8 +58,8 @@ const technicianRoutes = [
   ROUTES.technicians,
 ] as const
 
-/** Router config built entirely from ROUTES constants — no path strings inline. */
-export const router = createBrowserRouter([
+/** Route config built entirely from ROUTES constants — no path strings inline. */
+export const routes: RouteObject[] = [
   { path: ROUTES.home, element: <Navigate to={ROUTES.dashboard} replace /> },
   {
     path: ROUTES.technicianApp,
@@ -109,8 +113,17 @@ export const router = createBrowserRouter([
     element: <IntegrationsReturnRoute>{page(<Settings />)}</IntegrationsReturnRoute>,
   },
   {
+    // Stripe Connect redirect URI — finishes the OAuth exchange with the bearer token.
+    path: ROUTES.stripeCallback,
+    element: <StripeCallbackRoute>{page(<StripeCallback />)}</StripeCallbackRoute>,
+  },
+  {
     path: ROUTES.debtPayment,
     element: <ProtectedRoute>{page(<DebtPayment />)}</ProtectedRoute>,
+  },
+  {
+    path: ROUTES.invoices,
+    element: <ProtectedRoute>{page(<Invoices />)}</ProtectedRoute>,
   },
   {
     path: ROUTES.reportsHistory,
@@ -160,4 +173,6 @@ export const router = createBrowserRouter([
   },
   { path: ROUTES.resetPassword, element: <ResetPassword /> },
   { path: '*', element: <Navigate to={ROUTES.home} replace /> },
-])
+].map((route) => ({ ...route, errorElement: <RouteError /> })) // GAP-024: a crash never blanks the app
+
+export const router = createBrowserRouter(routes)

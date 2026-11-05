@@ -3,18 +3,18 @@ import { propertyDetailContent } from '@/content/property-detail'
 import { site } from '@/content/site'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaShadowClass } from '@/components/dashboard/dashboard-styles'
+import { InvoiceSendPanel } from '@/components/property-detail/InvoiceSendPanel'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import type { PaymentMethod } from '@/api/types'
 import { PAYMENT_METHOD_LABELS } from '@/features/customers/lib/mappers'
-import { useInvoice, useInvoicePdf, useSendInvoice } from '@/features/invoices/hooks/useInvoices'
+import { useInvoice, useInvoicePdf } from '@/features/invoices/hooks/useInvoices'
 import {
   formatInvoiceDate,
   formatInvoiceMoney,
   formatInvoiceNumber,
 } from '@/features/invoices/lib/mappers'
-import { ApiError } from '@/lib/errors'
 import { downloadBlob, printBlob } from '@/lib/download'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
@@ -38,7 +38,10 @@ const invoiceValueClass = 'text-sm font-normal text-foreground'
 const invoiceStrongClass = 'text-sm font-bold text-foreground'
 const invoiceRuleClass = 'border-border/55'
 
-/** Existing invoice — GET /invoices/:id, send draft via POST /invoices/:id/send. */
+/**
+ * Existing invoice — GET /invoices/:id. An unpaid one can be sent on a chosen channel
+ * (POST /invoices/:id/send, GAP-034) or marked paid (GAP-027) from the panel above it.
+ */
 export function SavedInvoiceModal({
   open,
   invoiceId,
@@ -51,11 +54,10 @@ export function SavedInvoiceModal({
   technician,
   onClose,
 }: SavedInvoiceModalProps) {
-  const { invoicePreviewModal, generateInvoiceModal } = propertyDetailContent
+  const { invoicePreviewModal } = propertyDetailContent
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const invoiceQuery = useInvoice(invoiceId ?? '', open && Boolean(invoiceId))
-  const sendInvoice = useSendInvoice()
   const pdf = useInvoicePdf()
   const invoice = invoiceQuery.data
 
@@ -83,26 +85,10 @@ export function SavedInvoiceModal({
     }
   }
 
-  async function handleSend() {
-    if (!canMutate || !invoice || sendInvoice.isPending) return
-    try {
-      await sendInvoice.mutateAsync(invoice.id)
-      showToast(generateInvoiceModal.successToast)
-    } catch (error) {
-      showToast(
-        error instanceof ApiError && error.status === 409
-          ? 'This invoice has already been sent.'
-          : error instanceof Error
-            ? error.message
-            : 'Could not send invoice',
-      )
-    }
-  }
-
   return (
     <Modal
       open={open}
-      onClose={sendInvoice.isPending ? () => undefined : onClose}
+      onClose={onClose}
       title={invoicePreviewModal.title}
       subtitle={
         invoice
@@ -121,7 +107,6 @@ export function SavedInvoiceModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={sendInvoice.isPending}
             className="inline-flex items-center gap-1.5 px-1 text-sm font-medium text-muted transition-colors hover:text-foreground disabled:opacity-50"
           >
             <DashboardIcon name="arrow-left" className="h-4 w-4" />
@@ -132,35 +117,22 @@ export function SavedInvoiceModal({
               compact
               variant="secondary"
               className="gap-2 rounded-lg"
-              disabled={!invoice || sendInvoice.isPending || pdf.isPending}
+              disabled={!invoice || pdf.isPending}
               onClick={() => void handlePrint()}
             >
               <DashboardIcon name="print" className="h-4 w-4" />
               {invoicePreviewModal.actions.print}
             </ModalButton>
-            {invoice?.status === 'DRAFT' && canMutate ? (
-              <ModalButton
-                compact
-                variant="primary"
-                className={cn('gap-2 rounded-lg', dashboardCtaShadowClass)}
-                disabled={sendInvoice.isPending}
-                onClick={() => void handleSend()}
-              >
-                <DashboardIcon name="send" className="h-4 w-4" />
-                {sendInvoice.isPending ? 'Sending…' : generateInvoiceModal.actions.sendNow}
-              </ModalButton>
-            ) : (
-              <ModalButton
-                compact
-                variant="primary"
-                className={cn('gap-2 rounded-lg', dashboardCtaShadowClass)}
-                disabled={!invoice || pdf.isPending}
-                onClick={() => void handleDownload()}
-              >
-                <DashboardIcon name="download" className="h-4 w-4" />
-                {pdf.isPending ? 'Preparing…' : invoicePreviewModal.actions.downloadPdf}
-              </ModalButton>
-            )}
+            <ModalButton
+              compact
+              variant="primary"
+              className={cn('gap-2 rounded-lg', dashboardCtaShadowClass)}
+              disabled={!invoice || pdf.isPending}
+              onClick={() => void handleDownload()}
+            >
+              <DashboardIcon name="download" className="h-4 w-4" />
+              {pdf.isPending ? 'Preparing…' : invoicePreviewModal.actions.downloadPdf}
+            </ModalButton>
           </div>
         </div>
       }
@@ -191,7 +163,11 @@ export function SavedInvoiceModal({
           </button>
         </div>
       ) : invoice ? (
-        <InvoiceDocument
+        <div className="space-y-4">
+          {canMutate && invoice.status !== 'PAID' ? (
+            <InvoiceSendPanel invoice={invoice} customerName={customerName} />
+          ) : null}
+          <InvoiceDocument
           invoice={invoice}
           customerName={customerName}
           address={address}
@@ -200,7 +176,8 @@ export function SavedInvoiceModal({
           paymentMethod={paymentMethod}
           visitDate={visitDate}
           technician={technician}
-        />
+          />
+        </div>
       ) : null}
     </Modal>
   )

@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
+import type { SendChannel } from '@/api/invoices.api'
 import type { DebtCustomerRecord } from '@/content/debt-payment'
 import { debtPaymentContent } from '@/content/debt-payment'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
-import { Field, Select, Textarea } from '@/components/ui'
-import { Modal, ModalButton, modalInputClass } from '@/components/ui/modal'
+import { ChannelPicker, MessagingErrorNotice } from '@/components/messaging/ChannelPicker'
+import { Field, Textarea } from '@/components/ui'
+import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { useDebtPaymentLink } from '@/features/debt/hooks/useDebt'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
-import { ApiError } from '@/lib/errors'
-import { cn } from '@/lib/utils'
 
 interface SendPaymentLinkModalProps {
   open: boolean
@@ -26,64 +26,48 @@ function applyTemplate(body: string, record: DebtCustomerRecord) {
     .replaceAll('{amount}', record.amountOwed)
 }
 
-/** Send payment link — POST /debt/:invoiceId/payment-link. */
+function formatExpiry(iso: string) {
+  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * Send a Stripe payment link — POST /debt/:invoiceId/payment-link with a channel (GAP-034).
+ * A setup problem (Stripe / messaging not connected, no contact for the channel) stays in the
+ * modal with its fix.
+ */
 export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkModalProps) {
   const { paymentLinkModal } = debtPaymentContent
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const paymentLink = useDebtPaymentLink()
-  const [method, setMethod] = useState<string>(paymentLinkModal.methods[0]?.value ?? '')
-  const [expiry, setExpiry] = useState<string>(paymentLinkModal.expiryOptions[1]?.value ?? '7')
+  const { reset } = paymentLink
+  const [channel, setChannel] = useState<SendChannel>('AUTO')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
     if (!open || !record) return
-    setMethod(paymentLinkModal.methods[0]?.value ?? '')
-    setExpiry(paymentLinkModal.expiryOptions[1]?.value ?? '7')
+    setChannel('AUTO')
     setMessage(applyTemplate(paymentLinkModal.defaultMessage, record))
-  }, [open, paymentLinkModal, record])
+    reset()
+  }, [open, paymentLinkModal, record, reset])
 
-  if (!record) return null
+  if (!record?.invoiceId) return null
+  const invoiceId = record.invoiceId
 
   async function handleSend() {
-    if (!canMutate || !record || paymentLink.isPending) return
-    if (!message.trim()) {
-      showToast('Enter a message')
-      return
-    }
-
     try {
-      const result = await paymentLink.mutateAsync({
-        invoiceId: record.invoiceId ?? record.id,
-        input: { message: message.trim() },
-      })
+      const result = await paymentLink.mutateAsync({ invoiceId, input: { channel, message: message.trim() } })
       onClose()
-      // Stripe connected → a real Checkout link with an expiry; otherwise the static pay link.
-      const description =
-        result.provider === 'stripe'
-          ? result.expiresAt
-            ? paymentLinkModal.stripeLinkNote.replace(
-                '{when}',
-                new Date(result.expiresAt).toLocaleString('en-GB', {
-                  day: 'numeric',
-                  month: 'short',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }),
-              )
-            : undefined
-          : result.provider === 'static'
-            ? paymentLinkModal.staticLinkNote
-            : undefined
-      showToast(paymentLinkModal.successToast.replace('{customer}', record.customer), { description })
-    } catch (error) {
-      if (error instanceof ApiError && (error.status === 400 || error.status === 404)) {
-        showToast(error.message)
-        return
-      }
-      showToast(error instanceof Error ? error.message : 'Could not send payment link')
+      const description = result.expiresAt
+        ? paymentLinkModal.stripeLinkNote.replace('{when}', formatExpiry(result.expiresAt))
+        : result.url
+      showToast(paymentLinkModal.successToast.replace('{customer}', record!.customer), { description })
+    } catch {
+      // Shown inline by MessagingErrorNotice.
     }
   }
+
+  const empty = !message.trim()
 
   return (
     <Modal
@@ -98,23 +82,17 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
       bodyClassName="space-y-4"
       footer={
         <div className="grid grid-cols-2 gap-3">
-          <ModalButton
-            compact
-            variant="secondary"
-            className="w-full"
-            disabled={paymentLink.isPending}
-            onClick={onClose}
-          >
+          <ModalButton compact variant="secondary" className="w-full" disabled={paymentLink.isPending} onClick={onClose}>
             {paymentLinkModal.actions.cancel}
           </ModalButton>
           <ModalButton
             compact
             variant="primary"
             className="w-full"
-            disabled={!canMutate || !message.trim() || paymentLink.isPending}
+            disabled={!canMutate || empty || paymentLink.isPending}
             onClick={() => void handleSend()}
           >
-            {paymentLink.isPending ? 'Sending…' : paymentLinkModal.actions.send}
+            {paymentLink.isPending ? paymentLinkModal.actions.sending : paymentLinkModal.actions.send}
           </ModalButton>
         </div>
       }
@@ -133,31 +111,12 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
         <span className="text-lg font-bold text-danger">{record.amountOwed}</span>
       </div>
 
-      <Field label={paymentLinkModal.fields.method} size="sm" labelWeight="medium">
-        <Select
-          inputSize="sm"
-          value={method}
-          onChange={(event) => setMethod(event.target.value)}
-          options={[...paymentLinkModal.methods]}
-          className={cn(modalInputClass, 'rounded-lg border-accent/25 bg-accent-surface')}
-          disabled={paymentLink.isPending}
-        />
-      </Field>
+      <ChannelPicker value={channel} onChange={setChannel} disabled={paymentLink.isPending} />
 
-      <Field label={paymentLinkModal.fields.expiry} size="sm" labelWeight="medium">
-        <Select
-          inputSize="sm"
-          value={expiry}
-          onChange={(event) => setExpiry(event.target.value)}
-          options={[...paymentLinkModal.expiryOptions]}
-          className={cn(modalInputClass, 'rounded-lg border-accent/25 bg-accent-surface')}
-          disabled={paymentLink.isPending}
-        />
-      </Field>
-
-      <Field label={paymentLinkModal.fields.message} size="sm" labelWeight="medium">
+      <Field label={paymentLinkModal.fields.message} size="sm" labelWeight="medium" error={empty ? paymentLinkModal.messageRequired : null}>
         <Textarea
           inputSize="sm"
+          aria-label={paymentLinkModal.fields.message}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           className="min-h-[7.5rem] rounded-lg"
@@ -165,6 +124,8 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
         />
         <p className="mt-1.5 text-xs text-muted">{paymentLinkModal.helper}</p>
       </Field>
+
+      <MessagingErrorNotice error={paymentLink.error} />
     </Modal>
   )
 }

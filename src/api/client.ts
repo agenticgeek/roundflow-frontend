@@ -1,6 +1,7 @@
 import { getCachedAccessToken, refreshAccessToken } from '@/lib/supabase'
 import { ApiError } from '@/lib/errors'
 import { apiBaseUrl } from '@/lib/env'
+import { fetchOrNetworkError } from '@/lib/network-error'
 
 interface ApiErrorBody {
   error?: string
@@ -39,8 +40,9 @@ async function requestWithAuth(path: string, init: ApiInit = {}): Promise<Respon
   const method = (requestInit.method ?? 'GET').toUpperCase()
   const hasBody = requestInit.body != null && method !== 'GET' && method !== 'HEAD'
 
+  // A transport failure throws NetworkError (toast + Retry); an HTTP error stays an ApiError.
   const send = (bearer: string) =>
-    fetch(`${baseUrl}${path}`, {
+    fetchOrNetworkError(`${baseUrl}${path}`, {
       ...requestInit,
       headers: {
         Accept: 'application/json',
@@ -70,6 +72,8 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const response = await requestWithAuth(path, init)
 
   if (response.status === 204) return undefined as T
+  // Only reachable with `redirect: 'manual'`: the API answered with a redirect, i.e. success.
+  if (response.type === 'opaqueredirect') return undefined as T
 
   const body = await parseBody(response)
   if (!response.ok) {

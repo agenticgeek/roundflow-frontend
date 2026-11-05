@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
 import { technicianRoleLabel } from '@/lib/technician-roles'
@@ -19,6 +19,8 @@ import {
   useDeleteService,
   useDeleteServiceArea,
   useDeleteTechnician,
+  useCreateMessageTemplate,
+  useDeleteMessageTemplate,
   useMessageTemplates,
   useUpdateMessageTemplate,
   usePaymentSettings,
@@ -52,10 +54,18 @@ import {
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError, errorMessage } from '@/lib/errors'
 import { GoCardlessTokenForm, GoCardlessWebhookSetup } from '@/components/payments/GoCardlessConnect'
+import { GhlConnectionCard } from '@/features/settings/components/GhlConnectionCard'
+import { useGhlStatus } from '@/features/settings/hooks/useGhl'
+import { readIntegrationReturn, useIntegrationReturn } from '@/features/settings/hooks/useIntegrationReturn'
+import { parseInvoiceDueDays } from '@/features/settings/lib/business-rules'
+import { KpiThresholdsPanel } from '@/components/settings/KpiThresholdsPanel'
 import { isValidPostcodeSector } from '@/lib/postcode'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
-import { Field, FieldError, Input, MultiSelect, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
+import { Modal, ModalButton } from '@/components/ui/modal'
+import { PaymentMethodsField } from '@/components/setup-wizard/PaymentMethodsField'
+import { ReminderChecklist } from '@/components/setup-wizard/ReminderChecklist'
+import { Field, FieldError, Input, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
 import { useToast } from '@/components/ui/toast'
@@ -70,6 +80,7 @@ import {
 import { cn, formatCurrency } from '@/lib/utils'
 
 const cardClass = 'rounded-lg border border-border bg-card shadow-sm'
+const noop = () => {}
 const settingsSelectClass = 'rounded-lg border-accent/25 bg-accent-surface'
 
 function SectionError({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -107,14 +118,16 @@ function MutationGate({
 /** Settings module — sidebar navigation and section panels backed by the API. */
 export function SettingsScreen() {
   const location = useLocation()
-  // Stripe's OAuth return (/settings/integrations?stripe=connected) opens the Payment section,
-  // where the connection is confirmed.
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(() =>
-    location.pathname === ROUTES.settingsIntegrations || new URLSearchParams(location.search).has('stripe')
-      ? 'payment-setup'
-      : 'business-profile',
-  )
+  // OAuth returns land on /settings/integrations: `?ghl=` opens Integrations (the GHL card),
+  // Stripe's `?stripe=` (and the bare path) opens Payment Setup.
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => {
+    const returned = readIntegrationReturn(location.search)
+    if (returned?.provider === 'ghl') return 'integrations'
+    return returned || location.pathname === ROUTES.settingsIntegrations ? 'payment-setup' : 'business-profile'
+  })
   const { canMutate } = useAppBootstrap()
+  // Toasts the ?stripe= / ?ghl= result, refreshes the connection status and cleans the URL.
+  useIntegrationReturn()
 
   return (
     <div className="space-y-6">
@@ -144,11 +157,25 @@ export function SettingsScreen() {
           ) : activeSection === 'round-settings' ? (
             <RoundSettingsPanel canMutate={canMutate} />
           ) : activeSection === 'sms-templates' ? (
-            <SmsTemplatesPanel canMutate={canMutate} />
+            <SmsTemplatesPanel canMutate={canMutate} onConnectMessaging={() => setActiveSection('integrations')} />
           ) : activeSection === 'technician-management' ? (
             <TechnicianManagementPanel canMutate={canMutate} />
           ) : activeSection === 'service-area' ? (
             <ServiceAreasPanel canMutate={canMutate} />
+          ) : activeSection === 'integrations' ? (
+            <article className={cn(cardClass, 'space-y-5 p-6')}>
+              <PanelHeader
+                icon="message"
+                heading={settingsContent.integrations.heading}
+                subheading={settingsContent.integrations.subheading}
+                editing={false}
+                canMutate={false}
+                onEdit={noop}
+              />
+              <GhlConnectionCard canMutate={canMutate} />
+            </article>
+          ) : activeSection === 'kpi-thresholds' ? (
+            <KpiThresholdsPanel canMutate={canMutate} />
           ) : (
             <ServiceCataloguePanel canMutate={canMutate} />
           )}
@@ -329,8 +356,15 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
     }
   }
 
-  const { fields, currencies, timezoneSearch } = setupWizardContent.businessProfile
+  const { fields, currencies, timezoneSearch, vatRates } = setupWizardContent.businessProfile
+  const addressCopy = settingsContent.businessProfile.address
   const timezones = timezoneOptions(values.timezone)
+  const addressFields = [
+    ['addressLine1', addressCopy.line1, fields.businessAddress.placeholder],
+    ['addressLine2', addressCopy.line2, fields.addressLine2.placeholder],
+    ['town', addressCopy.town, fields.town.placeholder],
+    ['postcode', addressCopy.postcode, fields.postcode.placeholder],
+  ] as const
 
   return (
     <article className={cn(cardClass, 'p-6')}>
@@ -393,6 +427,32 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
               placeholder={fields.vatNumber.placeholder}
               readOnly={!editing}
               className={cn(!editing && 'bg-surface')}
+            />
+          </Field>
+        </div>
+
+        {/* GAP-001: the business address and VAT rate are stored (and printed on invoices). */}
+        <div className="grid gap-5 sm:grid-cols-2">
+          {addressFields.map(([key, label, placeholder]) => (
+            <Field key={key} label={label} labelWeight="medium">
+              <Input
+                aria-label={label}
+                value={values[key]}
+                onChange={(e) => updateField(key, e.target.value)}
+                placeholder={placeholder}
+                readOnly={!editing}
+                className={cn(!editing && 'bg-surface')}
+              />
+            </Field>
+          ))}
+          <Field label={settingsContent.businessProfile.vatRate} labelWeight="medium">
+            <Select
+              aria-label={settingsContent.businessProfile.vatRate}
+              value={values.vatRate}
+              onChange={(e) => updateField('vatRate', e.target.value)}
+              options={vatRates}
+              disabled={!editing}
+              className={settingsSelectClass}
             />
           </Field>
         </div>
@@ -464,25 +524,6 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   const [gcWebhook, setGcWebhook] = useState<{ url: string | null } | null>(null)
   const [gcSecretSaved, setGcSecretSaved] = useState(false)
 
-  // Stripe sends the user back to /settings/integrations?stripe=connected after its OAuth flow.
-  // Webhooks are now set up platform-wide, so there's nothing else to show (no webhook URL).
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('stripe') === 'connected') {
-      showToast(settingsContent.paymentSetup.stripeConnected)
-      void query.refetch()
-      params.delete('stripe')
-      const next = params.toString()
-      window.history.replaceState(
-        {},
-        '',
-        `${window.location.pathname}${next ? `?${next}` : ''}`,
-      )
-    }
-    // Run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   if (query.isPending) return <SettingsPaymentSkeleton />
   if (query.isError) {
     return (
@@ -518,6 +559,10 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   async function save() {
     if (!canMutate) return
     setFormError(null)
+    if (parseInvoiceDueDays(values.invoiceDueDays) === null) {
+      setFormError(settingsContent.paymentSetup.defaults.dueDaysInvalid)
+      return
+    }
     try {
       await update.mutateAsync(settingsPaymentFromForm(values))
       setDraft(null)
@@ -535,8 +580,12 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   function handleConnect(providerId: 'gocardless' | 'stripe') {
     if (!canMutate) return
     if (providerId === 'stripe') {
-      // Full-page redirect into Stripe's OAuth; it returns to /settings/integrations?stripe=connected.
-      window.location.assign(settingsApi.stripeAuthorizeUrl())
+      // Full-page redirect into Stripe's OAuth; it returns via ROUTES.stripeCallback.
+      try {
+        window.location.assign(settingsApi.stripeAuthorizeUrl())
+      } catch (error) {
+        setDisconnectError({ provider: providerId, message: errorMessage(error) })
+      }
       return
     }
     setGcFormOpen(true)
@@ -562,6 +611,13 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
     gocardless: values.goCardlessConnected,
     stripe: values.stripeConnected,
   } as const
+  const defaultsCopy = settingsContent.paymentSetup.defaults
+  const wizardPayments = setupWizardContent.payments
+  const noDirectDebitOptions = wizardPayments.noDirectDebitActions.map((action) => ({
+    value: action.value,
+    label: action.label,
+    disabled: action.requiresStripe ? !values.stripeConnected : false,
+  }))
 
   return (
     <article className={cn(cardClass, 'p-6')}>
@@ -669,6 +725,37 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
           />
         </Field>
 
+        <PaymentMethodsField
+          values={values}
+          connections={connectionMap}
+          onChange={(patch) => setDraft({ ...values, ...patch })}
+          disabled={!editing}
+          selectClassName={settingsSelectClass}
+        />
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field label={defaultsCopy.dueDays} labelWeight="medium">
+            <Input
+              aria-label={defaultsCopy.dueDays}
+              inputMode="numeric"
+              value={values.invoiceDueDays}
+              onChange={(e) => updateField('invoiceDueDays', e.target.value.replace(/\D/g, '').slice(0, 2))}
+              readOnly={!editing}
+              className={cn(!editing && 'bg-surface')}
+            />
+          </Field>
+          <Field label={defaultsCopy.noDirectDebit} labelWeight="medium">
+            <Select
+              aria-label={defaultsCopy.noDirectDebit}
+              value={values.noDirectDebitAction}
+              onChange={(e) => updateField('noDirectDebitAction', e.target.value as SettingsPaymentForm['noDirectDebitAction'])}
+              options={noDirectDebitOptions}
+              disabled={!editing}
+              className={settingsSelectClass}
+            />
+          </Field>
+        </div>
+
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-foreground">{settings.vatApplicable.label}</p>
@@ -678,18 +765,6 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
             checked={values.vatApplicable}
             onChange={(vatApplicable) => updateField('vatApplicable', vatApplicable)}
             ariaLabel={settings.vatApplicable.label}
-          />
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold text-foreground">{settings.debtHoldEnabled.label}</p>
-            <p className="mt-0.5 text-sm text-muted">{settings.debtHoldEnabled.description}</p>
-          </div>
-          <Toggle
-            checked={values.debtHoldEnabled}
-            onChange={(debtHoldEnabled) => updateField('debtHoldEnabled', debtHoldEnabled)}
-            ariaLabel={settings.debtHoldEnabled.label}
           />
         </div>
 
@@ -722,13 +797,10 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
   }
 
   const values = draft ?? settingsRoundToForm(query.data)
-  const { fields, recurringCycles, reminderTimings, reminderTimingPlaceholder, days } = {
-    fields: setupWizardContent.roundSettings.fields,
-    recurringCycles: setupWizardContent.roundSettings.recurringCycles,
-    reminderTimings: setupWizardContent.roundSettings.reminderTimings,
-    reminderTimingPlaceholder: setupWizardContent.roundSettings.reminderTimingPlaceholder,
-    days: setupWizardContent.businessProfile.days,
-  }
+  const wizardRounds = setupWizardContent.roundSettings
+  const { fields, recurringCycles } = wizardRounds
+  const days = setupWizardContent.businessProfile.days
+  const roundCopy = settingsContent.roundSettings
 
   function startEdit() {
     setDraft(settingsRoundToForm(query.data))
@@ -809,18 +881,39 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
           />
         </Field>
 
+        <Field label={roundCopy.cleanMethod} labelWeight="medium">
+          <Select
+            aria-label={roundCopy.cleanMethod}
+            value={values.cleanMethod}
+            onChange={(e) => setDraft({ ...values, cleanMethod: e.target.value as SettingsRoundForm['cleanMethod'] })}
+            options={wizardRounds.cleanMethods.map((method) => ({ value: method.id, label: method.label }))}
+            disabled={!editing}
+            className={settingsSelectClass}
+          />
+        </Field>
+
         <div>
-          <p className="text-sm font-medium text-foreground">{fields.reminderTiming.label}</p>
-          <p className="mt-0.5 text-sm text-muted">{fields.reminderTiming.description}</p>
-          <MultiSelect
-            className="mt-3"
-            displayMode="values"
-            showAllOption={false}
-            label={fields.reminderTiming.label}
-            placeholder={reminderTimingPlaceholder}
-            value={values.reminderTiming}
-            onChange={(reminderTiming) => setDraft({ ...values, reminderTiming })}
-            options={reminderTimings}
+          <p className="text-sm font-medium text-foreground">{roundCopy.reminder}</p>
+          <p className="mt-0.5 text-sm text-muted">{roundCopy.reminderDescription}</p>
+          <div className="mt-3">
+            <ReminderChecklist
+              ariaLabel={roundCopy.reminder}
+              values={values}
+              onChange={(patch) => setDraft({ ...values, ...patch })}
+              disabled={!editing}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-foreground">{fields.autoGenerateVisits.label}</p>
+            <p className="mt-0.5 text-sm text-muted">{fields.autoGenerateVisits.description}</p>
+          </div>
+          <Toggle
+            checked={values.autoGenerateVisits}
+            onChange={(autoGenerateVisits) => setDraft({ ...values, autoGenerateVisits })}
+            ariaLabel={fields.autoGenerateVisits.label}
           />
         </div>
 
@@ -835,9 +928,25 @@ function RoundSettingsPanel({ canMutate }: { canMutate: boolean }) {
 }
 
 /** Settings → Templates — the tenant's real templates (GET/PATCH /settings/message-templates). */
-function SmsTemplatesPanel({ canMutate }: { canMutate: boolean }) {
+function SmsTemplatesPanel({
+  canMutate,
+  onConnectMessaging,
+}: {
+  canMutate: boolean
+  onConnectMessaging: () => void
+}) {
   const query = useMessageTemplates()
+  const ghlStatus = useGhlStatus()
   const update = useUpdateMessageTemplate()
+  const create = useCreateMessageTemplate()
+  const remove = useDeleteMessageTemplate()
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newChannel, setNewChannel] = useState<'SMS' | 'WHATSAPP' | 'EMAIL'>('SMS')
+  const [newSubject, setNewSubject] = useState('')
+  const [newBody, setNewBody] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const { showToast } = useToast()
   const copy = settingsContent.smsTemplates
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -865,6 +974,39 @@ function SmsTemplatesPanel({ canMutate }: { canMutate: boolean }) {
     }
   }
 
+  async function createTemplate() {
+    if (!newName.trim()) return setCreateError(copy.nameRequired)
+    if (!newBody.trim()) return setCreateError(copy.bodyRequired)
+    if (newChannel === 'EMAIL' && !newSubject.trim()) return setCreateError(copy.subjectRequired)
+    try {
+      await create.mutateAsync({
+        name: newName.trim(),
+        channel: newChannel,
+        body: newBody.trim(),
+        ...(newChannel === 'EMAIL' ? { subject: newSubject.trim() } : {}),
+      })
+      setCreating(false)
+      setNewName('')
+      setNewBody('')
+      setNewSubject('')
+      setCreateError(null)
+      showToast(copy.created)
+    } catch (error) {
+      setCreateError(errorMessage(error))
+    }
+  }
+
+  async function deleteTemplate(id: string) {
+    try {
+      await remove.mutateAsync(id)
+      setDeletingId(null)
+      showToast(copy.deleted)
+    } catch (error) {
+      setDeletingId(null)
+      showToast(errorMessage(error))
+    }
+  }
+
   return (
     <article className={cn(cardClass, 'p-6')}>
       <div className="flex items-start gap-3 border-b border-border pb-5">
@@ -875,10 +1017,78 @@ function SmsTemplatesPanel({ canMutate }: { canMutate: boolean }) {
           <h2 className="text-base font-semibold text-foreground">{copy.heading}</h2>
           <p className="mt-0.5 text-sm text-muted">{copy.subheading}</p>
         </div>
+        {canMutate && !creating ? (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="ml-auto shrink-0 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            {copy.new}
+          </button>
+        ) : null}
       </div>
+
+      {creating ? (
+        <div className="mt-5 space-y-3 rounded-xl border border-border bg-card px-4 py-4">
+          <Field label={copy.nameLabel} size="sm" labelWeight="medium">
+            <Input inputSize="sm" value={newName} onChange={(event) => setNewName(event.target.value)} />
+          </Field>
+          <Field label={copy.channelLabel} size="sm" labelWeight="medium">
+            <Select
+              inputSize="sm"
+              value={newChannel}
+              onChange={(event) => setNewChannel(event.target.value as 'SMS' | 'WHATSAPP' | 'EMAIL')}
+              options={Object.entries(copy.channels).map(([value, label]) => ({ value, label }))}
+            />
+          </Field>
+          {newChannel === 'EMAIL' ? (
+            <Field label={copy.subjectLabel} size="sm" labelWeight="medium">
+              <Input inputSize="sm" value={newSubject} onChange={(event) => setNewSubject(event.target.value)} />
+            </Field>
+          ) : null}
+          <Field label={copy.bodyLabel} size="sm" labelWeight="medium">
+            <Textarea inputSize="sm" value={newBody} onChange={(event) => setNewBody(event.target.value)} />
+          </Field>
+          {createError ? <FieldError message={createError} size="sm" /> : null}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void createTemplate()}
+              disabled={create.isPending}
+              className="rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {create.isPending ? copy.creating : copy.create}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCreating(false)
+                setCreateError(null)
+              }}
+              disabled={create.isPending}
+              className="rounded-xl border border-border px-3.5 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-60"
+            >
+              {copy.cancel}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-6 rounded-xl border border-primary/20 bg-accent-surface px-4 py-3 text-sm text-foreground">
         {copy.sendingNote}
+        {/* GAP-017: until GoHighLevel is connected, point straight at the Integrations card. */}
+        {ghlStatus.data && !ghlStatus.data.connected ? (
+          <p className="mt-2">
+            {copy.notConnectedNote}{' '}
+            <button
+              type="button"
+              onClick={onConnectMessaging}
+              className="font-semibold text-primary underline underline-offset-2"
+            >
+              {copy.connectMessaging}
+            </button>
+          </p>
+        ) : null}
       </div>
 
       {templates.length === 0 ? (
@@ -911,7 +1121,37 @@ function SmsTemplatesPanel({ canMutate }: { canMutate: boolean }) {
                       {copy.edit}
                     </button>
                   ) : null}
+                  {canMutate && !editing ? (
+                    <button
+                      type="button"
+                      onClick={() => setDeletingId(template.id)}
+                      className="shrink-0 text-sm font-semibold text-danger hover:underline"
+                    >
+                      {copy.delete}
+                    </button>
+                  ) : null}
                 </div>
+                {deletingId === template.id ? (
+                  <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-sm text-foreground">
+                    <span>{copy.confirmDelete.replace('{name}', template.name)}</span>
+                    <button
+                      type="button"
+                      onClick={() => void deleteTemplate(template.id)}
+                      disabled={remove.isPending}
+                      className="rounded-xl bg-danger px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {remove.isPending ? copy.deleting : copy.confirmDeleteYes}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingId(null)}
+                      disabled={remove.isPending}
+                      className="rounded-xl border border-border px-3 py-1.5 text-sm font-semibold text-foreground"
+                    >
+                      {copy.cancel}
+                    </button>
+                  </div>
+                ) : null}
                 {editing ? (
                   <div className="mt-3 space-y-2">
                     <Textarea
@@ -1380,6 +1620,7 @@ function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
   const create = useCreateService()
   const update = useUpdateService()
   const remove = useDeleteService()
+  const [deletingService, setDeletingService] = useState<CatalogueService | null>(null)
   const { showToast } = useToast()
   const { categories, columns, tags, actions, addService } =
     setupWizardContent.serviceCatalogue
@@ -1440,7 +1681,9 @@ function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
     if (!canMutate) return
     try {
       await remove.mutateAsync(id)
+      setDeletingService(null)
     } catch (error) {
+      setDeletingService(null)
       if (error instanceof ApiError && error.status === 404) {
         showToast('This service no longer exists.')
         query.refetch()
@@ -1454,6 +1697,33 @@ function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
 
   return (
     <>
+      <Modal
+        open={deletingService !== null}
+        onClose={remove.isPending ? () => undefined : () => setDeletingService(null)}
+        title={settingsContent.serviceDelete.title}
+        size="compact"
+        maxWidthClass="max-w-md"
+        footer={
+          <div className="grid grid-cols-2 gap-3">
+            <ModalButton compact variant="secondary" className="w-full" disabled={remove.isPending} onClick={() => setDeletingService(null)}>
+              {settingsContent.serviceDelete.keep}
+            </ModalButton>
+            <ModalButton
+              compact
+              variant="danger"
+              className="w-full"
+              disabled={remove.isPending}
+              onClick={() => deletingService && void deleteService(deletingService.id)}
+            >
+              {remove.isPending ? settingsContent.serviceDelete.deleting : settingsContent.serviceDelete.confirm}
+            </ModalButton>
+          </div>
+        }
+      >
+        <p className="text-sm text-foreground">
+          {settingsContent.serviceDelete.body.replace('{name}', deletingService?.name ?? '')}
+        </p>
+      </Modal>
       <article className={cn(cardClass, 'p-6')}>
         <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
@@ -1547,7 +1817,7 @@ function ServiceCataloguePanel({ canMutate }: { canMutate: boolean }) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteService(service.id)}
+                        onClick={() => setDeletingService(service)}
                         disabled={pending}
                         className="rounded-lg bg-danger/10 px-3 py-1.5 text-sm font-medium text-danger transition-colors hover:bg-danger/15 disabled:opacity-60"
                       >

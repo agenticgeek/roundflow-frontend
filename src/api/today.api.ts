@@ -1,51 +1,16 @@
 import { api } from '@/api/client'
 
-/** CONTRACT-DIFF: `/today` aggregate not in generated OpenAPI yet — live per TODAY_HANDOFF. */
+import type { components } from '@/api/types.gen'
 
-export type TodayRoundStatus = 'not_started' | 'in_progress' | 'completed'
+type Schemas = components['schemas']
 
-export type TodayKpi = {
-  totalStops: number
-  inProgress: number
-  completed: number
-  skipped: number
-  issues: number
-  paymentHolds: number
-  valueCompleted: number
-}
-
-export type TodayRoundSummary = {
-  roundId: string
-  roundName: string
-  technicianId: string | null
-  technicianName: string | null
-  status: TodayRoundStatus
-  total: number
-  completed: number
-  skipped: number
-  issueCount: number
-  paymentHolds: number
-  value: number
-  etaMinutes: number | null
-}
-
-export type TodayTechnicianWorkload = {
-  technicianId: string
-  technicianName: string
-  completed: number
-  remaining: number
-  roundName: string | null
-  issueCount: number
-  onTrack: boolean
-}
-
-export type TodayAggregate = {
-  date: string
-  dayClosed: boolean
-  kpi: TodayKpi
-  rounds: TodayRoundSummary[]
-  technicians: TodayTechnicianWorkload[]
-}
+export type TodayRoundStatus = Schemas['TodayRoundRow']['status']
+export type TodayKpi = Schemas['TodayKpi']
+/** A round row. `scheduledValue` / `completedValue` replace the deprecated `value` (GAP-035). */
+export type TodayRoundSummary = Schemas['TodayRoundRow']
+export type TodayTechnicianWorkload = Schemas['TodayTechnicianCard']
+/** GET /today — `generatedAt` drives "Updated HH:mm" (GAP-035). */
+export type TodayAggregate = Schemas['TodaysWorkAggregate']
 
 export type CloseDayUnfinishedAction = 'push_to_tomorrow' | 'mark_as_skipped'
 

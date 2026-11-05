@@ -20,7 +20,7 @@ import {
 } from '@/lib/query-keys'
 
 /** Customers per page on the Customers screen. */
-export const CUSTOMERS_PAGE_SIZE = 5
+export const CUSTOMERS_PAGE_SIZE = 20
 
 /** Pages stay fresh this long — flipping back to one already seen doesn't refetch. */
 const CUSTOMER_LIST_STALE_TIME = 30_000

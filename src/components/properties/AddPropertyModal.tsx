@@ -50,45 +50,8 @@ const ROUND_DAYS = [
   { value: 'SAT', label: 'Saturday' },
 ]
 
-// DEV-TESTING: sample options so the dropdowns are visibly interactive while the
-// account has no real data yet (or the API is unreachable). Dev-only — never
-// shown in production, where an empty list should mean "go add one" instead.
-const DUMMY_SERVICE_AREAS = [
-  { value: 'dummy-area-alnwick', label: 'Alnwick (sample)' },
-  { value: 'dummy-area-newcastle', label: 'Newcastle (sample)' },
-  { value: 'dummy-area-morpeth', label: 'Morpeth (sample)' },
-]
-
-const DUMMY_TECHNICIANS = [
-  { value: 'dummy-tech-james', label: 'James Smith (sample)' },
-  { value: 'dummy-tech-sarah', label: 'Sarah Johnson (sample)' },
-  { value: 'dummy-tech-michael', label: 'Michael Brown (sample)' },
-]
-
-const DUMMY_SERVICES = [
-  { value: 'dummy-service-standard', label: 'Standard Window Clean (sample)' },
-  { value: 'dummy-service-gutter', label: 'Gutter Clearing (sample)' },
-]
-
-const DUMMY_ROUNDS = [
-  { value: 'dummy-round-alnwick-monday', label: 'Alnwick Monday (sample)' },
-  { value: 'dummy-round-alnwick-wednesday', label: 'Alnwick Wednesday (sample)' },
-  { value: 'dummy-round-newcastle-tuesday', label: 'Newcastle Tuesday (sample)' },
-]
-
-function withDummyFallback<T>(rows: T[], dummy: T[]): T[] {
-  if (rows.length > 0) return rows
-  return import.meta.env.DEV ? dummy : rows
-}
-
-/** Dummy option values are sample data only — never a real backend ID. */
-function isDummyId(value: string): boolean {
-  return value.startsWith('dummy-')
-}
-
-/** Strips dummy sample IDs so they're never sent to the real API. */
 function realId(value: string): string | undefined {
-  return value && !isDummyId(value) ? value : undefined
+  return value || undefined
 }
 
 function draftDefaults(): AddPropertyDraft {
@@ -247,37 +210,31 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
     [areasQuery.data],
   )
   const serviceAreaOptions = useMemo(
-    () => withDummyFallback(serviceAreaRows.map((area) => ({ value: area.id, label: area.name })), DUMMY_SERVICE_AREAS),
+    () => serviceAreaRows.map((area) => ({ value: area.id, label: area.name })),
     [serviceAreaRows],
   )
   const technicianOptions = useMemo(
     () =>
-      withDummyFallback(
-        settingsTechniciansToRows(techniciansQuery.data)
-          .filter((technician) => technician.appStatus !== 'inactive')
-          .map((technician) => ({ value: technician.id, label: technician.displayName })),
-        DUMMY_TECHNICIANS,
-      ),
+      settingsTechniciansToRows(techniciansQuery.data)
+        .filter((technician) => technician.appStatus !== 'inactive')
+        .map((technician) => ({ value: technician.id, label: technician.displayName })),
     [techniciansQuery.data],
   )
   const serviceOptions = useMemo(
     () =>
-      withDummyFallback(
-        (servicesQuery.data ?? [])
-          .filter((service) => service.active !== false && service.id && service.name)
-          .map((service) => ({ value: service.id as string, label: service.name as string })),
-        DUMMY_SERVICES,
-      ),
+      (servicesQuery.data ?? [])
+        .filter((service) => service.active !== false && service.id && service.name)
+        .map((service) => ({ value: service.id as string, label: service.name as string })),
     [servicesQuery.data],
   )
   const roundOptions = useMemo(
     () =>
-      withDummyFallback(
-        (roundsQuery.data ?? []).map((round) => ({ value: round.id, label: round.name })),
-        DUMMY_ROUNDS,
-      ),
+      (roundsQuery.data ?? []).map((round) => ({ value: round.id, label: round.name })),
     [roundsQuery.data],
   )
+  // Loaded and empty — a property can't be saved without an area, so say where to create one.
+  const noServiceAreas = areasQuery.isSuccess && serviceAreaOptions.length === 0
+
   // Catalogue default price per service id — lets the multi-service picker sum a price.
   const servicePrices = useMemo(
     () =>
@@ -366,6 +323,10 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       setError(validation.postcodeInvalid)
       return false
     }
+    if (subStep === 0 && noServiceAreas) {
+      setError(addPropertyModalContent.validation.noServiceAreas)
+      return false
+    }
     if (subStep === 0 && !draft.serviceArea) {
       setError(addPropertyModalContent.validation.serviceAreaRequired)
       return false
@@ -403,15 +364,6 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
 
     const propertyLabel = draft.propertyName.trim() || draft.customerName.trim()
 
-    if (isDummyId(draft.serviceArea)) {
-      // DEV-TESTING: the selected service area is sample data with no real backend
-      // ID — simulate a successful save instead of sending a fake ID the API would
-      // reject. Pick a real service area (Settings → Service Areas) to save for real.
-      showToast('Property saved (sample data)', { description: addPropertyModalContent.sampleDataNotice })
-      onClose()
-      return
-    }
-
     const price = Number(String(draft.pricePerVisit).replace(/[^0-9.]/g, '')) || 0
     const input: PropertyCreateInput = {
       customerName: draft.customerName.trim(),
@@ -437,14 +389,10 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
       roundId: draft.assignMode === 'now' ? (realId(draft.round) ?? null) : null,
     }
 
-    const sampleRoundPicked = draft.assignMode === 'now' && isDummyId(draft.round)
-
     try {
       await createProperty.mutateAsync(input)
       showToast('Property saved', {
-        description: sampleRoundPicked
-          ? `${propertyLabel} has been added unassigned — the selected round was sample data.`
-          : `${propertyLabel} has been added.`,
+        description: `${propertyLabel} has been added.`,
       })
       onClose()
     } catch (err) {
@@ -511,6 +459,12 @@ export function AddPropertyModal({ open, onClose }: AddPropertyModalProps) {
           {!canMutate ? (
             <div className="mb-4 rounded-xl border border-warning-border bg-warning-surface p-4 text-sm text-warning-foreground">
               You don&apos;t have permission to add properties.
+            </div>
+          ) : null}
+
+          {subStep === 0 && noServiceAreas ? (
+            <div role="alert" className="mb-4 rounded-xl border border-warning-border bg-warning-surface p-4 text-sm text-warning-foreground">
+              {addPropertyModalContent.validation.noServiceAreas}
             </div>
           ) : null}
 

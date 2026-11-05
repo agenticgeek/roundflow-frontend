@@ -13,3 +13,28 @@ export function useCreateVisit() {
     },
   })
 }
+
+/** PATCH /visits/:id/reschedule — a skipped (e.g. weather-held) or scheduled visit onto a new date. */
+export function useRescheduleVisit() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ visitId, date }: { visitId: string; date: string }) => visitsApi.reschedule(visitId, date),
+    onSuccess: () => {
+      void invalidateToday(queryClient)
+      void invalidateCustomers(queryClient)
+    },
+  })
+}
+
+/** PATCH /visits/:id/assign — one visit to one technician (or `null` to unassign). */
+export function useAssignVisit() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ visitId, technicianId }: { visitId: string; technicianId: string | null }) =>
+      visitsApi.assign(visitId, technicianId),
+    onSuccess: () => {
+      void invalidateToday(queryClient)
+      void invalidateCustomers(queryClient)
+    },
+  })
+}

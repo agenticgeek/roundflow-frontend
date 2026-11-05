@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { TechnicianRecord } from '@/content/technicians'
 import { techniciansContent } from '@/content/technicians'
 import type { TechnicianCreateInput, TechnicianUpdateInput } from '@/api/technicians.api'
-import { Field, Input, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
+import { Field, Input, MultiSelect, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { useServiceAreas } from '@/features/settings/hooks/useSettings'
 import { settingsServiceAreasToRows } from '@/features/settings/lib/mappers'
@@ -15,7 +15,8 @@ export type TechnicianFormValues = {
   phone: string
   email: string
   role: string
-  serviceAreaId: string | null
+  /** Every area the technician covers (GAP-004: sent as `serviceAreaIds`). */
+  serviceAreaIds: string[]
   notes: string
   sendInvite: boolean
   active: boolean
@@ -48,13 +49,10 @@ export function TechnicianForm({
   const content = techniciansContent.form
   const editing = mode === 'edit'
   const areasQuery = useServiceAreas()
-  const areaOptions = useMemo(() => {
-    const rows = settingsServiceAreasToRows(areasQuery.data)
-    return [
-      { value: '', label: 'Select area...' },
-      ...rows.map((area) => ({ value: area.id, label: area.name })),
-    ]
-  }, [areasQuery.data])
+  const areaOptions = useMemo(
+    () => settingsServiceAreasToRows(areasQuery.data).map((area) => ({ value: area.id, label: area.name })),
+    [areasQuery.data],
+  )
 
   const [name, setName] = useState(technician?.name ?? '')
   const [phone, setPhone] = useState(
@@ -65,7 +63,7 @@ export function TechnicianForm({
   )
   // The API only accepts TRAINEE / STANDARD / SENIOR / LEAD (older rows may hold free text).
   const [role, setRole] = useState<string>(toTechnicianRole(technician?.role) ?? 'STANDARD')
-  const [serviceAreaId, setServiceAreaId] = useState(technician?.serviceAreaId ?? '')
+  const [serviceAreaIds, setServiceAreaIds] = useState<string[]>(technician?.serviceAreaIds ?? [])
   const [notes, setNotes] = useState(technician?.notes ?? '')
   const [sendInvite, setSendInvite] = useState(!editing)
   const [active, setActive] = useState(technician?.appActive ?? true)
@@ -77,7 +75,7 @@ export function TechnicianForm({
     setPhone(technician.phone !== '—' ? technician.phone : '')
     setEmail(technician.email !== '—' ? technician.email : '')
     setRole(toTechnicianRole(technician.role) ?? 'STANDARD')
-    setServiceAreaId(technician.serviceAreaId ?? '')
+    setServiceAreaIds(technician.serviceAreaIds)
     setNotes(technician.notes)
     setActive(technician.appActive)
   }, [technician])
@@ -111,7 +109,7 @@ export function TechnicianForm({
       phone: phone.trim(),
       email: email.trim(),
       role: role || 'STANDARD',
-      serviceAreaId: serviceAreaId || null,
+      serviceAreaIds,
       notes: notes.trim(),
       sendInvite: !editing && sendInvite,
       active,
@@ -125,7 +123,7 @@ export function TechnicianForm({
           {editing ? content.editTitle : content.addTitle}
         </h1>
         <p className="mt-1 text-xs text-muted">
-          {editing ? content.editSubtitle : content.addSubtitle}
+          {editing ? content.editSubtitle.replace('{name}', technician?.name ?? name) : content.addSubtitle}
         </p>
       </header>
 
@@ -139,7 +137,7 @@ export function TechnicianForm({
                 inputSize="sm"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. James Smith"
+                placeholder="Full name"
                 disabled={!canMutate || pending}
               />
             </Field>
@@ -148,7 +146,7 @@ export function TechnicianForm({
                 inputSize="sm"
                 value={phone}
                 onValueChange={setPhone}
-                placeholder="e.g. 07700 900000"
+                placeholder="Mobile number"
                 disabled={!canMutate || pending}
               />
             </Field>
@@ -158,7 +156,7 @@ export function TechnicianForm({
                 inputSize="sm"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="e.g. james@example.com"
+                placeholder="name@company.com"
                 disabled={!canMutate || pending}
               />
             </Field>
@@ -173,10 +171,14 @@ export function TechnicianForm({
               />
             </Field>
             <Field label={content.area} labelWeight="medium" size="sm">
-              <Select
+              <MultiSelect
                 inputSize="sm"
-                value={serviceAreaId}
-                onChange={(event) => setServiceAreaId(event.target.value)}
+                displayMode="values"
+                showAllOption={false}
+                label={content.area}
+                placeholder={content.areaPlaceholder}
+                value={serviceAreaIds}
+                onChange={setServiceAreaIds}
                 options={areaOptions}
                 className="border-primary/20 bg-accent-surface"
                 disabled={!canMutate || pending || areasQuery.isPending}
@@ -294,7 +296,7 @@ export function toCreateInput(values: TechnicianFormValues): TechnicianCreateInp
     role: values.role || undefined,
     email: values.email || null,
     notes: values.notes || null,
-    serviceAreaId: values.serviceAreaId,
+    serviceAreaIds: values.serviceAreaIds,
     sendInvite: values.sendInvite,
   }
 }
@@ -306,7 +308,7 @@ export function toUpdateInput(values: TechnicianFormValues): TechnicianUpdateInp
     role: values.role || undefined,
     email: values.email || null,
     notes: values.notes || null,
-    serviceAreaId: values.serviceAreaId,
+    serviceAreaIds: values.serviceAreaIds,
     active: values.active,
   }
 }

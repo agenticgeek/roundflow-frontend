@@ -1,6 +1,8 @@
+import type { CustomerPaymentBadge, PaymentStanding } from '@/features/customers/lib/payment-status'
 export type CustomerStatus = 'active' | 'hold' | 'cancelled'
 
-export type CustomerPaymentStatus = 'paid' | 'hold' | 'pending'
+/** List badges, plus Property detail's standing (PropertyDetail reuses this record). */
+export type CustomerPaymentStatus = CustomerPaymentBadge | PaymentStanding
 
 export interface CustomerPropertyRecord {
   id: string
@@ -16,6 +18,8 @@ export interface CustomerPropertyRecord {
   paymentStatus: CustomerPaymentStatus
   amountDue?: string
   needsAssignment?: boolean
+  /** A customer created without a property: nothing to open until one is added. */
+  hasNoProperty?: boolean
 }
 
 export interface CustomerFilterOption {
@@ -34,17 +38,6 @@ export const customersContent = {
     label: 'Search customers',
     placeholder: 'Search customers by name, address, or postcode...',
   },
-  metrics: [
-    { id: 'total', label: 'Total Customers', value: '5', tone: 'default' },
-    { id: 'active', label: 'Active', value: '2', tone: 'success' },
-    { id: 'payment-holds', label: 'Payment Holds', value: '1', tone: 'danger' },
-    { id: 'amount-due', label: 'Amount Due', value: '£84', tone: 'warning' },
-  ] satisfies {
-    id: string
-    label: string
-    value: string
-    tone: 'default' | 'success' | 'danger' | 'warning'
-  }[],
   filters: {
     round: {
       label: 'Rounds',
@@ -72,8 +65,21 @@ export const customersContent = {
     active: 'Active',
     hold: 'Hold',
     cancelled: 'Cancelled',
-    paid: 'paid',
-    pending: 'pending',
+  },
+  /** GAP-021: one label per server `paymentStatus`. */
+  paymentStatusLabels: {
+    none: 'No invoices',
+    paid: 'Paid',
+    unpaid: 'Unpaid',
+    overdue: 'Overdue',
+    hold: 'On hold',
+    failed: 'Payment failed',
+    pending: 'Pending',
+  } satisfies Record<CustomerPaymentStatus, string>,
+  noProperty: {
+    title: 'No property yet',
+    description: 'Add a property so visits can be scheduled for this customer.',
+    action: 'Add property',
   },
   assignment: {
     title: 'Not assigned to a round or technician yet',
@@ -96,6 +102,7 @@ export const customersContent = {
       confirm: 'Assign Property',
     },
     successToast: 'Property assigned to round',
+    failed: 'Could not assign property',
   },
   emptyLabel: 'No customers match the selected filters.',
 } as const

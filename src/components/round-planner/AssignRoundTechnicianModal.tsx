@@ -7,7 +7,10 @@ import { quickAssignContent as copy } from '@/content/round-planner'
 import { Modal, ModalButton, ModalFooter } from '@/components/ui/modal'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
+import { PendingInviteResend } from '@/components/round-planner/PendingInviteResend'
 import { useSetRoundTechnicians } from '@/features/rounds/hooks/useRounds'
+import { isPendingInvite } from '@/features/rounds/lib/assign'
+import { errorMessage } from '@/lib/errors'
 import { formatShortDate } from '@/features/rounds/lib/planner'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
 import { cn, fillCopy } from '@/lib/utils'
@@ -39,10 +42,12 @@ export function AssignRoundTechnicianModal({
   const techniciansQuery = useTechniciansList()
   const setTechnicians = useSetRoundTechnicians()
   const [selected, setSelected] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   // Fresh picks each time the modal opens for a round.
   useEffect(() => {
     setSelected([])
+    setError(null)
   }, [target?.round.id, target?.date])
 
   const areaId = target?.round.serviceAreaId ?? null
@@ -65,8 +70,9 @@ export function AssignRoundTechnicianModal({
 
   async function save() {
     if (!target || selected.length === 0) return
+    setError(null)
     try {
-      await setTechnicians.mutateAsync({ id: target.round.id, technicianIds: selected })
+      await setTechnicians.mutateAsync({ id: target.round.id, input: { technicianIds: selected } })
       const firstName =
         technicians.find(({ technician }) => technician.id === selected[0])?.technician.name ?? ''
       showToast(
@@ -75,8 +81,9 @@ export function AssignRoundTechnicianModal({
           : fillCopy(copy.toastMany, { count: selected.length, round: target.round.name }),
       )
       onClose()
-    } catch {
-      showToast(copy.failed)
+    } catch (caught) {
+      // The server says why (e.g. a pending invite) — keep the modal open with it.
+      setError(errorMessage(caught))
     }
   }
 
@@ -142,6 +149,7 @@ export function AssignRoundTechnicianModal({
             {technicians.map(({ technician, covers }) => {
               const checked = selected.includes(technician.id)
               const roundCount = technician.roundNames?.length
+              const pending = isPendingInvite(technician)
               return (
                 <li key={technician.id}>
                   <button
@@ -149,9 +157,9 @@ export function AssignRoundTechnicianModal({
                     role="checkbox"
                     aria-checked={checked}
                     onClick={() => toggle(technician.id)}
-                    disabled={saving}
+                    disabled={saving || pending}
                     className={cn(
-                      'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150',
+                      'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60',
                       checked
                         ? 'border-primary bg-accent-surface'
                         : 'border-border bg-card hover:border-primary/40 hover:bg-surface',
@@ -195,11 +203,17 @@ export function AssignRoundTechnicianModal({
                       ) : null}
                     </span>
                   </button>
+                  {pending ? <PendingInviteResend technician={technician} className="mt-1 px-3" /> : null}
                 </li>
               )
             })}
           </ul>
         )}
+        {error ? (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
       </div>
     </Modal>
   )

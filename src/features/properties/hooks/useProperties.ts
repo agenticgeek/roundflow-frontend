@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { propertiesApi } from '@/api/properties.api'
+import { propertiesApi, type PropertyServicesInput } from '@/api/properties.api'
 import type {
   NoteCreateInput,
   PauseServiceInput,
@@ -9,6 +9,7 @@ import type {
 import {
   invalidateCustomers,
   invalidateRounds,
+  invalidateServiceChange,
   queryKeys,
 } from '@/lib/query-keys'
 
@@ -31,10 +32,11 @@ export function useUpdateProperty() {
     mutationFn: ({ id, input }: { id: string; input: PropertyUpdateInput }) =>
       propertiesApi.updateProperty(id, input),
     onSuccess: (_data, { input }) => {
-      void invalidateCustomers(queryClient)
+      // A round / frequency move changes the header, Today's Work and the planner (GAP-018).
       if (input.roundId !== undefined || input.cleaningFrequency !== undefined) {
-        void invalidateRounds(queryClient)
+        return invalidateServiceChange(queryClient)
       }
+      return invalidateCustomers(queryClient)
     },
   })
 }
@@ -44,7 +46,8 @@ export function usePauseProperty() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: PauseServiceInput }) =>
       propertiesApi.pause(id, input),
-    onSuccess: () => invalidateCustomers(queryClient),
+    // Pause cancels visits: the header, Today's Work and the planner all change (GAP-020).
+    onSuccess: () => invalidateServiceChange(queryClient),
   })
 }
 
@@ -52,7 +55,36 @@ export function useResumeProperty() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => propertiesApi.resume(id),
-    onSuccess: () => invalidateCustomers(queryClient),
+    onSuccess: () => invalidateServiceChange(queryClient),
+  })
+}
+
+/** PUT /properties/:id/services — changes plans, visits and prices, so everything service-related refetches. */
+export function useSetPropertyServices() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: PropertyServicesInput }) =>
+      propertiesApi.setServices(id, input),
+    onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ['properties', 'services-history', id] })
+      return invalidateServiceChange(queryClient)
+    },
+  })
+}
+
+export function usePropertyServicesHistory(propertyId: string, page = 1, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.properties.servicesHistory(propertyId, page),
+    queryFn: ({ signal }) => propertiesApi.servicesHistory(propertyId, page, signal),
+    enabled: enabled && Boolean(propertyId),
+  })
+}
+
+export function useProperty(propertyId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.properties.detail(propertyId),
+    queryFn: ({ signal }) => propertiesApi.get(propertyId, signal),
+    enabled: enabled && Boolean(propertyId),
   })
 }
 

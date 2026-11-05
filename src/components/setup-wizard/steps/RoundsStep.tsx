@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { emptyRoundForm, type RoundForm, type RoundsDraft } from '@/features/setup/hooks/useRoundsDraft'
 import type { RoundCreateInput } from '@/api/rounds.api'
 import type { CleaningFrequency, DayOfWeek, Round, ServiceArea } from '@/api/types'
 import { setupWizardContent } from '@/content/setup-wizard'
@@ -13,18 +14,13 @@ interface RoundsStepProps {
   /** Business working days from Business Profile (`MON`…`SUN`); empty = all days. */
   workingDays: string[]
   defaultFrequency: CleaningFrequency
+  /** Form state owned by the wizard so it survives step navigation. */
+  draft: RoundsDraft
   saving: boolean
   /** Resolves with the created round's id. */
   onCreateRound: (input: RoundCreateInput) => Promise<string | undefined>
   onUpdateRound: (id: string, input: RoundCreateInput) => Promise<void>
   onSubmit: () => void
-}
-
-interface RoundForm {
-  serviceAreaId: string
-  name: string
-  defaultDay: string
-  frequency: string
 }
 
 type RoundFormErrors = Partial<Record<'serviceAreaId' | 'name' | 'defaultDay', string>>
@@ -97,6 +93,7 @@ export function RoundsStep({
   rounds,
   workingDays,
   defaultFrequency,
+  draft,
   saving,
   onCreateRound,
   onUpdateRound,
@@ -108,21 +105,19 @@ export function RoundsStep({
 
   const savedAreas = useMemo(() => areas.filter((area): area is ServiceArea & { id: string } => Boolean(area.id)), [areas])
 
-  const emptyForm = (serviceAreaId = savedAreas[0]?.id ?? ''): RoundForm => ({
-    serviceAreaId,
-    name: '',
-    defaultDay: '',
-    frequency: defaultFrequency,
-  })
+  const { form, setForm, editingId, setEditingId, formSectors, setFormSectors } = draft
+  const emptyForm = (serviceAreaId = savedAreas[0]?.id ?? ''): RoundForm => emptyRoundForm(serviceAreaId)
+  const frequency = form.frequency ?? defaultFrequency
 
-  const [form, setForm] = useState<RoundForm>(() => emptyForm())
+  // Validation messages are local, so they reset on re-entry; the draft only needs its area defaulted.
+  useEffect(() => {
+    if (!form.serviceAreaId && savedAreas[0]?.id) setForm((prev) => ({ ...prev, serviceAreaId: savedAreas[0].id }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [errors, setErrors] = useState<RoundFormErrors>({})
   const [saveError, setSaveError] = useState<string | null>(null)
   const [stepError, setStepError] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  // CONTRACT-DIFF: rounds have no postcode sectors in the API yet — kept in this step only.
-  const [roundSectors, setRoundSectors] = useState<Record<string, string[]>>({})
-  const [formSectors, setFormSectors] = useState<string[]>([])
   const formCardRef = useRef<HTMLElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -183,9 +178,9 @@ export function RoundsStep({
       serviceAreaId: round.serviceAreaId ?? '',
       name: round.name ?? '',
       defaultDay: round.defaultDay ?? '',
-      frequency: round.frequency ?? defaultFrequency,
+      frequency: round.frequency ?? null,
     })
-    setFormSectors(roundSectors[round.id] ?? [])
+    setFormSectors(round.postcodeSectors ?? [])
     setErrors({})
     setSaveError(null)
     formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -213,16 +208,15 @@ export function RoundsStep({
       name,
       serviceAreaId: form.serviceAreaId,
       defaultDay: form.defaultDay as DayOfWeek,
-      frequency: form.frequency as CleaningFrequency,
+      frequency: frequency as CleaningFrequency,
+      postcodeSectors: formSectors,
     }
 
     try {
       if (editingId) {
         await onUpdateRound(editingId, input)
-        setRoundSectors((prev) => ({ ...prev, [editingId]: formSectors }))
       } else {
-        const id = await onCreateRound(input)
-        if (id && formSectors.length > 0) setRoundSectors((prev) => ({ ...prev, [id]: formSectors }))
+        await onCreateRound(input)
       }
       setStepError(null)
       resetForm(form.serviceAreaId)
@@ -319,7 +313,7 @@ export function RoundsStep({
 
             <Field label={fields.frequency.label} required labelWeight="medium">
               <Select
-                value={form.frequency}
+                value={frequency}
                 onChange={(event) => updateForm('frequency', event.target.value)}
                 options={content.frequencies}
               />
@@ -423,7 +417,7 @@ export function RoundsStep({
                         <td className="px-5 py-4 text-foreground">{frequencyLabel(round.frequency)}</td>
                         <td className="px-5 py-3">
                           <div className="flex flex-wrap gap-1.5">
-                            {(roundSectors[round.id ?? ''] ?? []).map((sector) => (
+                            {(round.postcodeSectors ?? []).map((sector) => (
                               <SectorChip key={sector} sector={sector} />
                             ))}
                           </div>

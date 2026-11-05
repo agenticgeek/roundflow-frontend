@@ -38,6 +38,8 @@ export interface DebtCustomerRecord {
   amountOwed: string
   amountValue: number
   paymentMethod: DebtPaymentMethod
+  /** The API method (BACS, CHEQUE, …) — pre-selects "Mark as paid". */
+  paymentMethodCode?: string | null
   round: string
   status: DebtStatusTab
   contactStatus: DebtContactStatus
@@ -74,65 +76,52 @@ export const debtPaymentContent = {
       ],
     },
   },
+  /** ON_HOLD rows can be a held customer with no unpaid invoice (GAP-026). */
+  onHoldChip: 'On hold',
+  noInvoice: 'No unpaid invoice — invoice actions are unavailable for this customer.',
   menu: {
     flagBadDebt: 'Flag Bad Debt',
     clearBadDebt: 'Clear Bad Debt',
     holdNextClean: 'Hold Next Clean',
     clearHold: 'Clear Hold',
   },
-  metrics: [
-    {
-      id: 'total-outstandings',
-      label: 'Total Outstandings',
-      value: '£2,264',
-      helper: 'Across 27 customers',
-      tone: 'accent',
-    },
-    {
-      id: 'failed-gocardless',
-      label: 'Failed GoCardless',
-      value: '5',
-      helper: 'Requires immediate follow-up',
-      tone: 'danger',
-    },
-    {
-      id: 'due-before-clean',
-      label: 'Due Before Clean',
-      value: '2',
-      helper: 'Next clean within 7 days',
-      tone: 'warning',
-    },
-    {
-      id: 'hold-next-clean',
-      label: 'Hold Next Clean',
-      value: '5',
-      helper: 'Blocked from next visit',
-      tone: 'accent',
-    },
-    {
-      id: 'bad-debt',
-      label: 'Bad Debt',
-      value: '£460',
-      helper: 'Manually flagged',
-      tone: 'danger',
-    },
-  ],
   statusTabs: [
-    { id: 'invoice-sent', label: 'Invoice Sent', count: 6, hasAlert: false },
-    { id: 'due-before', label: 'Due Before', count: 2, hasAlert: false },
-    { id: 'failed-gc', label: 'Failed GC', count: 5, hasAlert: true },
-    { id: '7-days-over', label: '7 Days Over', count: 4, hasAlert: true },
-    { id: '14-days-over', label: '14 Days Over', count: 2, hasAlert: true },
-    { id: 'on-hold', label: 'On Hold', count: 6, hasAlert: true },
-    { id: 'bad-debt', label: 'Bad Debt', count: 2, hasAlert: true },
-  ] satisfies { id: DebtStatusTab; label: string; count: number; hasAlert: boolean }[],
+    { id: 'invoice-sent', label: 'Invoice Sent', hasAlert: false },
+    { id: 'due-before', label: 'Due Before', hasAlert: false },
+    { id: 'failed-gc', label: 'Failed GC', hasAlert: true },
+    { id: '7-days-over', label: '7 Days Over', hasAlert: true },
+    { id: '14-days-over', label: '14 Days Over', hasAlert: true },
+    { id: 'on-hold', label: 'On Hold', hasAlert: true },
+    { id: 'bad-debt', label: 'Bad Debt', hasAlert: true },
+  ] satisfies { id: DebtStatusTab; label: string; hasAlert: boolean }[],
   resultsLabel: '{label} — {count} results',
   // Search only filters the page that's loaded (the board endpoint has no search param).
   resultsLabelSearching: '{label} — {count} matching on this page',
   selectAll: 'Select all',
+  bulk: {
+    selected: '{count} selected',
+    clear: 'Clear selection',
+    remind: 'Send reminders',
+    hold: 'Put on hold',
+    badDebt: 'Flag bad debt',
+    confirmRemind: 'Send a payment reminder to {count} customers? They are sent by SMS or email, whichever the customer has.',
+    confirmHold: 'Put {count} customers on hold? Their next visits are held until the debt is settled.',
+    confirmBadDebt: 'Flag {count} customers as bad debt?',
+    reasonLabel: 'Reason (optional)',
+    notifyLabel: 'Tell the customers by message',
+    confirm: 'Confirm',
+    working: 'Working…',
+    cancel: 'Cancel',
+    resultTitle: 'Bulk action finished',
+    resultSummary: '{succeeded} succeeded, {failed} failed.',
+    resultOk: 'Done',
+    close: 'Close',
+    requestFailed: 'The bulk action could not be started.',
+  },
   actions: {
     sendReminder: 'Send Reminder',
     viewInvoice: 'View Invoice',
+    markPaid: 'Mark as paid',
     moreOptions: 'More options',
   },
   contactLabels: {
@@ -184,6 +173,7 @@ export const debtPaymentContent = {
       pauseService: 'Pause Service',
       resumeService: 'Resume Service',
       exportInvoice: 'Export Invoice or Download PDF',
+      markPaid: 'Mark as paid',
     },
     toasts: {
       paymentLink: 'Payment link sent to {customer}',
@@ -196,11 +186,6 @@ export const debtPaymentContent = {
     title: 'Send Payment Reminder',
     toLabel: 'To',
     sendVia: 'Send via',
-    channels: [
-      { id: 'sms', label: 'SMS' },
-      { id: 'whatsapp', label: 'WhatsApp' },
-      { id: 'email', label: 'EMAIL' },
-    ] as const,
     templateLabel: 'Template',
     messageLabel: 'Message',
     characterCount: '{count} characters',
@@ -224,7 +209,9 @@ export const debtPaymentContent = {
     actions: {
       cancel: 'Cancel',
       send: 'Send Reminder',
+      sending: 'Sending…',
     },
+    messageRequired: 'Enter a reminder message',
     successToast: 'Reminder sent to {customer}',
   },
   paymentLinkModal: {
@@ -232,34 +219,23 @@ export const debtPaymentContent = {
     fields: {
       customer: 'Customer',
       amount: 'Amount to collect',
-      method: 'Payment Method',
-      expiry: 'Link Expiry',
       message: 'Message to customer',
     },
-    helper: 'A unique payment link will be generated and appended to the message automatically.',
-    methods: [
-      { value: 'stripe-link', label: 'Stripe Link' },
-      { value: 'gocardless', label: 'GoCardless' },
-      { value: 'bank-transfer', label: 'Bank Transfer' },
-    ],
-    expiryOptions: [
-      { value: '3', label: '3 days' },
-      { value: '7', label: '7 days' },
-      { value: '14', label: '14 days' },
-      { value: '30', label: '30 days' },
-    ],
+    helper: 'A secure Stripe checkout link is appended to the message automatically.',
     defaultMessage:
       'Hi {firstName}, here is your secure payment link for {amount}. Please pay at your earliest convenience. Thank you.',
     actions: {
       cancel: 'Cancel',
       send: 'Generate & Send Link',
+      sending: 'Sending…',
     },
+    messageRequired: 'Enter a message',
     successToast: 'Payment link sent to {customer}',
     stripeLinkNote: 'Secure Stripe checkout link — expires {when}',
-    staticLinkNote: 'Stripe isn’t connected, so the standard pay link was sent'
   },
   pauseModal: {
     title: 'Pause Service',
+    validation: { startInPast: 'The pause can start today or later.' },
     fields: {
       customer: 'Customer',
       reason: 'Reason',
@@ -320,7 +296,6 @@ export const debtPaymentContent = {
     },
     serviceTitle: 'Window Cleaning Service',
     serviceSubtitle: '{round} · {visitDate}',
-    defaultTechnician: 'James Smith',
     totals: {
       subtotal: 'Subtotal',
       vat: 'VAT (0%)',

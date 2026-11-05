@@ -13,6 +13,7 @@ interface DebtCustomerDetailPanelProps {
   onPauseService: (record: DebtCustomerRecord) => void
   onResumeService: (record: DebtCustomerRecord) => void
   onExportInvoice: (record: DebtCustomerRecord) => void
+  onMarkPaid: (record: DebtCustomerRecord) => void
 }
 
 const statusLabel = Object.fromEntries(
@@ -28,10 +29,14 @@ export function DebtCustomerDetailPanel({
   onPauseService,
   onResumeService,
   onExportInvoice,
+  onMarkPaid,
 }: DebtCustomerDetailPanelProps) {
   const { detailPanel, contactLabels, lastContactLabel } = debtPaymentContent
 
   if (!record) return null
+
+  // An ON_HOLD customer can have no unpaid invoice: every action here needs one (GAP-026).
+  const noInvoice = !record.invoiceId
 
   const daysOverdueLabel =
     record.daysOverdue > 0 ? String(record.daysOverdue) : detailPanel.notYetOverdue
@@ -54,34 +59,47 @@ export function DebtCustomerDetailPanel({
       footerClassName="border-border bg-accent-surface"
       footer={
         <div className="space-y-2.5">
+          {noInvoice ? <p className="text-xs text-muted">{debtPaymentContent.noInvoice}</p> : null}
           <div className="grid grid-cols-2 gap-2.5">
             <ActionCard
               icon="send"
               label={detailPanel.actions.sendReminder}
               onClick={() => onSendReminder(record)}
+              disabled={noInvoice}
             />
             <ActionCard
               icon="link"
               label={detailPanel.actions.paymentLink}
               onClick={() => onPaymentLink(record)}
+              disabled={noInvoice}
             />
             <ActionCard
               icon="pause"
               label={detailPanel.actions.pauseService}
               onClick={() => onPauseService(record)}
               tone="warning"
+              disabled={noInvoice}
             />
             <ActionCard
               icon="play"
               label={detailPanel.actions.resumeService}
               onClick={() => onResumeService(record)}
               tone="success"
+              disabled={noInvoice}
+            />
+            <ActionCard
+              icon="check-circle"
+              label={detailPanel.actions.markPaid}
+              onClick={() => onMarkPaid(record)}
+              tone="success"
+              disabled={noInvoice}
             />
           </div>
           <button
             type="button"
+            disabled={noInvoice}
             onClick={() => onExportInvoice(record)}
-            className={cn(dashboardCtaClass, 'w-full gap-1.5 py-2.5 text-xs')}
+            className={cn(dashboardCtaClass, 'w-full gap-1.5 py-2.5 text-xs disabled:opacity-50')}
           >
             <DashboardIcon name="download" className="h-3.5 w-3.5" />
             {detailPanel.actions.exportInvoice}
@@ -260,11 +278,13 @@ function ActionCard({
   label,
   onClick,
   tone = 'default',
+  disabled = false,
 }: {
   icon: string
   label: string
   onClick: () => void
   tone?: 'default' | 'warning' | 'success'
+  disabled?: boolean
 }) {
   const toneClass = {
     default: 'border-border text-foreground hover:bg-card/80',
@@ -276,8 +296,9 @@ function ActionCard({
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        'flex min-h-[3.75rem] flex-col items-center justify-center gap-1 rounded-xl border bg-card px-2.5 py-2.5 text-xs font-medium shadow-sm transition-colors',
+        'disabled:cursor-not-allowed disabled:opacity-50 flex min-h-[3.75rem] flex-col items-center justify-center gap-1 rounded-xl border bg-card px-2.5 py-2.5 text-xs font-medium shadow-sm transition-colors',
         toneClass[tone],
       )}
     >

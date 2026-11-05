@@ -62,10 +62,12 @@ export function GenerateInvoiceModal({ open, property, visit, onClose }: Generat
 
   if (!visit) return null
 
+  // A 409 VISIT_NOT_COMPLETED (GAP-032) is shown with the server's message, not as "already invoiced".
   const alreadyInvoiced =
     previewQuery.isError &&
     previewQuery.error instanceof ApiError &&
-    previewQuery.error.status === 409
+    previewQuery.error.status === 409 &&
+    previewQuery.error.code !== 'VISIT_NOT_COMPLETED'
 
   const amount = preview ? formatInvoiceMoney(preview.total) : visit.price
   const paymentMethod = paymentMethodLabel(

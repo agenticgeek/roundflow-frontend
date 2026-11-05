@@ -65,9 +65,11 @@ export function useReportsVisits(params: ReportsVisitsParams = {}, enabled = tru
 
 export function useReportsActivity(params: ReportsActivityParams = {}, enabled = true) {
   const type = params.type
+  const page = params.page ?? 1
   return useQuery({
-    queryKey: queryKeys.reports.activity(type),
-    queryFn: ({ signal }) => reportsApi.activity({ type }, signal),
+    queryKey: queryKeys.reports.activity(type, page),
+    queryFn: ({ signal }) => reportsApi.activity({ type, page }, signal),
+    placeholderData: keepPreviousData,
     enabled: useReportsEnabled(enabled),
   })
 }

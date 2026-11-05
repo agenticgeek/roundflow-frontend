@@ -61,6 +61,8 @@ export interface WizardPaymentData {
   stripeConnected: boolean
   /** PaymentMethod enum value (GOCARDLESS, STRIPE, BACS, CASH, CHEQUE). */
   defaultPaymentMethod: string
+  /** BUG-05: every method the business accepts; `defaultPaymentMethod` is one of them. */
+  acceptedPaymentMethods: string[]
   paymentTiming: PaymentTimingOption
   invoiceDueDays: string
   noDirectDebitAction: NoDirectDebitAction
@@ -91,10 +93,12 @@ export type ReminderSchedule = 'evening-before' | 'morning-of' | 'none'
 export interface RoundSettingsData {
   recurringCycle: RecurringCycle
   cleanMethod: CleanMethod
-  reminderSchedule: ReminderSchedule
-  /** `HH:mm` — used when reminderSchedule is `evening-before`. */
+  /** Both can be ticked; neither ticked = "Don't send reminders". */
+  eveningReminderEnabled: boolean
+  /** `HH:mm`. */
   eveningReminderTime: string
-  /** `HH:mm` — used when reminderSchedule is `morning-of`. */
+  morningReminderEnabled: boolean
+  /** `HH:mm`. */
   morningReminderTime: string
   autoGenerateVisits: boolean
 }

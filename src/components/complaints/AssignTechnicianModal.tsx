@@ -4,6 +4,7 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { Input } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
+import { technicianListHint } from '@/features/complaints/lib/format'
 import { cn } from '@/lib/utils'
 
 interface AssignTechnicianModalProps {
@@ -25,7 +26,7 @@ function initialsFor(name: string) {
   )
 }
 
-/** Searchable technician picker for a complaint — real technicians only, excludes pending invites. */
+/** Searchable technician picker for a complaint — every technician, pending invites flagged. */
 export function AssignTechnicianModal({
   open,
   currentTechnicianId,
@@ -46,9 +47,8 @@ export function AssignTechnicianModal({
   }, [currentTechnicianId, open])
 
   const technicians = useMemo(() => {
-    const all = (techniciansQuery.data ?? []).filter(
-      (technician) => technician.appStatus !== 'PENDING_INVITE',
-    )
+    // GAP-029 part 2: the API accepts pending-invite technicians.
+    const all = techniciansQuery.data ?? []
     const query = search.trim().toLowerCase()
     if (!query) return all
     return all.filter((technician) => (technician.name ?? '').toLowerCase().includes(query))
@@ -109,7 +109,9 @@ export function AssignTechnicianModal({
         {techniciansQuery.isPending ? (
           <p className="px-3 py-6 text-center text-xs text-muted">Loading technicians…</p>
         ) : technicians.length === 0 ? (
-          <p className="px-3 py-6 text-center text-xs text-muted">{content.empty}</p>
+          <p className="px-3 py-6 text-center text-xs text-muted">
+            {technicianListHint(techniciansQuery.data) ?? content.empty}
+          </p>
         ) : (
           technicians.map((technician) => {
             const id = technician.id
@@ -138,6 +140,7 @@ export function AssignTechnicianModal({
                   <span className="mt-0.5 block truncate text-xs text-muted">
                     {technician.role ?? '—'}
                     {technician.appStatus === 'INACTIVE' ? ' · Inactive' : ''}
+                    {technician.appStatus === 'PENDING_INVITE' ? ` · ${complaintsContent.invitePending}` : ''}
                   </span>
                 </span>
               </button>

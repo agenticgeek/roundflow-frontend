@@ -17,6 +17,7 @@ import { Field, FieldError, Input, MultiSelect, PhoneInput, Select } from '@/com
 import { isValidEmail, isValidPhone } from '@/lib/contact'
 import { focusFirstInvalid, hasErrors } from '@/lib/form-errors'
 import { formatUkPostcode, isValidUkPostcode, matchAreaSector } from '@/lib/postcode'
+import { roundFrequencyMap } from '@/lib/round-frequency'
 import { cn, fillCopy } from '@/lib/utils'
 
 export type PropertyDraftErrors = Partial<Record<keyof PropertyDraft, string>>
@@ -317,6 +318,7 @@ export function AddPropertyStep({
             serviceOptions={serviceOptions}
             servicePrices={servicePrices}
             draftDefaults={legacyContent.draftDefaults}
+            roundFrequencies={roundFrequencyMap(rounds)}
             onSaveProperty={onAddProperty}
             onSaveProperties={onAddProperties}
             onClose={() => setImporting(false)}

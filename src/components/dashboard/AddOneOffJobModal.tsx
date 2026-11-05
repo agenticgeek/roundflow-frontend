@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CustomerListRow, PaymentMethod } from '@/api/types'
-import { dashboardContent, oneOffPaymentMethodLabels } from '@/content/dashboard'
+import { dashboardContent } from '@/content/dashboard'
+import { PAYMENT_METHOD_OPTIONS } from '@/lib/payment-methods'
 import { todayIsoDate } from '@/features/rounds/lib/planner'
 import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { useRounds } from '@/features/rounds/hooks/useRounds'
@@ -31,8 +32,6 @@ interface OneOffJobFormState {
   roundId: string
   notes: string
 }
-
-const PAYMENT_METHODS: PaymentMethod[] = ['GOCARDLESS', 'STRIPE', 'CASH', 'BACS', 'CHEQUE']
 
 function initialState(defaultRoundId: string | null): OneOffJobFormState {
   return {
@@ -298,7 +297,7 @@ export function AddOneOffJobModal({ open, onClose, defaultRoundId = null }: AddO
               onChange={(event) => updateField('paymentMethod', event.target.value as PaymentMethod | '')}
               options={[
                 { value: '', label: fields.paymentMethod.placeholder },
-                ...PAYMENT_METHODS.map((method) => ({ value: method, label: oneOffPaymentMethodLabels[method] })),
+                ...PAYMENT_METHOD_OPTIONS,
               ]}
             />
           </Field>

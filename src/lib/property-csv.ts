@@ -210,8 +210,19 @@ export function parsePropertyRows(rows: string[][], draftDefaults: PropertyDraft
     }
     seen.add(dedupeKey)
 
-    // Keep phone/email only when valid — a bad contact field shouldn't drop the row.
-    const mobile = sanitizePhoneInput(get('mobile'))
+    // GAP-009: a mobile is required, as on the single-add form — a row without a valid one is
+    // listed as an error in the preview and not imported. Landline/email stay optional: an
+    // invalid one is just dropped.
+    const mobileRaw = get('mobile')
+    const mobile = sanitizePhoneInput(mobileRaw)
+    if (!mobileRaw) {
+      skipped.push({ rowNumber, label, reason: 'No mobile number' })
+      continue
+    }
+    if (!isValidPhone(mobile)) {
+      skipped.push({ rowNumber, label, reason: `Invalid mobile number "${mobileRaw}"` })
+      continue
+    }
     const landlineRaw = sanitizePhoneInput(get('homePhone') || get('workPhone'))
     const email = get('email')
 
@@ -220,7 +231,7 @@ export function parsePropertyRows(rows: string[][], draftDefaults: PropertyDraft
       draft: {
         ...draftDefaults,
         customerName,
-        phone: isValidPhone(mobile) ? mobile : '',
+        phone: mobile,
         landline: isValidPhone(landlineRaw) ? landlineRaw : '',
         email: isValidEmail(email) ? email : '',
         fullAddress,

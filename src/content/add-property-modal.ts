@@ -35,7 +35,6 @@ export const addPropertyModalContent = {
   emptyState: 'No properties added yet.',
   validation: {
     serviceAreaRequired: 'Please select a service area.',
+    noServiceAreas: 'Create a service area first (Settings → Service Areas) before adding a property.',
   },
-  sampleDataNotice:
-    'Saved using sample options — connect a real service area in Settings to sync this property with the backend.',
 } as const

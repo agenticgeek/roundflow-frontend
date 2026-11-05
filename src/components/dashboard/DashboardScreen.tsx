@@ -5,6 +5,8 @@ import type { DashboardInteractions } from '@/hooks/use-dashboard-interactions'
 import { DashboardAlertRow, DashboardMetricGrid } from '@/components/dashboard/DashboardCards'
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { GpsTrackingPanel } from '@/components/dashboard/GpsTrackingPanel'
+import { KpiAlertsPanel } from '@/components/dashboard/KpiAlertsPanel'
+import { kpiAlertsToRows } from '@/features/dashboard/lib/kpi-alerts'
 import { TechnicianKpis } from '@/components/dashboard/TechnicianKpis'
 import { TodayRoundsTable } from '@/components/dashboard/TodayRoundsTable'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
@@ -63,6 +65,7 @@ export function DashboardScreen({ interactions, onOpenAlert, onViewAllRounds }: 
 
   const metrics = useMemo(() => kpisToMetrics(kpisQuery.data), [kpisQuery.data])
   const alerts = useMemo(() => alertsToCards(alertsQuery.data), [alertsQuery.data])
+  const kpiAlerts = useMemo(() => kpiAlertsToRows(alertsQuery.data), [alertsQuery.data])
   const rounds = useMemo(() => roundsToRows(roundsQuery.data), [roundsQuery.data])
 
   // Today's stops for the map — /dashboard/rounds has no per-stop addresses, so
@@ -131,6 +134,8 @@ export function DashboardScreen({ interactions, onOpenAlert, onViewAllRounds }: 
 
       <DashboardAlertRow alerts={alerts} loading={alertsQuery.isLoading} onOpenAlert={onOpenAlert} />
 
+      <KpiAlertsPanel rows={kpiAlerts} />
+
       <GpsTrackingPanel
         stops={dayStops}
         loading={roundsQuery.isLoading || dayStopsQuery.isLoading}
@@ -150,6 +155,7 @@ export function DashboardScreen({ interactions, onOpenAlert, onViewAllRounds }: 
         onRangeChange={interactions.setRange}
         valueChart={charts.value}
         issueChart={charts.issues}
+        revenuePerHour={chartsQuery.data?.revenuePerHour}
         chartsLoading={chartsQuery.isLoading}
       />
 

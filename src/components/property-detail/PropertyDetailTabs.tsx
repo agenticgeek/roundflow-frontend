@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { MarkInvoicePaidModal } from '@/components/invoices/MarkInvoicePaidModal'
 import { GenerateInvoiceModal } from '@/components/property-detail/GenerateInvoiceModal'
+import { MarkPaymentPaidButton } from '@/components/property-detail/MarkPaymentPaidButton'
+import { PinnedPropertyNotes } from '@/components/property-detail/PinnedPropertyNotes'
 import { SavedInvoiceModal } from '@/components/property-detail/SavedInvoiceModal'
 import type {
   PropertyDetailRecord,
@@ -15,15 +18,27 @@ import { paymentRecordToVisitRecord, propertyDetailContent } from '@/content/pro
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Textarea } from '@/components/ui'
+import { Pager } from '@/components/ui/pager'
 import { useToast } from '@/components/ui/toast'
+import { sharedActionsContent } from '@/content/shared-actions'
+import { useCustomerVisits } from '@/features/customer-records/hooks/useCustomerRecords'
+import { canGenerateInvoice, customerVisitsToRecords } from '@/features/customer-records/lib/visits'
 import { categoryToNoteType } from '@/features/customers/lib/mappers'
-import { useAddPropertyNote } from '@/features/properties/hooks/useProperties'
+import { useCustomerInvoices } from '@/features/invoices/hooks/useInvoices'
+import { applyCustomerInvoicesToVisits } from '@/features/invoices/lib/mappers'
+import { useAddPropertyNote, usePropertyNotes } from '@/features/properties/hooks/useProperties'
+import { pinnedFromProperty, splitPropertyNotes } from '@/features/properties/lib/notes'
+import { errorMessage } from '@/lib/errors'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
 
 const visitStatusClass: Record<VisitStatus, string> = {
   completed: 'bg-success/10 text-success',
   scheduled: 'bg-accent-surface text-accent',
+  'in-progress': 'bg-primary/10 text-primary',
+  skipped: 'bg-warning-surface text-warning-foreground',
+  cancelled: 'bg-muted/15 text-muted',
+  'cancelled-paused': 'bg-muted/15 text-muted',
 }
 
 const visitPaymentClass: Record<VisitPaymentStatus, string> = {
@@ -33,14 +48,22 @@ const visitPaymentClass: Record<VisitPaymentStatus, string> = {
 
 interface VisitHistoryTabProps {
   property: PropertyDetailRecord
+  /** Fallback rows (the customer detail's visitHistory) when no customer id is known. */
   visits?: PropertyVisitRecord[]
+  /** Loads GET /customers/:id/visits — every status incl. cancelled (GAP-020). */
+  customerId?: string
 }
 
 /** Visit history table — from property detail tabs. */
-export function VisitHistoryTab({ property, visits: visitsProp }: VisitHistoryTabProps) {
+export function VisitHistoryTab({ property, visits: visitsProp, customerId = '' }: VisitHistoryTabProps) {
   const { visitHistory } = propertyDetailContent
   const { canMutate } = useAppBootstrap()
-  const visits = visitsProp ?? []
+  const [page, setPage] = useState(1)
+  const visitsQuery = useCustomerVisits(customerId, page, Boolean(customerId))
+  const invoicesQuery = useCustomerInvoices(customerId, Boolean(customerId) && canMutate)
+  const visits = visitsQuery.data
+    ? applyCustomerInvoicesToVisits(customerVisitsToRecords(visitsQuery.data.rows), invoicesQuery.data)
+    : (visitsProp ?? [])
   const [invoiceVisit, setInvoiceVisit] = useState<PropertyVisitRecord | null>(null)
   const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
 
@@ -48,7 +71,23 @@ export function VisitHistoryTab({ property, visits: visitsProp }: VisitHistoryTa
     <>
       <h2 className="text-base font-semibold text-foreground">{visitHistory.title}</h2>
 
-      {visits.length === 0 ? (
+      {customerId && visitsQuery.isPending ? (
+        <p className="mt-5 text-sm text-muted" aria-busy="true">
+          {visitHistory.loading}
+        </p>
+      ) : customerId && visitsQuery.isError ? (
+        <div role="alert" className="mt-5 text-sm">
+          <p className="font-semibold text-foreground">{visitHistory.loadError}</p>
+          <p className="mt-1 text-muted">{errorMessage(visitsQuery.error)}</p>
+          <button
+            type="button"
+            onClick={() => void visitsQuery.refetch()}
+            className="mt-2 font-semibold text-primary underline"
+          >
+            {visitHistory.retry}
+          </button>
+        </div>
+      ) : visits.length === 0 ? (
         <p className="mt-5 text-sm text-muted">{visitHistory.emptyLabel}</p>
       ) : (
         <div className="mt-5 overflow-x-auto">
@@ -76,6 +115,9 @@ export function VisitHistoryTab({ property, visits: visitsProp }: VisitHistoryTa
           </table>
         </div>
       )}
+      {visitsQuery.data && visitsQuery.data.pagination.totalPages > 1 ? (
+        <Pager pagination={visitsQuery.data.pagination} loading={visitsQuery.isFetching} onPage={setPage} />
+      ) : null}
 
       <GenerateInvoiceModal
         open={invoiceVisit !== null}
@@ -129,7 +171,7 @@ function VisitHistoryRow({
       </td>
       <td className="px-4 py-3.5 text-foreground">{visit.price}</td>
       <td className="px-4 py-3.5">
-        {visit.invoice === 'generate' && canMutate ? (
+        {canGenerateInvoice(visit) && canMutate ? (
           <button
             type="button"
             onClick={onGenerate}
@@ -195,6 +237,7 @@ export function PaymentsTab({ property, payments: paymentsProp }: PaymentsTabPro
   const payments = paymentsProp ?? []
   const [invoiceVisit, setInvoiceVisit] = useState<PropertyVisitRecord | null>(null)
   const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
+  const [markPaidRow, setMarkPaidRow] = useState<PropertyPaymentRecord | null>(null)
   const visitsTotal = paymentHistory.visitsTotal.replace('{count}', String(payments.length))
   const hiddenForRole = paymentsProp === null
 
@@ -232,6 +275,7 @@ export function PaymentsTab({ property, payments: paymentsProp }: PaymentsTabPro
                     canMutate={canMutate}
                     onView={() => payment.invoiceId && setViewInvoiceId(payment.invoiceId)}
                     onGenerate={() => setInvoiceVisit(paymentRecordToVisitRecord(payment))}
+                    onMarkPaid={() => setMarkPaidRow(payment)}
                   />
                 ))}
               </tbody>
@@ -256,6 +300,17 @@ export function PaymentsTab({ property, payments: paymentsProp }: PaymentsTabPro
         paymentMethod={property.paymentMethod}
         onClose={() => setViewInvoiceId(null)}
       />
+      {markPaidRow?.invoiceId ? (
+        <MarkInvoicePaidModal
+          invoice={{
+            id: markPaidRow.invoiceId,
+            invoiceNumber: markPaidRow.invoiceNumber ?? markPaidRow.visitDate,
+            amountLabel: markPaidRow.amount,
+            customerName: property.customerName,
+          }}
+          onClose={() => setMarkPaidRow(null)}
+        />
+      ) : null}
     </>
   )
 }
@@ -265,11 +320,13 @@ function PaymentHistoryRow({
   canMutate,
   onView,
   onGenerate,
+  onMarkPaid,
 }: {
   payment: PropertyPaymentRecord
   canMutate: boolean
   onView: () => void
   onGenerate: () => void
+  onMarkPaid: () => void
 }) {
   const { paymentHistory } = propertyDetailContent
 
@@ -304,6 +361,23 @@ function PaymentHistoryRow({
       </td>
       <td className="px-4 py-4 text-muted">{payment.transactionId ?? '—'}</td>
       <td className="px-4 py-4">
+        {payment.invoiceId && payment.payment === 'unpaid' && canMutate ? (
+          // GAP-027 part 2: an unpaid invoice is settled via POST /invoices/:id/mark-paid.
+          <div className="mb-1.5">
+            <button
+              type="button"
+              onClick={onMarkPaid}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-success underline underline-offset-2"
+            >
+              <DashboardIcon name="check-circle" className="h-4 w-4" />
+              {sharedActionsContent.markPaid.action}
+            </button>
+          </div>
+        ) : payment.markPaidPaymentId && canMutate ? (
+          <div className="mb-1.5">
+            <MarkPaymentPaidButton paymentId={payment.markPaidPaymentId} amount={payment.amount} />
+          </div>
+        ) : null}
         {payment.action === 'download' && payment.invoiceId ? (
           <button
             type="button"
@@ -375,15 +449,15 @@ export function NotesRiskTab({ property, notes: notesProp, customerId }: NotesRi
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const addNote = useAddPropertyNote(property.id)
-  const [notes, setNotes] = useState<PropertyNoteRecord[]>(() => notesProp ?? [])
+  // GAP-022 part 2: GET /properties/:id/notes lists the pinned access / risk notes first.
+  const notesQuery = usePropertyNotes(property.id)
+  const serverNotes = notesQuery.data ? splitPropertyNotes(notesQuery.data) : null
+  const notes = serverNotes?.notes ?? notesProp ?? []
+  const pinned = serverNotes?.pinned ?? pinnedFromProperty(property.accessNotes, property.riskNotes)
   const [formOpen, setFormOpen] = useState(false)
   const [category, setCategory] = useState<PropertyNoteCategory>('internal')
   const [draft, setDraft] = useState('')
   const canSave = draft.trim().length > 0
-
-  useEffect(() => {
-    if (notesProp) setNotes(notesProp)
-  }, [notesProp])
 
   const attribution = notesRisk.attribution
     .replace('{author}', notesRisk.defaultAuthor)
@@ -494,6 +568,8 @@ export function NotesRiskTab({ property, notes: notesProp, customerId }: NotesRi
           </div>
         </div>
       ) : null}
+
+      <PinnedPropertyNotes pinned={pinned} />
 
       <div className={cn('space-y-4', formOpen ? 'mt-4' : 'mt-5')}>
         {notes.map((note) => (

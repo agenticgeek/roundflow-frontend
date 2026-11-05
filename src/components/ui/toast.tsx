@@ -124,6 +124,18 @@ function ToastViewport({
               </p>
             ) : null}
           </div>
+          {toast.action ? (
+            <button
+              type="button"
+              onClick={() => {
+                onDismiss(toast.id)
+                toast.action?.onClick()
+              }}
+              className="shrink-0 rounded-full border border-primary-foreground/40 px-3 py-1 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-foreground/15"
+            >
+              {toast.action.label}
+            </button>
+          ) : null}
           <button
             type="button"
             aria-label={site.ui.closeDialog}

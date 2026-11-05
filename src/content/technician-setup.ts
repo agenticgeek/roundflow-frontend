@@ -18,7 +18,7 @@ export const technicianSetupContent = {
   credentials: {
     title: 'Create your login',
     body: 'You’ll sign in to the RoundFlow app with this email and password.',
-    name: { label: 'Full name', placeholder: 'e.g. Sarah Johnson', hint: 'Shown to your manager and on job notes.' },
+    name: { label: 'Full name', placeholder: 'Full name', hint: 'Shown to your manager and on job notes.' },
     email: { label: 'Email' },
     password: { label: 'Password', placeholder: 'At least 8 characters' },
     confirm: { label: 'Confirm password', placeholder: 'Type it again' },

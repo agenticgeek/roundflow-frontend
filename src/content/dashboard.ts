@@ -1,21 +1,6 @@
 import type { DashboardChartRange, DashboardPeriod, DashboardRoundStatus } from '@/api/dashboard.api'
-import type { PaymentMethod } from '@/api/types'
 
 export type DashboardTone = 'default' | 'primary' | 'success' | 'warning' | 'danger'
-
-export interface BulkMessageRoundOption {
-  id: string
-  label: string
-  customerCount: number
-  customersOnHold: number
-}
-
-export interface BulkMessageTemplateOption {
-  id: string
-  label: string
-  body: string
-  smsCreditsPerCustomer: number
-}
 
 export interface DashboardMetric {
   label: string
@@ -60,13 +45,12 @@ export interface TodayRound {
   issues: number
   paymentHolds: number
   value: string
-  eta: string
 }
 
 export const dashboardRoundStatusLabels: Record<DashboardRoundStatus, string> = {
   not_started: 'Not started',
   in_progress: 'In progress',
-  complete: 'Completed',
+  completed: 'Completed',
 }
 
 export const dashboardContent = {
@@ -87,6 +71,21 @@ export const dashboardContent = {
     openComplaints: { label: 'Open Complaints', description: 'By priority' },
     cleanUnpaid: { label: 'Clean Unpaid', description: 'Completed this month, not yet paid' },
     monthlyRevenue: { label: 'Monthly Revenue', description: 'Completed jobs this calendar month' },
+  },
+  /** GAP-025 KPI threshold alerts (alerts.kpiAlerts). */
+  kpiAlerts: {
+    title: 'KPI alerts',
+    metrics: {
+      strikes: 'Strikes',
+      damages: 'Damages',
+      upsells: 'Upsells',
+      revenuePerHour: 'Revenue per hour',
+      timeOnJobMinutes: 'Time on job (min)',
+    } as Record<string, string>,
+    operators: { GT: 'above', LT: 'below' } as Record<string, string>,
+    line: '{metric} {value}, {operator} the {threshold} threshold',
+    unknownTechnician: 'Technician',
+    open: 'View technician',
   },
   alerts: {
     skipped: { label: 'Needs review', description: 'Skipped today', action: 'Manage skipped jobs' },
@@ -138,13 +137,16 @@ export const dashboardContent = {
       openComplaints: 'Open Complaints',
       issues: 'Issues Raised',
       timeOnJob: 'Time on Job',
+      revenuePerHour: 'Revenue / Hour',
       strikes: 'Strikes',
       damages: 'Damages',
       upsells: 'Upsells',
       scopeAll: 'All technicians',
       requiresReview: 'Requires review',
       allClear: 'All clear',
-      notAvailable: 'Coming in a later phase',
+      /** `null` from the API = no timed visit in the period (GAP-025). */
+      noData: 'No timed visits in this period',
+      upsellValue: '{value} upsold',
     },
     charts: {
       rangeOptions: [
@@ -154,7 +156,8 @@ export const dashboardContent = {
       valueTitle: 'Value of Work Completed',
       issuesTitle: 'Issues Raised',
       revenueTitle: 'Revenue Per Hour',
-      revenueUnavailable: 'Revenue per hour needs time tracking — coming in a later phase.',
+      revenuePerHourValue: '{value} per hour across completed, timed visits in this range.',
+      revenueUnavailable: 'No timed visits in this range yet — revenue per hour appears once technicians start and complete jobs in the app.',
       noData: {
         badge: 'No data',
         title: 'No data yet',
@@ -174,54 +177,34 @@ export const dashboardContent = {
       skipped: 'Skipped',
       issues: 'Issues',
       value: 'Value',
-      eta: 'ETA',
     },
   },
   bulkMessageModal: {
     title: 'Bulk Message Round',
-    subtitle: 'Send SMS/WhatsApp to customers',
+    subtitle: 'Send SMS to the customers of a round',
     fields: {
       round: { label: 'Round' },
       template: { label: 'Message Template' },
       preview: { label: 'Message Preview' },
       excludeHold: { label: 'Exclude customers on payment hold' },
       sendOptions: { label: 'Send Options' },
+      sendAt: { label: 'Send at' },
     },
     sendOptions: [
       { id: 'now', label: 'Send now' },
       { id: 'schedule', label: 'Schedule' },
     ],
+    templatesLoading: 'Loading templates…',
+    noTemplates: 'No message templates yet — add one in Settings.',
+    variablesHint: 'Variables like {{firstName}} are filled in for each customer when the message is sent.',
+    scheduleInPast: 'Pick a time in the future.',
     actions: {
       cancel: 'Cancel',
+      done: 'Done',
       send: 'Send Message',
+      schedule: 'Schedule Message',
     },
-    creditPricePerSms: 0.1,
-    rounds: [
-      { id: 'alnwick-monday', label: 'Alnwick Monday', customerCount: 32, customersOnHold: 0 },
-      { id: 'alnwick-tuesday', label: 'Alnwick Tuesday', customerCount: 28, customersOnHold: 1 },
-      { id: 'morpeth-wednesday', label: 'Morpeth Wednesday', customerCount: 24, customersOnHold: 0 },
-      { id: 'bamburgh-tuesday', label: 'Bamburgh Tuesday', customerCount: 18, customersOnHold: 1 },
-    ] satisfies BulkMessageRoundOption[],
-    templates: [
-      {
-        id: 'weather-delay',
-        label: 'Weather Delay',
-        body: "Hi, due to adverse weather conditions, we've had to postpone today's window cleaning. We'll reschedule your appointment for the next available slot. Thanks for your understanding!",
-        smsCreditsPerCustomer: 1,
-      },
-      {
-        id: 'job-completed',
-        label: 'Job Completed',
-        body: 'Hi, your windows have been cleaned today. Thank you for your business!',
-        smsCreditsPerCustomer: 1,
-      },
-      {
-        id: 'payment-reminder',
-        label: 'Payment Reminder',
-        body: 'Hi, this is a friendly reminder that your window cleaning payment is due. Please contact us if you have any questions.',
-        smsCreditsPerCustomer: 1,
-      },
-    ] satisfies BulkMessageTemplateOption[],
+    result: { notMessaged: 'Not messaged' },
   },
   oneOffJobModal: {
     title: 'Add One-Off Job',
@@ -263,10 +246,3 @@ export const dashboardContent = {
   },
 } as const
 
-export const oneOffPaymentMethodLabels: Record<PaymentMethod, string> = {
-  GOCARDLESS: 'GoCardless',
-  STRIPE: 'Stripe (card)',
-  CASH: 'Cash',
-  BACS: 'Bank transfer (BACS)',
-  CHEQUE: 'Cheque',
-}

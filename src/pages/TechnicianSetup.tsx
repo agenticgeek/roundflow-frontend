@@ -103,6 +103,8 @@ export default function TechnicianSetup() {
     : previewQuery.data
 
   const [linkChecked, setLinkChecked] = useState(previewMode)
+  // The emailed link signed them in (the auth context's `session` can lag a render behind this).
+  const [linkSignedIn, setLinkSignedIn] = useState(false)
   const [linkState, setLinkState] = useState<LinkState>(() =>
     previewView === 'link-expired'
       ? 'expired'
@@ -128,6 +130,7 @@ export default function TechnicianSetup() {
     void sessionFromLink().then((result) => {
       if (!active) return
       if (result === 'expired') setLinkState('expired')
+      if (result === 'ok') setLinkSignedIn(true)
       setLinkChecked(true)
     })
     return () => {
@@ -209,37 +212,18 @@ export default function TechnicianSetup() {
     try {
       stashPendingInvite(token, name)
 
-      // Signed in from the invite email: save the password on that account, then join.
-      if (session?.access_token) {
-        const { error } = await supabase.auth.updateUser({ password, data: { full_name: name } })
-        if (error) throw error
-        await accept(session.access_token, name)
-        return
-      }
-
-      // No session (opened without the email link): try creating the account.
-      const { data, error } = await supabase.auth.signUp({
-        email: invite.email,
-        password,
-        options: {
-          data: { full_name: name, invite_token: token },
-          emailRedirectTo: `${window.location.origin}${ROUTES.technicianSetup}?token=${encodeURIComponent(token)}`,
-        },
-      })
-      const alreadyExists =
-        (error && /already registered|already been registered/i.test(error.message)) ||
-        (Boolean(data?.user) && (data?.user?.identities?.length ?? 0) === 0)
-      if (alreadyExists) {
-        // The invite email created the account — it needs that email's link to sign in.
+      // The invite email already created this account (no password yet) and signed them in through
+      // its link, so this only SETS the password. Never sign up: that account exists. The session is
+      // read from Supabase, not React state, which can lag a render behind the link sign-in.
+      const accessToken =
+        session?.access_token ?? (await supabase.auth.getSession()).data.session?.access_token
+      if (!accessToken) {
         setLinkState('needs-link')
         return
       }
+      const { error } = await supabase.auth.updateUser({ password, data: { full_name: name } })
       if (error) throw error
-      if (data.session?.access_token) {
-        await accept(data.session.access_token, name)
-        return
-      }
-      setLinkState('confirm-email')
+      await accept(accessToken, name)
     } catch (err) {
       if (err instanceof ApiError && err.status === 410) {
         setFormError(copy.states.used.title)
@@ -303,7 +287,11 @@ export default function TechnicianSetup() {
     return <SetupState icon="mail" title={state.title} body={fillCopy(state.body, { email: invite.email })} actionHref={ROUTES.login} actionLabel={copy.states.backToLogin} />
   }
 
-  if ((linkState === 'expired' || linkState === 'needs-link') && (!session || previewMode)) {
+  // Opened without the email link and not signed in: there is no one to set a password for, so ask
+  // for the link now instead of letting them type a password first.
+  const needsLinkUpFront = !previewMode && linkChecked && !session && !linkSignedIn && linkState === 'ok'
+
+  if (needsLinkUpFront || ((linkState === 'expired' || linkState === 'needs-link') && (!session || previewMode))) {
     const state = linkState === 'expired' ? copy.states.linkExpired : copy.states.needsLink
     return (
       <SetupState icon="mail" title={state.title} body={fillCopy(state.body, { email: invite.email })}>

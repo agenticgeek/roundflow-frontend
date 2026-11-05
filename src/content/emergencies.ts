@@ -89,7 +89,7 @@ export const emergenciesContent = {
       roundPlaceholder: 'Select round',
       remainingStops: 'Stops remaining',
       lastLocation: 'Last location (optional)',
-      lastLocationPlaceholder: 'e.g. High Street, Alnwick',
+      lastLocationPlaceholder: 'Last known location',
       windowEnd: 'Customer window ends (optional)',
       notes: 'What happened? (optional)',
       notesPlaceholder: 'e.g. Car broken down, cannot continue',

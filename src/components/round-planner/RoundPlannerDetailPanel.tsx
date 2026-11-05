@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { OnHoldChip } from '@/components/round-planner/OnHoldChip'
 import type { PlannerStop } from '@/api/rounds.api'
 import { plannerDayStatusLabels, roundPlannerContent } from '@/content/round-planner'
 import type { PlannerRoundCard } from '@/features/rounds/lib/planner'
@@ -7,6 +8,7 @@ import { useRoundOccurrenceDay } from '@/features/rounds/hooks/useRounds'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { MessageCustomersModal } from '@/components/round-planner/MessageCustomersModal'
 import { WeatherHoldModal } from '@/components/round-planner/WeatherHoldModal'
+import { RescheduleVisitModal } from '@/components/round-planner/RescheduleVisitModal'
 import { SidePanel } from '@/components/ui/side-panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
@@ -33,6 +35,7 @@ export function RoundPlannerDetailPanel({
   const { detailPanel } = roundPlannerContent
   const [messageOpen, setMessageOpen] = useState(false)
   const [weatherHoldOpen, setWeatherHoldOpen] = useState(false)
+  const [rescheduleStop, setRescheduleStop] = useState<PlannerStop | null>(null)
   const dayQuery = useRoundOccurrenceDay(card?.roundId ?? '', card?.date ?? '', Boolean(card))
 
   if (!card) return null
@@ -112,7 +115,13 @@ export function RoundPlannerDetailPanel({
           ) : (
             <ul className="mt-3 space-y-2">
               {stops.map((stop, index) => (
-                <StopCard key={stop.visitId} stop={stop} index={index + 1} currency={currency} />
+                <StopCard
+                  key={stop.visitId}
+                  stop={stop}
+                  index={index + 1}
+                  currency={currency}
+                  onReschedule={canMutate && stop.status === 'SKIPPED' ? () => setRescheduleStop(stop) : undefined}
+                />
               ))}
             </ul>
           )}
@@ -121,9 +130,16 @@ export function RoundPlannerDetailPanel({
 
       <MessageCustomersModal open={messageOpen} round={roundSummary} onClose={() => setMessageOpen(false)} />
 
+      <RescheduleVisitModal
+        open={rescheduleStop !== null}
+        visit={rescheduleStop}
+        onClose={() => setRescheduleStop(null)}
+      />
+
       <WeatherHoldModal
         open={weatherHoldOpen}
         round={roundSummary}
+        date={card.date}
         dateLabel={dateLabel}
         onClose={() => setWeatherHoldOpen(false)}
       />
@@ -147,7 +163,18 @@ function stopDotClass(stop: PlannerStop): string {
   return 'bg-primary'
 }
 
-function StopCard({ stop, index, currency }: { stop: PlannerStop; index: number; currency: string }) {
+function StopCard({
+  stop,
+  index,
+  currency,
+  onReschedule,
+}: {
+  stop: PlannerStop
+  index: number
+  currency: string
+  /** Only for skipped stops (e.g. after a manual weather hold). */
+  onReschedule?: () => void
+}) {
   return (
     <li className="relative rounded-xl bg-surface px-3 py-2.5 pr-8 shadow-sm">
       <span
@@ -158,7 +185,19 @@ function StopCard({ stop, index, currency }: { stop: PlannerStop; index: number;
         {index}. {stop.addressLine}
       </p>
       <p className="mt-0.5 text-xs text-muted">{stop.customerName}</p>
-      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(stop.price, currency)}</p>
+      <p className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
+        {formatCurrency(stop.price, currency)}
+        <OnHoldChip paymentHold={stop.paymentHold} />
+      </p>
+      {onReschedule ? (
+        <button
+          type="button"
+          onClick={onReschedule}
+          className="mt-1.5 text-xs font-semibold text-accent hover:opacity-80"
+        >
+          {roundPlannerContent.rescheduleModal.action}
+        </button>
+      ) : null}
     </li>
   )
 }

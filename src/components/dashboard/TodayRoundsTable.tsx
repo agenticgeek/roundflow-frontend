@@ -18,7 +18,6 @@ interface TodayRoundsTableProps {
     skipped: string
     issues: string
     value: string
-    eta: string
   }
   rows: readonly TodayRound[]
   loading?: boolean
@@ -27,7 +26,7 @@ interface TodayRoundsTableProps {
 }
 
 const statusClass: Record<TodayRound['status'], string> = {
-  complete: 'bg-success/10 text-success',
+  completed: 'bg-success/10 text-success',
   in_progress: 'bg-primary/10 text-primary',
   not_started: 'bg-surface text-muted',
 }
@@ -72,7 +71,6 @@ export function TodayRoundsTable({
               <th className="px-4 py-3">{columns.skipped}</th>
               <th className="px-4 py-3">{columns.issues}</th>
               <th className="px-4 py-3">{columns.value}</th>
-              <th className="px-4 py-3">{columns.eta}</th>
               <th className="px-4 py-3" aria-label="Open round" />
             </tr>
           </thead>
@@ -80,14 +78,14 @@ export function TodayRoundsTable({
             {loading ? (
               Array.from({ length: 3 }, (_, index) => (
                 <tr key={index}>
-                  <td colSpan={9} className="px-5 py-4">
+                  <td colSpan={8} className="px-5 py-4">
                     <Skeleton className="h-4 w-2/3" />
                   </td>
                 </tr>
               ))
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-5 py-10 text-center text-sm text-muted">
+                <td colSpan={8} className="px-5 py-10 text-center text-sm text-muted">
                   {emptyLabel}
                 </td>
               </tr>
@@ -114,7 +112,6 @@ export function TodayRoundsTable({
                     {row.issues}
                   </td>
                   <td className="px-4 py-4 font-semibold">{row.value}</td>
-                  <td className="px-4 py-4 text-muted">{row.eta}</td>
                   <td className="px-4 py-4">
                     <DashboardIcon name="chevron" className="h-4 w-4 text-muted" />
                   </td>

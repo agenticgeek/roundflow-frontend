@@ -10,6 +10,11 @@ import { propertyDetailContent } from '@/content/property-detail'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
 import { ChangeFrequencyModal } from '@/components/property-detail/ChangeFrequencyModal'
 import { EditCustomerRecordModal } from '@/components/property-detail/EditCustomerRecordModal'
+import { AddPropertyToCustomerModal } from '@/components/property-detail/AddPropertyToCustomerModal'
+import { RemoveRecordModal, type RemoveKind } from '@/components/property-detail/RemoveRecordModal'
+import { recordModalsContent } from '@/content/record-modals'
+import { CustomerInbox } from '@/components/property-detail/CustomerInbox'
+import { ServicesHistory } from '@/components/property-detail/ServicesHistory'
 import { PauseServiceModal } from '@/components/property-detail/PauseServiceModal'
 import { EditServicePlanModal } from '@/components/property-detail/EditServicePlanModal'
 import { SendPropertyMessageModal } from '@/components/property-detail/SendPropertyMessageModal'
@@ -18,8 +23,8 @@ import {
   PaymentsTab,
   VisitHistoryTab,
 } from '@/components/property-detail/PropertyDetailTabs'
-import { ComingSoonOverlay } from '@/components/ui/coming-soon'
-import { Skeleton } from '@/components/ui/skeleton'
+import { BadDebtBadge, BadDebtControl } from '@/components/property-detail/BadDebtControl'
+import { PropertyPhotosTab } from '@/components/property-detail/PropertyPhotosTab'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { useResumeProperty } from '@/features/properties/hooks/useProperties'
@@ -39,6 +44,8 @@ interface PropertyDetailScreenProps {
   customerRecord?: CustomerPropertyRecord | null
   customerId: string
   tabData?: PropertyDetailTabData | null
+  /** `customer.badDebt` from GET /customers/:id (GAP-022). */
+  badDebt?: boolean
   onBack: () => void
 }
 
@@ -55,6 +62,8 @@ const paymentStatusClass: Record<PropertyDetailRecord['paymentStatus'], string> 
   paid: 'text-success',
   hold: 'text-danger',
   pending: 'text-warning',
+  unpaid: 'text-warning',
+  none: 'text-muted',
 }
 
 const propertyDetailActionClass = cn(
@@ -73,6 +82,7 @@ export function PropertyDetailScreen({
   customerRecord = null,
   customerId,
   tabData = null,
+  badDebt = false,
   onBack,
 }: PropertyDetailScreenProps) {
   const [activeTab, setActiveTab] = useState<PropertyDetailTabId>('overview')
@@ -80,6 +90,8 @@ export function PropertyDetailScreen({
   const [editOpen, setEditOpen] = useState(false)
   const [frequencyOpen, setFrequencyOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
+  const [addPropertyOpen, setAddPropertyOpen] = useState(false)
+  const [removeKind, setRemoveKind] = useState<RemoveKind | null>(null)
   const [messageOpen, setMessageOpen] = useState(false)
   const { actions, assignment, statusLabels, paymentStatusLabels, summary, summaryCards, tabs } =
     propertyDetailContent
@@ -99,7 +111,9 @@ export function PropertyDetailScreen({
     property.planStatus === 'pending'
 
   const isActive = property.serviceStatus === 'active' && !isUnassigned
-  const isPaused = property.serviceStatus === 'paused'
+  const isPaused = property.serviceStatus === 'paused' || Boolean(property.planPaused)
+  // A payment hold replaces the status chip but must not hide pause/resume of the plan itself.
+  const canPause = !isPaused && !property.pauseScheduledFor && !isUnassigned && (isActive || property.serviceStatus === 'hold')
   const roundLabel =
     property.assignedRound !== '—' && property.assignedRound !== 'Not Assigned'
       ? property.assignedRound
@@ -167,29 +181,45 @@ export function PropertyDetailScreen({
           >
             {statusLabels[property.serviceStatus]}
           </span>
+          {badDebt ? <BadDebtBadge /> : null}
           {isActive && roundLabel !== '—' ? (
             <span className="inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               {roundLabel}
             </span>
           ) : null}
           <ActionButton icon="edit" label={actions.edit} onClick={() => setEditOpen(true)} />
-          {isActive ? (
+          {canPause ? (
             <button type="button" onClick={() => setPauseOpen(true)} className={propertyDetailOutlineActionClass}>
               <DashboardIcon name="pause" className="h-4 w-4" />
               {actions.pauseService}
             </button>
           ) : null}
-          {isPaused ? (
+          {isPaused || property.pauseScheduledFor ? (
             <button
               type="button"
               onClick={() => void handleResume()}
               disabled={!canMutate || resumeProperty.isPending}
               className={propertyDetailActionClass}
             >
-              Resume Service
+              {isPaused ? actions.resumeService : actions.cancelScheduledPause}
             </button>
           ) : null}
+          {property.pauseScheduledFor ? (
+            <span className="inline-flex rounded-full bg-warning-surface px-3 py-1 text-xs font-semibold text-warning-foreground">
+              {actions.pauseScheduled.replace('{date}', property.pauseScheduledFor)}
+            </span>
+          ) : null}
           <ActionButton icon="message" label={actions.sendMessage} onClick={() => setMessageOpen(true)} />
+          {canMutate ? (
+            <>
+              <ActionButton icon="plus" label={recordModalsContent.addProperty.button} onClick={() => setAddPropertyOpen(true)} />
+              <ActionButton icon="x-mark" label={recordModalsContent.remove.cancelProperty} onClick={() => setRemoveKind('property')} />
+              <ActionButton icon="x-mark" label={recordModalsContent.remove.cancelCustomer} onClick={() => setRemoveKind('customer')} />
+            </>
+          ) : null}
+          {canMutate ? (
+            <BadDebtControl customerId={customerId} customerName={property.customerName} badDebt={badDebt} />
+          ) : null}
         </div>
       </header>
 
@@ -302,7 +332,7 @@ export function PropertyDetailScreen({
               }
             />
           ) : activeTab === 'visit-history' ? (
-            <VisitHistoryTab property={property} visits={tabData?.visits} />
+            <VisitHistoryTab property={property} visits={tabData?.visits} customerId={customerId} />
           ) : activeTab === 'payments' ? (
             <PaymentsTab property={property} payments={tabData?.payments} />
           ) : activeTab === 'notes-risk' ? (
@@ -312,18 +342,13 @@ export function PropertyDetailScreen({
               customerId={customerId}
             />
           ) : activeTab === 'photos' ? (
-            <ComingSoonOverlay copy={propertyDetailContent.photosComingSoon} icon="home">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {Array.from({ length: 8 }, (_, index) => (
-                  <Skeleton key={index} className="aspect-square animate-none rounded-xl" />
-                ))}
-              </div>
-            </ComingSoonOverlay>
+            <PropertyPhotosTab propertyId={property.id} />
           ) : null}
         </div>
       </section>
 
       {activeTab === 'overview' ? <ContactInformationCard property={property} /> : null}
+      {activeTab === 'overview' && canMutate ? <CustomerInbox customerId={customerId} /> : null}
 
       <AssignToRoundModal open={assignOpen} record={customerRecord} onClose={() => setAssignOpen(false)} />
       <ChangeFrequencyModal
@@ -336,6 +361,22 @@ export function PropertyDetailScreen({
         property={property}
         customerId={customerId}
         onClose={() => setEditOpen(false)}
+      />
+      <AddPropertyToCustomerModal
+        open={addPropertyOpen}
+        customerId={customerId}
+        customerName={property.customerName}
+        onClose={() => setAddPropertyOpen(false)}
+      />
+      <RemoveRecordModal
+        kind={removeKind}
+        propertyId={property.id}
+        customerId={customerId}
+        customerName={property.customerName}
+        address={property.fullAddress}
+        outstandingBalance={property.outstandingBalance}
+        onClose={() => setRemoveKind(null)}
+        onRemoved={onBack}
       />
       <PauseServiceModal
         open={pauseOpen}
@@ -571,6 +612,7 @@ function ServicePlanTab({
       </dl>
 
       <ServicePlanList plans={property.servicePlans ?? []} actions={planActions} />
+      <ServicesHistory propertyId={property.id} />
     </>
   )
 }

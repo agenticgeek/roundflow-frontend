@@ -23,12 +23,15 @@ export interface TodaysWorkRound {
   skipped: number
   issues: number
   paymentHolds: number
+  /** Scheduled value of the day's stops (GAP-035). */
   value: string
+  /** Value of the stops completed so far. */
+  valueCompleted?: string
   eta: string
   jobs: TodaysWorkJob[]
 }
 
-export type TodaysWorkJobStatus = 'completed' | 'skipped' | 'scheduled' | 'in-progress'
+export type TodaysWorkJobStatus = 'completed' | 'skipped' | 'scheduled' | 'in-progress' | 'cancelled'
 
 export interface TodaysWorkJob {
   id: string
@@ -94,9 +97,12 @@ export const todaysWorkContent = {
     title: "Today's Work",
     subtitle: 'Monitor live round progress and technician activity',
     liveLabel: 'LIVE',
-    lastUpdated: 'Updated 18:10',
+    /** `{time}` = when the data was last fetched (GAP-035). */
+    lastUpdated: 'Updated {time}',
     refreshLabel: "Refresh today's work",
     closeDay: 'Close Day',
+    /** GAP-014 bulk invoicing. */
+    createInvoices: 'Create invoices for today',
   },
   filters: {
     search: {
@@ -119,6 +125,8 @@ export const todaysWorkContent = {
       eta: 'ETA',
       actions: 'Actions',
     },
+    /** Under the scheduled value (GAP-035). */
+    valueCompleted: '{value} done',
     emptyLabel: 'No rounds match the selected filters.',
     noVisitsToday: 'No visits scheduled for today.',
     noVisitsTodayHint:
@@ -133,6 +141,13 @@ export const todaysWorkContent = {
     scheduled: 'Scheduled',
   },
   detailPanel: {
+    assign: {
+      label: 'Assign this visit',
+      placeholder: 'Assign to…',
+      unassign: 'Unassigned',
+      assigned: 'Assigned to {name}',
+      unassigned: 'Visit unassigned',
+    },
     progress: 'Progress',
     progressMeta: '{completed}/{total} completed',
     summary: {
@@ -141,7 +156,8 @@ export const todaysWorkContent = {
       issues: 'Issues',
     },
     jobsTitle: 'Jobs',
-    paymentHold: 'Payment Hold',
+    /** The customer is on a payment hold (GAP-026). */
+    paymentHold: 'On hold',
     navigate: 'Navigate',
     actions: {
       reassignTechnician: 'Reassign Technician',
@@ -152,6 +168,40 @@ export const todaysWorkContent = {
       skipped: 'Skipped',
       scheduled: 'Scheduled',
       'in-progress': 'In progress',
+      cancelled: 'Cancelled',
+    },
+  },
+  /** GAP-014 "Create invoices for today": preview → confirm → result. */
+  bulkInvoices: {
+    title: 'Create invoices for today',
+    subtitle: 'Invoices for the day’s completed visits. Untick any you want to leave out.',
+    loading: 'Checking today’s visits…',
+    loadError: 'The preview could not be loaded.',
+    retry: 'Retry',
+    itemsTitle: 'To invoice',
+    noItems: 'No completed visits are waiting for an invoice.',
+    include: 'Include {customer}',
+    skippedTitle: 'Skipped',
+    skipReasons: {
+      ALREADY_INVOICED: 'Already invoiced',
+      NOT_COMPLETED: 'Not completed yet',
+      ON_HOLD: 'Customer on payment hold',
+    },
+    unknownCustomer: 'Customer',
+    totals: '{count} selected · {amount}',
+    confirmSummary: 'Create {count} invoices totalling {amount}?',
+    sendNow: 'Send now',
+    sendNowDescription: 'Send each invoice to the customer as soon as it is created.',
+    resultHeadline: '{count} invoices, {amount}',
+    resultFailed: '{count} failed',
+    createdNotSent: 'Invoice {invoice} created but not sent',
+    actions: {
+      cancel: 'Cancel',
+      continue: 'Continue',
+      back: 'Back',
+      create: 'Create invoices',
+      creating: 'Creating…',
+      done: 'Done',
     },
   },
   reassignTechnicianModal: {
@@ -184,15 +234,17 @@ export const todaysWorkContent = {
     },
     infoAlert:
       'The new technician will receive these jobs in their schedule. Completed jobs stay with the original technician when using remaining jobs only.',
-    technicianOptions: [
-      { value: 'james', label: 'James' },
-      { value: 'sarah', label: 'Sarah' },
-    ] satisfies TodaysWorkSelectOption[],
     actions: {
       cancel: 'Cancel',
       confirm: 'Reassign Jobs',
     },
     successToast: 'Technician reassigned successfully',
+    /** The round's visits have no technician yet, so there's nobody to reassign from (GAP-013). */
+    noTechnician: {
+      title: 'No technician assigned yet',
+      description: 'Reassigning moves jobs from one technician to another. Assign technicians to this round first.',
+      action: 'Assign technicians',
+    },
   },
   pushMissedJobsModal: {
     title: 'Push Missed Jobs',
@@ -238,14 +290,6 @@ export const todaysWorkContent = {
     subtitle: "Review today's summary and finalize",
     closingDateLabel: 'Closing: {date}',
     summaryTitle: "Today's Summary",
-    summaryCards: [
-      { id: 'completed', label: 'Completed Jobs', value: '5', tone: 'primary', icon: 'check-circle' },
-      { id: 'skipped', label: 'Skipped Jobs', value: '1', tone: 'warning', icon: 'x-circle' },
-      { id: 'outstanding', label: 'Outstanding', value: '7', tone: 'danger', icon: 'alert-circle' },
-      { id: 'issues', label: 'Issues', value: '2', tone: 'default' },
-      { id: 'payment-holds', label: 'Payment Holds', value: '2', tone: 'default' },
-      { id: 'revenue', label: 'Revenue', value: '£178', tone: 'default' },
-    ] satisfies CloseDaySummaryCard[],
     unfinishedJobs: {
       title: 'What to do with {count} unfinished jobs?',
       options: [
@@ -261,9 +305,6 @@ export const todaysWorkContent = {
         },
       ] satisfies CloseDayUnfinishedOption[],
       pushConfirmation: '→ {count} jobs added to {schedule} for {technician}',
-      pushSchedule: 'Tuesday 19 May',
-      technician: 'James',
-      count: 7,
     },
     alerts: {
       unfinished:
@@ -290,9 +331,6 @@ export const todaysWorkContent = {
         revenueEarned: 'Revenue earned',
         activeIssues: 'Active issues',
       },
-      completedToday: '1 job',
-      revenue: '£178',
-      activeIssues: '2 — require follow-up',
       infoTitle: 'What happens when you confirm?',
       infoItems: [
         'A close-of-day summary report will be generated',
