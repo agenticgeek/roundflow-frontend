@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
 import { isSetupDeferred } from '@/lib/setup-deferred'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useAuth } from '@/lib/auth'
+import { clearReturnTo, readReturnTo } from '@/lib/session-expiry'
 
 /** App is reachable when setup is done, deferred (skipped), or gate bypassed in dev. */
 function canAccessApp(setupCompleted: boolean, gateBypassed: boolean) {
@@ -13,9 +14,11 @@ function canAccessApp(setupCompleted: boolean, gateBypassed: boolean) {
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { session, loading: authLoading } = useAuth()
   const { ready, setupCompleted, gateBypassed, isTechnician } = useAppBootstrap()
+  const location = useLocation()
 
   if (authLoading || (session && !ready)) return null
-  if (!session) return <Navigate to={ROUTES.login} replace />
+  // `from` lets Login send the user back to the page they asked for (WEB-04).
+  if (!session) return <Navigate to={ROUTES.login} replace state={{ from: location }} />
   // The portal is ADMIN/MANAGER only — technicians work in the mobile app.
   if (isTechnician) return <Navigate to={ROUTES.technicianApp} replace />
   if (!canAccessApp(setupCompleted, gateBypassed)) {
@@ -36,7 +39,7 @@ export function IntegrationsReturnRoute({ children }: { children: ReactNode }) {
   const location = useLocation()
 
   if (authLoading || (session && !ready)) return null
-  if (!session) return <Navigate to={ROUTES.login} replace />
+  if (!session) return <Navigate to={ROUTES.login} replace state={{ from: location }} />
   if (isTechnician) return <Navigate to={ROUTES.technicianApp} replace />
   if (!canAccessApp(setupCompleted, gateBypassed)) {
     const params = new URLSearchParams(location.search)
@@ -54,9 +57,10 @@ export function IntegrationsReturnRoute({ children }: { children: ReactNode }) {
 export function StripeCallbackRoute({ children }: { children: ReactNode }) {
   const { session, loading: authLoading } = useAuth()
   const { ready, isTechnician } = useAppBootstrap()
+  const location = useLocation()
 
   if (authLoading || (session && !ready)) return null
-  if (!session) return <Navigate to={ROUTES.login} replace />
+  if (!session) return <Navigate to={ROUTES.login} replace state={{ from: location }} />
   if (isTechnician) return <Navigate to={ROUTES.technicianApp} replace />
 
   return <>{children}</>
@@ -77,16 +81,22 @@ export function TechnicianAppRoute({ children }: { children: ReactNode }) {
 export function GuestRoute({ children }: { children: ReactNode }) {
   const { session, loading: authLoading, justProvisioned } = useAuth()
   const { ready, setupCompleted, gateBypassed, isTechnician } = useAppBootstrap()
+  const location = useLocation()
+  const returnTo = readReturnTo(location.state)
+  // The saved deep link is single-use: forget it once a session is signed in.
+  useEffect(() => {
+    if (session) clearReturnTo()
+  }, [session])
 
   if (authLoading || (session && !ready)) return null
   if (session) {
     if (isTechnician) return <Navigate to={ROUTES.technicianApp} replace />
     // Fresh POST /auth/signup → always /setup; otherwise honor setup gate.
-    const destination =
-      justProvisioned || !canAccessApp(setupCompleted, gateBypassed)
-        ? ROUTES.setupWizard
-        : ROUTES.dashboard
-    return <Navigate to={destination} replace />
+    if (justProvisioned || !canAccessApp(setupCompleted, gateBypassed)) {
+      return <Navigate to={ROUTES.setupWizard} replace />
+    }
+    // Back to the page the user asked for before being sent to Login (WEB-04).
+    return <Navigate to={returnTo ?? ROUTES.dashboard} replace />
   }
 
   return <>{children}</>

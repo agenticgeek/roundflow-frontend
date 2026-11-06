@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import type { DeepLink } from '@/lib/deep-link'
 import type { RoundPlannerView } from '@/content/round-planner'
 import { roundPlannerContent } from '@/content/round-planner'
 import type { PlannerPeriod, PlannerStatusFilter } from '@/features/rounds/lib/planner'
@@ -10,19 +11,21 @@ export interface SelectedPlannerCard {
 }
 
 /** Round Planner UI state — round, period/anchor, filters, view mode, selection. Data lives in the screen. */
-export function useRoundPlannerInteractions() {
+export function useRoundPlannerInteractions(deepLink: DeepLink = {}) {
   const { defaults } = roundPlannerContent
+  // A link to a round, day or visit opens the List view on that day with the visit expanded.
+  const linked = Boolean(deepLink.round || deepLink.visitId || deepLink.date)
 
-  const [roundId, setRoundId] = useState<string>(defaults.roundId)
+  const [roundId, setRoundId] = useState<string>(deepLink.round ?? defaults.roundId)
   const [period, setPeriod] = useState<PlannerPeriod>(defaults.period)
-  const [anchorDate, setAnchorDate] = useState<string>(() => todayIsoDate())
+  const [anchorDate, setAnchorDate] = useState<string>(() => deepLink.date ?? todayIsoDate())
   const [technicianId, setTechnicianId] = useState<string>(defaults.technicianId)
   const [statusId, setStatusId] = useState<PlannerStatusFilter>(defaults.statusId)
-  const [view, setView] = useState<RoundPlannerView>(defaults.view)
+  const [view, setView] = useState<RoundPlannerView>(linked ? 'list' : defaults.view)
   const [search, setSearch] = useState<string>(defaults.search)
-  const [selectedDate, setSelectedDate] = useState<string>(() => todayIsoDate())
+  const [selectedDate, setSelectedDate] = useState<string>(() => deepLink.date ?? todayIsoDate())
   const [selectedCard, setSelectedCard] = useState<SelectedPlannerCard | null>(null)
-  const [expandedStopId, setExpandedStopId] = useState<string | null>(null)
+  const [expandedStopId, setExpandedStopId] = useState<string | null>(deepLink.visitId ?? null)
 
   const openRoundDetail = useCallback((card: SelectedPlannerCard) => {
     setSelectedCard(card)
@@ -73,6 +76,7 @@ export function useRoundPlannerInteractions() {
     closeRoundDetail,
     openDayIn,
     expandedStopId,
+    highlightVisitId: deepLink.visitId ?? null,
     toggleStop,
     goToToday,
   }

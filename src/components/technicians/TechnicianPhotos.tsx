@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { PhotoReviewStatus, PhotoRow } from '@/api/photos.api'
 import type { TechnicianRecord } from '@/content/technicians'
 import { techniciansContent } from '@/content/technicians'
@@ -36,6 +37,7 @@ export function TechnicianConversation({
   onApproveAll,
 }: TechnicianConversationProps) {
   const content = techniciansContent.conversation
+  const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [archiveOpen, setArchiveOpen] = useState(true)
@@ -89,7 +91,7 @@ export function TechnicianConversation({
         </button>
       </div>
       <div className={cn('grid gap-6', archiveOpen && 'xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,0.8fr)]')}>
-        <TechnicianChat technicianId={technician.id} />
+        <TechnicianChat technicianId={technician.id} initialRoundId={searchParams.get('round') ?? undefined} />
 
         {archiveOpen ? (
           <aside className="animate-slide-in-right rounded-xl border border-border bg-card p-4 shadow-sm">

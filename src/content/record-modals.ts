@@ -48,6 +48,8 @@ export const recordModalsContent = {
       '{address} will be cancelled and its service plan stopped. Upcoming visits are removed from rounds.',
     customerBody:
       '{customer} will be cancelled along with their properties and service plans. Upcoming visits are removed from rounds.',
+    unpaidInvoices: '{count} invoices are still unpaid, {total} in total. Mark them paid or void them first.',
+    unpaidInvoicesOne: '{count} invoice is still unpaid, {total} in total. Mark them paid or void them first.',
     unpaidWarning:
       'This customer has an unpaid balance of {amount}. Cancelling does not clear the debt — collect or write it off first if you need to.',
     keep: 'Keep',

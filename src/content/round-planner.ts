@@ -250,7 +250,7 @@ export const roundPlannerContent = {
       },
     ] satisfies RoundPlannerWeatherHoldOption[],
     scheduleInPast: 'Pick a time in the future.',
-    channels: ['SMS', 'WhatsApp'],
+    channels: ['Email', 'SMS', 'WhatsApp'],
     meta: {
       characters: '{count} characters',
     },
@@ -446,6 +446,24 @@ export const assignTechniciansContent = {
   saveFailed: '{rounds}: {error}',
   loadError: 'Could not load rounds.',
   retry: 'Retry',
+} as const
+
+/** FLOW-02: what saving a round's technicians did to its visits. `{count}`, `{date}` are filled in. */
+export const assignResultContent = {
+  title: 'What this did to the visits',
+  updated: '{count} upcoming visits now have this technician.',
+  updatedOne: '1 upcoming visit now has this technician.',
+  generated: '{count} new visits were created.',
+  generatedOne: '1 new visit was created.',
+  nextVisit: 'Next visit: {date}.',
+  overridden: '{count} visits you assigned by hand were left as they are.',
+  overriddenOne: '1 visit you assigned by hand was left as it is.',
+  noVisitsWarning:
+    'No visits exist yet for this round, so nothing shows in the technician’s app until the next visit is generated on {date}.',
+  noVisitsWarningNoDate:
+    'No visits exist yet for this round and none are due to be generated. Check that the round has properties with an active plan.',
+  toastNoVisitsMany: '{count} rounds have no visits yet, so nothing shows in the technicians’ apps for them.',
+  toastTotals: '{updated} visits updated, {generated} created.',
 } as const
 
 /**

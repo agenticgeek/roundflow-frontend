@@ -10,6 +10,7 @@ import type {
   RoundSettingsData,
 } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
+import { invoiceDetailsFromForm, invoiceDetailsToForm, type InvoiceDetailsForm } from '@/features/settings/lib/invoice-details'
 import { roundSettingsFromForm, roundSettingsToForm } from '@/features/setup/lib/mappers'
 import {
   noDirectDebitFromForm,
@@ -78,7 +79,7 @@ export type SettingsBusinessForm = {
   bankDetails: BankDetailsForm
 }
 
-export type SettingsPaymentForm = {
+export type SettingsPaymentForm = InvoiceDetailsForm & {
   defaultPaymentRule: string
   vatApplicable: boolean
   debtHoldEnabled: boolean
@@ -160,6 +161,7 @@ export function settingsPaymentToForm(
     invoiceDueDays:
       data?.invoiceDueDays != null ? String(data.invoiceDueDays) : wizardDefaults.invoiceDueDays,
     noDirectDebitAction: noDirectDebitToForm(data?.noDirectDebitAction, wizardDefaults.noDirectDebitAction),
+    ...invoiceDetailsToForm(data),
   }
 }
 
@@ -172,6 +174,7 @@ export function settingsPaymentFromForm(values: SettingsPaymentForm): PaymentSet
     acceptedPaymentMethods: values.acceptedPaymentMethods as PaymentMethod[],
     invoiceDueDays: Number(values.invoiceDueDays),
     noDirectDebitAction: noDirectDebitFromForm(values.noDirectDebitAction),
+    ...invoiceDetailsFromForm(values),
   }
 }
 

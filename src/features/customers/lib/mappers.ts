@@ -182,6 +182,12 @@ function servicePlanToRecord(
   }
 }
 
+/** The map-location fields of a property DTO, kept only when the API sent them (ACT-10). */
+function locationFields(property: CustomerDetail['property']): { latitude?: number | null; locationApproximate?: boolean } {
+  const { latitude, locationApproximate } = property ?? {}
+  return { latitude, locationApproximate: locationApproximate || undefined }
+}
+
 export function customerDetailToPropertyRecord(
   detail: CustomerDetail,
 ): PropertyDetailRecord | null {
@@ -205,6 +211,7 @@ export function customerDetailToPropertyRecord(
     customerName: customer.name ?? '—',
     shortAddress: addressLine || '—',
     fullAddress,
+    ...locationFields(property),
     serviceStatus: mapServiceStatus(property?.status, plan?.status, hasRound, onHold),
     roundLabel: property?.roundName ?? 'Not Assigned',
     propertyType: property?.propertyType ?? '—',

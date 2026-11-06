@@ -149,8 +149,8 @@ export function DebtBulkBar({ selected, onClear }: DebtBulkBarProps) {
               {result.results.map((row) => (
                 <li key={row.id} className="flex items-start justify-between gap-3">
                   <span className="text-foreground">{labelById.get(row.id) ?? row.id}</span>
-                  <span className={cn('text-right', row.ok ? 'text-success' : 'text-danger')}>
-                    {row.ok ? copy.resultOk : row.error}
+                  <span className={cn('text-right', row.ok ? 'text-success' : row.skipped ? 'text-muted' : 'text-danger')}>
+                    {row.ok ? copy.resultOk : row.skipped ? (copy.skipReasons[row.reason ?? ''] ?? copy.skipped) : row.error}
                   </span>
                 </li>
               ))}

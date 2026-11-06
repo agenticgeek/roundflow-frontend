@@ -71,6 +71,8 @@ export type PlannerOccurrencesBatchItem = {
 /** The batch endpoint accepts at most this many round ids per request. */
 export const PLANNER_BATCH_MAX_ROUNDS = 50
 
+type GeneratedStop = components['schemas']['PlannerStop']
+
 export type PlannerStop = {
   visitId: string
   propertyId: string
@@ -88,6 +90,12 @@ export type PlannerStop = {
   /** Geocoded backend-side from the postcode; `null` until the backfill job resolves it (~15 min). */
   latitude?: number | null
   longitude?: number | null
+  /** The stop's visit date (`YYYY-MM-DD`); set when stops are gathered across a week. */
+  date?: string
+  carriedOver?: GeneratedStop['carriedOver']
+  carriedOverFromDate?: GeneratedStop['carriedOverFromDate']
+  geocodePrecision?: GeneratedStop['geocodePrecision']
+  locationApproximate?: GeneratedStop['locationApproximate']
 }
 
 export type PlannerDayResult = {
@@ -120,6 +128,10 @@ export type RoundTodayStop = {
   /** `null` = no pin yet (not yet geocoded, or an unresolvable postcode). */
   latitude?: number | null
   longitude?: number | null
+  carriedOver?: GeneratedStop['carriedOver']
+  carriedOverFromDate?: GeneratedStop['carriedOverFromDate']
+  geocodePrecision?: GeneratedStop['geocodePrecision']
+  locationApproximate?: GeneratedStop['locationApproximate']
 }
 
 export type RoundTodayResult = {

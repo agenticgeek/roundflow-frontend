@@ -1,6 +1,7 @@
 import type { NavigateFunction } from 'react-router-dom'
 import type { Role } from '@/api/types'
 import { ROUTES } from '@/config/routes'
+import { friendlyApiMessage, referenceLine } from '@/lib/api-error-copy'
 import { useUiStore } from '@/stores/ui.store'
 
 export class ApiError extends Error {
@@ -11,14 +12,33 @@ export class ApiError extends Error {
     public readonly fields?: Record<string, string>,
     /** The parsed error response, for endpoints that return structured detail (e.g. per-row errors). */
     public readonly body?: unknown,
+    extra: { requestId?: string; retryAfterSeconds?: number } = {},
   ) {
     super(message)
     this.name = 'ApiError'
+    this.requestId = extra.requestId
+    this.retryAfterSeconds = extra.retryAfterSeconds
   }
+
+  /** `X-Request-Id` of the failed response, for support to trace. */
+  readonly requestId?: string
+  /** `Retry-After` of a 429, in seconds. */
+  readonly retryAfterSeconds?: number
 }
 
+/**
+ * What to show for a failed action: the friendly text for ADMIN_ONLY / RATE_LIMITED / PAYLOAD_TOO_LARGE,
+ * else the server's message, with "Reference: <id>" appended to a server error so support can trace it.
+ */
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+  if (!(error instanceof Error)) return 'Something went wrong. Please try again.'
+  if (error instanceof ApiError) {
+    const friendly = friendlyApiMessage(error)
+    if (friendly) return friendly
+    const reference = referenceLine(error)
+    if (reference) return `${error.message} ${reference}`
+  }
+  return error.message
 }
 
 export function handleForbidden(

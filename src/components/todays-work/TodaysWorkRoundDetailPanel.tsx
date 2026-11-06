@@ -1,8 +1,13 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { technicianConversationPath } from '@/config/routes'
+import { chatContent } from '@/content/chat'
 import { Select } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
 import { useTechnicians } from '@/features/settings/hooks/useSettings'
 import { settingsTechniciansToRows } from '@/features/settings/lib/mappers'
+import { useHighlightFocus } from '@/hooks/use-deep-link'
+import { carriedOverBadge } from '@/features/today/lib/carryover'
 import { useAssignVisit } from '@/features/visits/hooks/useVisits'
 import { errorMessage } from '@/lib/errors'
 import type { TodaysWorkJob, TodaysWorkRound } from '@/content/todays-work'
@@ -21,6 +26,8 @@ interface TodaysWorkRoundDetailPanelProps {
   onClose: () => void
   onReassignTechnician?: (roundId: string) => void
   onPushMissedJobs?: (roundId: string) => void
+  /** The visit a deep link points at: scrolled to and focused. */
+  highlightVisitId?: string | null
 }
 
 /** Select value that means "unassign this visit". */
@@ -47,6 +54,7 @@ export function TodaysWorkRoundDetailPanel({
   onClose,
   onReassignTechnician,
   onPushMissedJobs,
+  highlightVisitId = null,
 }: TodaysWorkRoundDetailPanelProps) {
   const { detailPanel, statusLabels } = todaysWorkContent
 
@@ -64,8 +72,17 @@ export function TodaysWorkRoundDetailPanel({
       widthClass="max-w-sm"
       bodyClassName="space-y-5"
       footer={
-        onReassignTechnician || onPushMissedJobs ? (
+        onReassignTechnician || onPushMissedJobs || round.technicianId ? (
           <div className="space-y-2">
+            {round.technicianId ? (
+              <Link
+                to={technicianConversationPath(round.technicianId, round.id)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium leading-none text-foreground transition-colors hover:bg-surface"
+              >
+                <DashboardIcon name="message" className="h-4 w-4" />
+                {chatContent.messageTechnician}
+              </Link>
+            ) : null}
             {onReassignTechnician ? (
               <button
                 type="button"
@@ -139,7 +156,7 @@ export function TodaysWorkRoundDetailPanel({
         ) : (
           <ul className="mt-3 space-y-2">
             {round.jobs.map((job) => (
-              <JobCard key={job.id} job={job} canAssign={Boolean(onReassignTechnician)} />
+              <JobCard key={job.id} job={job} canAssign={Boolean(onReassignTechnician)} highlighted={highlightVisitId === job.id} />
             ))}
           </ul>
         )}
@@ -213,11 +230,17 @@ function VisitAssign({ visitId }: { visitId: string }) {
   )
 }
 
-function JobCard({ job, canAssign }: { job: TodaysWorkJob; canAssign: boolean }) {
+function JobCard({ job, canAssign, highlighted }: { job: TodaysWorkJob; canAssign: boolean; highlighted: boolean }) {
   const { detailPanel } = todaysWorkContent
+  const itemRef = useHighlightFocus<HTMLLIElement>(highlighted)
 
   return (
-    <li className="rounded-xl border border-border bg-card px-3 py-3 shadow-sm">
+    <li
+      ref={itemRef}
+      tabIndex={highlighted ? -1 : undefined}
+      aria-current={highlighted ? 'true' : undefined}
+      className={cn('rounded-xl border border-border bg-card px-3 py-3 shadow-sm focus:outline-none', highlighted && 'ring-2 ring-primary')}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-foreground">{job.customer}</p>
@@ -241,6 +264,12 @@ function JobCard({ job, canAssign }: { job: TodaysWorkJob; canAssign: boolean })
           {detailPanel.jobStatusLabels[job.status]}
         </span>
       </div>
+
+      {job.carriedOver ? (
+        <p className="mt-2 inline-flex rounded-full bg-warning-surface px-2.5 py-0.5 text-xs font-semibold text-warning-foreground">
+          {carriedOverBadge(job.carriedOverFromDate)}
+        </p>
+      ) : null}
 
       {canAssign && job.status === 'scheduled' ? <VisitAssign visitId={job.id} /> : null}
 

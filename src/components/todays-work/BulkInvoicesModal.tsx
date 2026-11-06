@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import type { InvoiceBulkResult, SendChannel } from '@/api/invoices.api'
+import type { InvoiceBulkResult } from '@/api/invoices.api'
 import { ChannelPicker, MessagingErrorNotice } from '@/components/messaging/ChannelPicker'
+import { useChannelChoice } from '@/features/messaging/hooks/useChannels'
 import { Modal, ModalButton, ModalFooter, ModalToggleRow, modalInfoPanelClass } from '@/components/ui/modal'
 import { Skeleton } from '@/components/ui/skeleton'
 import { todaysWorkContent } from '@/content/todays-work'
@@ -28,7 +29,7 @@ export function BulkInvoicesModal({ date, onClose }: { date: string; onClose: ()
   const [step, setStep] = useState<Step>('preview')
   const [excluded, setExcluded] = useState<Set<string>>(() => new Set())
   const [sendNow, setSendNow] = useState(false)
-  const [channel, setChannel] = useState<SendChannel>('AUTO')
+  const [channel, setChannel] = useChannelChoice()
   const [result, setResult] = useState<InvoiceBulkResult | null>(null)
 
   const items = preview.data?.items ?? []

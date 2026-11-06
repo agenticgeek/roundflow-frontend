@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { ROUTES, propertyDetailPath } from '@/config/routes'
 import type { RoundPlannerView } from '@/content/round-planner'
 import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
+import { useDeepLink } from '@/hooks/use-deep-link'
 import { useRoundPlannerInteractions } from '@/hooks/use-round-planner-interactions'
 import { useToast } from '@/components/ui/toast'
 import { AppShell } from '@/components/app/AppShell'
@@ -23,7 +24,7 @@ export default function RoundPlanner() {
   const { showToast } = useToast()
   const [signingOut, setSigningOut] = useState(false)
   const quickActions = useAppQuickActions()
-  const interactions = useRoundPlannerInteractions()
+  const interactions = useRoundPlannerInteractions(useDeepLink())
 
   const { setView } = interactions
 

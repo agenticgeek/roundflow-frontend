@@ -107,6 +107,14 @@ export const routes: RouteObject[] = [
     element: <ProtectedRoute>{page(<Settings />)}</ProtectedRoute>,
   },
   {
+    path: ROUTES.settingsEmail,
+    element: <ProtectedRoute>{page(<Settings />)}</ProtectedRoute>,
+  },
+  {
+    path: ROUTES.settingsFailedMessages,
+    element: <ProtectedRoute>{page(<Settings />)}</ProtectedRoute>,
+  },
+  {
     // Stripe's OAuth return lands here — Settings opens on the Payment section, or the setup
     // wizard's Payments step when setup isn't finished yet.
     path: ROUTES.settingsIntegrations,

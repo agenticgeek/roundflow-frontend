@@ -14,18 +14,9 @@ export type TodayAggregate = Schemas['TodaysWorkAggregate']
 
 export type CloseDayUnfinishedAction = 'push_to_tomorrow' | 'mark_as_skipped'
 
-export type CloseDayInput = {
-  unfinishedAction: CloseDayUnfinishedAction
-}
+export type CloseDayInput = Omit<Schemas['CloseDayInput'], 'notifyCustomers'> & { notifyCustomers?: boolean }
 
-export type CloseDayResult = {
-  completedJobs: number
-  skippedJobs: number
-  outstanding: number
-  issues: number
-  paymentHolds: number
-  revenue: number
-}
+export type CloseDayResult = Schemas['CloseDaySummary']
 
 function jsonRequest(method: 'POST', body?: unknown): RequestInit {
   return {

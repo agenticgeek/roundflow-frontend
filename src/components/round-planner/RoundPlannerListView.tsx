@@ -7,6 +7,7 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { IconButton, PanelCard } from '@/components/dashboard/DashboardControls'
 import { dashboardRowHoverClass, dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useHighlightFocus } from '@/hooks/use-deep-link'
 import { cn, formatCurrency } from '@/lib/utils'
 
 interface RoundPlannerListViewProps {
@@ -18,6 +19,8 @@ interface RoundPlannerListViewProps {
   onPreviousDay: () => void
   onNextDay: () => void
   expandedStopId: string | null
+  /** The visit a deep link points at: scrolled to and focused. */
+  highlightVisitId?: string | null
   onToggleStop: (visitId: string) => void
   onViewDetails: (propertyId: string) => void
   onBulkMessage: () => void
@@ -51,6 +54,7 @@ export function RoundPlannerListView({
   onPreviousDay,
   onNextDay,
   expandedStopId,
+  highlightVisitId = null,
   onToggleStop,
   onViewDetails,
   onBulkMessage,
@@ -150,6 +154,7 @@ export function RoundPlannerListView({
                     stop={stop}
                     index={index}
                     expanded={expandedStopId === stop.visitId}
+                    highlighted={highlightVisitId === stop.visitId}
                     currency={currency}
                     onToggle={() => onToggleStop(stop.visitId)}
                     onViewDetails={onViewDetails}
@@ -168,6 +173,7 @@ function ListRow({
   stop,
   index,
   expanded,
+  highlighted,
   currency,
   onToggle,
   onViewDetails,
@@ -175,10 +181,12 @@ function ListRow({
   stop: PlannerListStop
   index: number
   expanded: boolean
+  highlighted: boolean
   currency: string
   onToggle: () => void
   onViewDetails: (propertyId: string) => void
 }) {
+  const rowRef = useHighlightFocus<HTMLTableRowElement>(highlighted)
   const { listView } = roundPlannerContent
   const { badges, details } = listView
   const status = visitStatus(stop.status)
@@ -187,11 +195,15 @@ function ListRow({
   return (
     <>
       <tr
+        ref={rowRef}
+        tabIndex={highlighted ? -1 : undefined}
+        aria-current={highlighted ? 'true' : undefined}
         onClick={onToggle}
         className={cn(
-          'cursor-pointer border-b border-border text-sm text-foreground',
+          'cursor-pointer border-b border-border text-sm text-foreground focus:outline-none',
           dashboardRowHoverClass,
           expanded && 'bg-primary/5',
+          highlighted && 'ring-2 ring-primary ring-inset',
         )}
       >
         <td className="px-4 py-4 sm:px-5">

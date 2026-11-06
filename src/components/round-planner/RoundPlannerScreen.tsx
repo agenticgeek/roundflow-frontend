@@ -366,6 +366,7 @@ export function RoundPlannerScreen({
             onPreviousDay={() => interactions.setSelectedDate(addDays(interactions.selectedDate, -1))}
             onNextDay={() => interactions.setSelectedDate(addDays(interactions.selectedDate, 1))}
             expandedStopId={interactions.expandedStopId}
+            highlightVisitId={interactions.highlightVisitId}
             onToggleStop={interactions.toggleStop}
             onViewDetails={onViewPropertyDetails ?? (() => undefined)}
             onBulkMessage={onBulkMessage ?? (() => undefined)}

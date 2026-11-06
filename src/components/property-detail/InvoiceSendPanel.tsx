@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import type { InvoiceRecord, SendChannel } from '@/api/invoices.api'
+import type { InvoiceRecord } from '@/api/invoices.api'
 import { MarkInvoicePaidModal } from '@/components/invoices/MarkInvoicePaidModal'
 import { ChannelPicker, MessagingErrorNotice } from '@/components/messaging/ChannelPicker'
+import { useChannelChoice } from '@/features/messaging/hooks/useChannels'
 import { ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { propertyDetailContent } from '@/content/property-detail'
@@ -23,7 +24,7 @@ export function InvoiceSendPanel({ invoice, customerName }: { invoice: InvoiceRe
   const copy = propertyDetailContent.sendInvoice
   const { showToast } = useToast()
   const send = useSendInvoiceVia()
-  const [channel, setChannel] = useState<SendChannel>('AUTO')
+  const [channel, setChannel] = useChannelChoice()
   const [error, setError] = useState<unknown>(null)
   const [markPaidOpen, setMarkPaidOpen] = useState(false)
   const alreadySent =

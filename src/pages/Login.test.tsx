@@ -39,4 +39,14 @@ describe('Login remember me', () => {
     await waitFor(() => expect(oauth).toHaveBeenCalled())
     expect(setRememberSession).toHaveBeenLastCalledWith(true)
   })
+
+  it('tells the user why they are here, once', () => {
+    sessionStorage.setItem('rf-session-expired', '1')
+    const first = renderWithProviders(<Login />)
+    expect(screen.getByRole('status')).toHaveTextContent('Your session expired')
+    expect(sessionStorage.getItem('rf-session-expired')).toBeNull()
+    first.unmount()
+    renderWithProviders(<Login />)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
 })

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageBulkResult } from '@/api/messages.api'
-import { futureIsoFromLocal, summariseBroadcast, unmessagedRecipients } from '@/features/messages/lib/broadcast-summary'
+import { RECIPIENT_STATUS_LABELS, futureIsoFromLocal, summariseBroadcast, unmessagedRecipients } from '@/features/messages/lib/broadcast-summary'
 
 const result = (over: Partial<MessageBulkResult> = {}): MessageBulkResult => ({
-  queued: 0, sent: 0, scheduled: 0, skippedOptedOut: 0, skippedNoContact: 0, failed: 0, scheduledFor: null, recipients: [], ...over,
+  queued: 0, sent: 0, scheduled: 0, skippedOptedOut: 0, skippedNoContact: 0, skippedNoChannel: 0, failed: 0, scheduledFor: null, recipients: [], ...over,
 })
 
 describe('summariseBroadcast', () => {
@@ -11,6 +11,11 @@ describe('summariseBroadcast', () => {
     expect(summariseBroadcast(result({ sent: 12, skippedOptedOut: 2, skippedNoContact: 3, failed: 1 }))).toBe(
       'Sent to 12 customers · 2 opted out · 3 with no contact details · 1 failed',
     )
+  })
+
+  it('counts customers with no usable channel, and labels every recipient status', () => {
+    expect(summariseBroadcast(result({ sent: 2, skippedNoChannel: 3 }))).toBe('Sent to 2 customers · 3 with no way to reach them')
+    expect(RECIPIENT_STATUS_LABELS.skipped_no_channel).toBe('No way to reach them (no email, or SMS is not set up)')
   })
 
   it('singularises and covers scheduled sends', () => {

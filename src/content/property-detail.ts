@@ -21,6 +21,10 @@ export interface PropertyDetailRecord {
   customerName: string
   shortAddress: string
   fullAddress: string
+  /** `null` = the address was looked up and not found; `undefined` = the API did not say (ACT-10). */
+  latitude?: number | null
+  /** The pin is only approximate (postcode centre or similar). */
+  locationApproximate?: boolean
   serviceStatus: PropertyServiceStatus
   roundLabel: string
   propertyType: string
@@ -91,7 +95,8 @@ export const NO_RISK_NOTES = 'No risk notes'
 /** `cancelled-paused`: cancelled because the plan was paused (A4) — the grey "Cancelled (paused)" chip. */
 export type VisitStatus = 'completed' | 'scheduled' | 'in-progress' | 'skipped' | 'cancelled' | 'cancelled-paused'
 
-export type VisitPaymentStatus = 'paid' | 'pending'
+/** `processing` = a direct debit the bank accepted but has not paid out yet. */
+export type VisitPaymentStatus = 'paid' | 'pending' | 'processing' | 'refunded' | 'disputed' | 'overdue' | 'failed'
 
 export type VisitInvoiceAction = 'generate' | 'sent' | 'draft'
 
@@ -139,6 +144,8 @@ export interface PropertyVisitRecord {
   price: string
   invoice: VisitInvoiceAction
   invoiceId?: string | null
+  /** How the technician collected payment on site (`BACS`, `CASH`, ...); null when not recorded. */
+  collectedVia?: string | null
 }
 
 export const propertyDetailContent = {
@@ -507,9 +514,15 @@ export const propertyDetailContent = {
       cancelled: 'cancelled',
       'cancelled-paused': 'cancelled (paused)',
     },
+    collectedVia: 'Collected via {method}',
     paymentLabels: {
       paid: 'paid',
       pending: 'pending',
+      processing: 'collecting',
+      refunded: 'refunded',
+      disputed: 'disputed',
+      overdue: 'overdue',
+      failed: 'failed',
     },
     invoiceActions: {
       generate: 'Generate',
@@ -593,6 +606,7 @@ export const propertyDetailContent = {
     defaultInvoiceNumber: 'INV-2026-217',
     successToast: 'Invoice generated and sent',
     draftToast: 'Invoice saved as draft',
+    emailFailedToast: 'Invoice saved as a draft. The email was not sent: {reason}',
     alreadyExists: 'This visit already has an invoice.',
     noEmailWarning: 'Add a customer email before sending this invoice.',
     previewToast: 'Invoice preview opened',

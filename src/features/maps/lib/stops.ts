@@ -49,7 +49,7 @@ export function stopsForDates(
     return rounds.flatMap((round) => {
       const result = day?.get(round.id)
       if (!result) return []
-      return result.stops.map((stop) => ({ ...stop, roundId: round.id, roundName: result.roundName || round.name }))
+      return result.stops.map((stop) => ({ ...stop, date, roundId: round.id, roundName: result.roundName || round.name }))
     })
   })
 }

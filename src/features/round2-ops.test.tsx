@@ -4,7 +4,6 @@ import { HttpResponse } from 'msw'
 import { QueryClient } from '@tanstack/react-query'
 import { chatApi, type ChatMessage } from '@/api/chat.api'
 import { ChatThreadView } from '@/components/chat/ChatThreadView'
-import { TechnicianChat } from '@/components/chat/TechnicianChat'
 import { DebtBulkBar } from '@/components/debt-payment/DebtBulkBar'
 import { CustomerInbox } from '@/components/property-detail/CustomerInbox'
 import { AppSidebarNav } from '@/components/app/AppSidebar'
@@ -57,6 +56,27 @@ describe('DebtBulkBar', () => {
     expect(body).toEqual({ ids: ['i1', 'i2'], action: 'remind', channel: 'AUTO' })
     expect(onClear).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Close' }))
+  })
+
+  it('shows a skipped customer as skipped (not an error), in words', async () => {
+    server.use(
+      on('post', '/debt/bulk' as never, () =>
+        HttpResponse.json({
+          action: 'remind', total: 3, succeeded: 0, failed: 0,
+          results: [
+            { id: 'i1', ok: false, skipped: true, reason: 'CUSTOMER_OPTED_OUT' },
+            { id: 'i2', ok: false, skipped: true, reason: 'NO_AVAILABLE_CHANNEL' },
+            { id: 'i3', ok: false, skipped: true, reason: 'SOMETHING_NEW' },
+          ],
+        }) as never,
+      ),
+    )
+    const { user } = renderWithProviders(<DebtBulkBar selected={selected} onClear={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: 'Send reminders' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(await screen.findByText('Skipped: opted out of messages')).toBeInTheDocument()
+    expect(screen.getByText('Skipped: no way to reach them')).toBeInTheDocument()
+    expect(screen.getByText('Skipped')).toBeInTheDocument()
   })
 
   it('puts on hold with a reason, then clears the selection when all succeed', async () => {
@@ -113,6 +133,16 @@ describe('single-visit assign (Today’s Work)', () => {
     await user.click(screen.getByRole('option', { name: 'Unassigned' }))
     expect(await screen.findByText('Visit unassigned')).toBeInTheDocument()
     expect(bodies).toEqual([{ technicianId: 't1' }, { technicianId: null }])
+  })
+
+  it('CHAT-01: links to a conversation with the technician, opened on this round', async () => {
+    server.use(on('get', '/settings/technicians', () => HttpResponse.json([] as never)))
+    const first = renderWithProviders(<TodaysWorkRoundDetailPanel round={{ ...(round as object), technicianId: 't1' } as never} onClose={vi.fn()} />)
+    expect(await screen.findByRole('link', { name: 'Message technician' })).toHaveAttribute('href', '/technicians/t1/conversation?round=r1')
+    first.unmount()
+    renderWithProviders(<TodaysWorkRoundDetailPanel round={round} onClose={vi.fn()} />)
+    expect(await screen.findByText('Alnwick Fri')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Message technician' })).not.toBeInTheDocument()
   })
 
   it('shows the server error inline', async () => {
@@ -227,39 +257,6 @@ describe('ChatThreadView', () => {
     server.use(on('get', '/chat/rounds/{roundId}/messages' as never, () => apiError(500, 'Chat down') as never))
     renderWithProviders(<ChatThreadView roundId="r1" roundName="Alnwick Fri" />)
     expect(await screen.findByText('Chat down')).toBeInTheDocument()
-  })
-})
-
-describe('TechnicianChat', () => {
-  const thread = (roundId: string, name: string, techId: string, unread: number) => ({
-    roundId, roundName: name, technicians: [{ id: techId, name: 'Sam', active: true }], lastMessage: null, unreadCount: unread,
-  })
-
-  it('shows only this technician’s rounds, with unread counts, and switches thread', async () => {
-    server.use(
-      on('get', '/chat/threads' as never, () => HttpResponse.json({ threads: [thread('r1', 'Alnwick Fri', 't1', 2), thread('r2', 'Amble Mon', 't1', 0), thread('r3', 'Other', 't9', 5)] })),
-      on('get', '/chat/rounds/{roundId}/messages' as never, ({ params }) =>
-        HttpResponse.json({ messages: [message({ id: `m-${String(params.roundId)}`, body: `hello ${String(params.roundId)}` })], hasMore: false }),
-      ),
-      on('post', '/chat/rounds/{roundId}/read' as never, () => HttpResponse.json({ roundId: 'x', lastReadAt: 'x' })),
-    )
-    const { user } = renderWithProviders(<TechnicianChat technicianId="t1" />)
-    expect(await screen.findByRole('tab', { name: /Alnwick Fri/ })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: /Other/ })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('2 unread')).toBeInTheDocument()
-    expect(await screen.findByText('hello r1')).toBeInTheDocument()
-    await user.click(screen.getByRole('tab', { name: /Amble Mon/ }))
-    expect(await screen.findByText('hello r2')).toBeInTheDocument()
-  })
-
-  it('explains when there is no chat yet, and when threads fail to load', async () => {
-    server.use(on('get', '/chat/threads' as never, () => HttpResponse.json({ threads: [] })))
-    const first = renderWithProviders(<TechnicianChat technicianId="t1" />)
-    expect(await screen.findByText(/No chat for this technician/)).toBeInTheDocument()
-    first.unmount()
-    server.use(on('get', '/chat/threads' as never, () => apiError(500, 'Threads down') as never))
-    renderWithProviders(<TechnicianChat technicianId="t1" />)
-    expect(await screen.findByText('Threads down')).toBeInTheDocument()
   })
 })
 

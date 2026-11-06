@@ -61,7 +61,7 @@ export interface paths {
         };
         /**
          * Readiness probe
-         * @description Unauthenticated. 503 `{ status: "migrating" }` until tenant migrations finish, then 200 `{ status: "ready" }`. A migration failure exits the process.
+         * @description Unauthenticated. 503 `{ status: "migrating" }` until tenant migrations finish; then the database is pinged (503 `{ status: "database_unavailable" }` when it does not answer in 3 s). 200 `{ status: "ready"|"degraded", failedTenantMigrations }`: `degraded` means at least one tenant schema failed its startup migration (the count is reported, the names are in the server log). A global migration failure exits the process.
          */
         get: {
             parameters: {
@@ -72,7 +72,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Ready. */
+                /** @description Ready (or degraded). */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -80,17 +80,21 @@ export interface paths {
                     content: {
                         "application/json": {
                             /** @enum {string} */
-                            status: "ready";
+                            status: "ready" | "degraded";
+                            failedTenantMigrations: number;
                         };
                     };
                 };
-                /** @description Tenant migrations still running. */
+                /** @description Migrating, or the database is unreachable. */
                 503: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["HealthMigrating"];
+                        "application/json": {
+                            /** @enum {string} */
+                            status: "migrating" | "database_unavailable";
+                        };
                     };
                 };
             };
@@ -372,6 +376,7 @@ export interface paths {
                 };
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
+                429: components["responses"]["TooManyRequests"];
             };
         };
         delete?: never;
@@ -538,13 +543,17 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description BusinessSettings (or null). */
+                /** @description BusinessSettings (or null) plus `channels`: what can be sent right now (email native via SES; sms/whatsapp only with GoHighLevel connected; calls = tel: links, always true). */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["BusinessSettings"] | null;
+                        "application/json": {
+                            channels?: components["schemas"]["Channels"];
+                        } & {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 401: components["responses"]["Unauthorized"];
@@ -2355,7 +2364,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -3178,7 +3190,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -3217,7 +3232,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description GoHighLevel is not connected (code GHL_NOT_CONNECTED). */
+                /** @description CHANNEL_UNAVAILABLE with `reason`: GHL_NOT_CONNECTED (SMS/WhatsApp need GoHighLevel), EMAIL_NOT_CONFIGURED, EMAIL_TURNED_OFF, EMAIL_PAUSED, EMAIL_DAILY_LIMIT, EMAIL_ADDRESS_INVALID or NO_AVAILABLE_CHANNEL; or CUSTOMER_OPTED_OUT. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -3226,7 +3241,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description GHL rejected the message (code GHL_SEND_FAILED). */
+                /** @description GHL rejected the message (code GHL_SEND_FAILED) or the email provider failed (code EMAIL_SEND_FAILED). */
                 502: {
                     headers: {
                         [name: string]: unknown;
@@ -3306,7 +3321,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -4086,7 +4104,7 @@ export interface paths {
         };
         /**
          * CSV export
-         * @description Unlike /reports/visits and /reports/technicians, this always exports the FULL (unpaginated) result set for the period — every row, not just the UI's current page — as `text/csv`. `type=revenue` exports the same rows as GET /reports/revenue.
+         * @description String cells that start with `=`, `+`, `-`, `@`, tab or CR are prefixed with a single quote so spreadsheets do not evaluate them (CSV formula injection). `type` outside the enum is 400 `INVALID_EXPORT_TYPE`. Unlike /reports/visits and /reports/technicians, this always exports the FULL (unpaginated) result set for the period — every row, not just the UI's current page — as `text/csv`. `type=revenue` exports the same rows as GET /reports/revenue.
          */
         get: {
             parameters: {
@@ -4110,6 +4128,15 @@ export interface paths {
                     };
                     content: {
                         "text/csv": string;
+                    };
+                };
+                /** @description Unknown `type` (code `INVALID_EXPORT_TYPE`). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
                 401: components["responses"]["Unauthorized"];
@@ -4176,7 +4203,7 @@ export interface paths {
         put?: never;
         /**
          * Close Operational Day (M21)
-         * @description `unfinishedAction: "push_to_tomorrow"` moves every still-SCHEDULED/IN_PROGRESS visit to the next working day (Mon–Fri, skipping weekends) and resets IN_PROGRESS back to SCHEDULED; `"mark_as_skipped"` marks them SKIPPED in place. 409 if the day is already closed, or if BusinessSettings hasn't been configured yet.
+         * @description `unfinishedAction: "push_to_tomorrow"` carries every still-SCHEDULED/IN_PROGRESS visit to the next working day (BusinessSettings.defaultWorkingDays, Mon–Fri when unset; on a Friday pass `target` SATURDAY or MONDAY, default Monday) through the same service as POST /visits/carryover (back to SCHEDULED, start/arrival and reminder markers reset, queued reminders cancelled, carriedOverFromDate/carryoverCount recorded, technicians notified); `"mark_as_skipped"` marks them SKIPPED in place. 409 if the day is already closed, or if BusinessSettings hasn't been configured yet.
          */
         post: {
             parameters: {
@@ -4358,7 +4385,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    status?: components["schemas"]["InvoiceStatus"];
+                    status?: "DRAFT" | "SENT" | "PAID" | "VOID" | "OVERDUE";
                     from?: string;
                     to?: string;
                     customerId?: string;
@@ -4397,7 +4424,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -4459,7 +4489,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    status?: components["schemas"]["InvoiceStatus"];
+                    status?: "DRAFT" | "SENT" | "PAID" | "VOID" | "OVERDUE";
                     from?: string;
                     to?: string;
                     customerId?: string;
@@ -4601,6 +4631,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/invoices/bulk-send/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview "Send all" (ACT-01)
+         * @description What a bulk send would do: counts by channel and by skip reason. Nothing is queued. Default selection: DRAFT invoices. 400 `INVALID_BATCH_SIZE` for more than 500 ids.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InvoiceBulkSendInput"];
+                };
+            };
+            responses: {
+                /** @description Preview. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoiceBulkSendPreview"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/bulk-send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send many invoices (ACT-01) — queued, not sent in the request
+         * @description Queues one `invoice.send` outbox row per sendable invoice (idempotent per invoice: a double click queues once, the repeat is skipped as ALREADY_QUEUED). The worker sends through GHL; an invoice flips to SENT only after the provider accepts. Poll GET /invoices/bulk-send/{batchId}. Max 500 per batch.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InvoiceBulkSendInput"];
+                };
+            };
+            responses: {
+                /** @description Queued. */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoiceBulkSendQueued"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments": {
         parameters: {
             query?: never;
@@ -4711,12 +4833,15 @@ export interface paths {
         put?: never;
         /**
          * Create a one-time Stripe Checkout session for an invoice
-         * @description Returns the existing PENDING session's URL (200) instead of creating a duplicate if one already exists for this invoice; otherwise creates a new one (201). 400 if Stripe isn't connected. 409 if the invoice is already PAID or VOID.
+         * @description Returns the existing PENDING session's URL (200) instead of creating a duplicate if a still-open session exists for this invoice (a PENDING session whose `expiresAt` has passed is skipped and a new one is created, 201). The Stripe request carries an idempotency key (the caller's `Idempotency-Key`, else invoice + amount + attempt) so a retry cannot mint a second session. 400 if Stripe isn't connected. 409 if the invoice is already PAID or VOID.
          */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -5803,6 +5928,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/visits/carryover/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Carryover options for a day (ACT-02..04)
+         * @description Where the unfinished visits of `date` can go. Friday: always Saturday and Monday (Monday default). Other days: the next working day (BusinessSettings.defaultWorkingDays; Mon–Fri when unset).
+         */
+        get: {
+            parameters: {
+                query: {
+                    date: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Options. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CarryoverOptions"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/visits/carryover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Carry unfinished visits to a later working day (ACT-02..04)
+         * @description Moves the SCHEDULED/IN_PROGRESS visits of `date` (or `visitIds`) to the `target` day: back to SCHEDULED, startedAt/arrivedAt cleared, reminder markers reset, queued pre-clean messages for the old date cancelled, `carriedOverFromDate`/`carryoverCount` recorded, VISITS_CARRIED_OVER activity logged, technicians notified (SCHEDULE notification). `dryRun` previews moves and technician conflicts. 400 `INVALID_CARRYOVER_TARGET` (key not offered for `date`) or `CARRYOVER_TARGET_IN_PAST`; 409 `CARRYOVER_TARGET_CLOSED` (the target day was already closed).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CarryoverInput"];
+                };
+            };
+            responses: {
+                /** @description Carryover result. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CarryoverResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/debt/bulk": {
         parameters: {
             query?: never;
@@ -5933,7 +6149,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -5958,6 +6177,201 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin/manager notification feed (NOTIF-02)
+         * @description The signed-in ADMIN/MANAGER's own notifications, newest first, 30 per page (`?cursor=` = the previous `nextCursor`). Same table as `/mobile/notifications`; rows are never shared between profiles.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description A page of notifications. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminNotificationPage"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unread notification count (header bell) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Count. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            unreadCount: number;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List dead or failed integration outbox rows
+         * @description ADMIN only (a MANAGER gets 403 `ADMIN_ONLY`). `?status=dead` (default) or `failed`, newest first, `page`/`pageSize` (default 1/50, max 100). Rows go `dead` after 6 failed attempts (retries back off 30 s, 2 min, 10 min, 1 h, 6 h) or immediately for an unknown event type; the office is notified (type INTEGRATION). The payload is never returned (it can hold message text); `customerId` is.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "dead" | "failed";
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page of rows. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            rows: {
+                                id: string;
+                                /** @example message.send */
+                                eventType: string;
+                                /** @enum {string} */
+                                status: "dead" | "failed";
+                                attempts: number;
+                                lastError?: string | null;
+                                customerId?: string | null;
+                                batchId?: string | null;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                processedAt?: string | null;
+                            }[];
+                            pagination: components["schemas"]["Pagination"];
+                        };
+                    };
+                };
+                /** @description `status` is not dead or failed (code INVALID_STATUS). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark all of the caller's notifications read */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Done. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            ok: true;
+                        };
+                    };
+                };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
             };
@@ -6222,6 +6636,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
+                429: components["responses"]["TooManyRequests"];
                 /** @description The event could not be recorded or processed (Stripe will retry). */
                 500: {
                     headers: {
@@ -6304,6 +6719,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
+                429: components["responses"]["TooManyRequests"];
             };
         };
         delete?: never;
@@ -6361,6 +6777,521 @@ export interface paths {
                 };
                 /** @description tenantId/secret missing, unknown tenant, GHL not connected, or secret mismatch. */
                 401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                429: components["responses"]["TooManyRequests"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Email and branding settings
+         * @description ADMIN or MANAGER. Sender identity, reply-to, on/off and pause state, daily cap, brand colour (+ contrast check), logo (signed URL + alt text), health counters over the last 100 emails, the current sender preview, the sending-domain state and the channel capabilities.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Email settings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmailSettings"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update email identity and branding (ADMIN only)
+         * @description Any of `emailSenderName`, `emailReplyTo`, `emailSenderLocalPart`, `emailEnabled`, `emailDailyLimit` (1-100000 or null), `brandColour` (#RRGGBB or null), `logoAltText`, `emailPaused` (false resumes email after an automatic pause). Names and addresses are validated against header injection (no line breaks, quotes, < > ; @, 70 chars). A brand colour that fails 4.5:1 as text on white is saved and returned with a `warning` plus safe `textColour`/`safeAccentColour`. 400 codes: INVALID_EMAIL_SENDER_NAME, INVALID_EMAIL_ADDRESS, INVALID_EMAIL_LOCAL_PART, INVALID_BRAND_COLOUR, INVALID_EMAIL_DAILY_LIMIT, VALIDATION_FAILED.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        emailSenderName?: string | null;
+                        emailReplyTo?: string | null;
+                        emailSenderLocalPart?: string | null;
+                        emailEnabled?: boolean;
+                        emailDailyLimit?: number | null;
+                        brandColour?: string | null;
+                        logoAltText?: string | null;
+                        emailPaused?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated view. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmailSettings"];
+                    };
+                };
+                /** @description Validation failed (see code). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        trace?: never;
+    };
+    "/settings/email/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test email to myself (ADMIN only)
+         * @description Sends a branded test email from the tenant's current sender to the signed-in admin's address.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sent. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            sent: true;
+                            from: string;
+                            /** @enum {integer} */
+                            tier: 1 | 2;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description CHANNEL_UNAVAILABLE (email not configured, turned off, paused or at its daily cap). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Email provider failed (code EMAIL_SEND_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/email/domain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sending-domain status (ADMIN only)
+         * @description Polls SES for the tenant's sending domain and updates the stored status (NONE, PENDING, VERIFIED, FAILED). A nightly job re-checks every domain.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Domain state. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmailDomain"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description CHANNEL_UNAVAILABLE (SES not configured). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description SES failed (code EMAIL_DOMAIN_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Start sending-domain verification (ADMIN only)
+         * @description Creates an SES email identity with Easy DKIM and returns the 3 DKIM CNAME records to add to DNS. Until the status is VERIFIED the tenant keeps sending from the shared address (tier 1). Refused: free-mail domains (400 FREE_MAIL_DOMAIN), RoundFlow/AWS domains (RESERVED_EMAIL_DOMAIN), malformed names (INVALID_EMAIL_DOMAIN), bad local part (INVALID_EMAIL_LOCAL_PART). 409 EMAIL_DOMAIN_IN_USE when another business registered it.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @example sparkle-windows.co.uk */
+                        domain: string;
+                        /** @example accounts */
+                        localPart?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Domain state with DNS records. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmailDomain"];
+                    };
+                };
+                /** @description FREE_MAIL_DOMAIN, RESERVED_EMAIL_DOMAIN, INVALID_EMAIL_DOMAIN or INVALID_EMAIL_LOCAL_PART. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description EMAIL_DOMAIN_IN_USE, or CHANNEL_UNAVAILABLE when SES is not configured. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description SES failed (code EMAIL_DOMAIN_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        /**
+         * Remove the sending domain (ADMIN only)
+         * @description Deletes the SES identity and returns the tenant to the shared sender (tier 1).
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Cleared domain state. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmailDomain"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description SES failed (code EMAIL_DOMAIN_FAILED). */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/email/logo/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signed upload URL for the logo (ADMIN only)
+         * @description PNG, JPEG or WebP only (no SVG). Upload the file with the returned URL, then attach it with PUT /settings/email/logo. Stored in the private bucket under `<tenantId>/branding/`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        mimeType: "image/png" | "image/jpeg" | "image/webp";
+                    };
+                };
+            };
+            responses: {
+                /** @description Upload target. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            signedUrl: string;
+                            token: string;
+                            path: string;
+                        };
+                    };
+                };
+                /** @description INVALID_LOGO_TYPE. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/email/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Attach the uploaded logo (ADMIN only)
+         * @description `path` must be inside this tenant's `branding/` folder (400 INVALID_LOGO_PATH). `altText` (max 125 chars) is used as the image alt text in emails and PDFs.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        path: string;
+                        altText?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated view. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmailSettings"];
+                    };
+                };
+                /** @description INVALID_LOGO_PATH or VALIDATION_FAILED. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        post?: never;
+        /** Remove the logo (ADMIN only) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Updated view. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmailSettings"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/ses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Amazon SNS delivery of SES events
+         * @description SES configuration set -> SNS topic -> this URL (HTTPS subscription, raw message delivery OFF). Every message is authenticated by its SNS signature (certificate must be on sns.<region>.amazonaws.com); `SES_SNS_TOPIC_ARN` optionally pins the topic. SubscriptionConfirmation is confirmed automatically. Notifications map the `tenantId` message tag to the tenant: Delivery -> DELIVERED, Bounce -> BOUNCED (Permanent flags the customer's email invalid), Complaint -> COMPLAINED (flags the email invalid); above 0.3% complaints or 5% bounces over the last 100 sends the tenant's email is paused and the admins notified. Idempotent through the WebhookEvent status machine; a failed effect answers 500 so SNS redelivers.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Acknowledged (also for events that cannot be attributed to a tenant). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Body is not valid JSON. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description SNS signature invalid, certificate URL untrusted, or wrong topic. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                429: components["responses"]["TooManyRequests"];
+                /** @description Processing failed; SNS will redeliver. */
+                500: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -6481,6 +7412,7 @@ export interface paths {
                 };
                 404: components["responses"]["NotFound"];
                 410: components["responses"]["Gone"];
+                429: components["responses"]["TooManyRequests"];
             };
         };
         put?: never;
@@ -6599,6 +7531,7 @@ export interface paths {
                 };
                 404: components["responses"]["NotFound"];
                 410: components["responses"]["Gone"];
+                429: components["responses"]["TooManyRequests"];
             };
         };
         delete?: never;
@@ -6940,7 +7873,10 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Soft-delete customer (status → CANCELLED, cascades to properties) */
+        /**
+         * Soft-delete customer (status → CANCELLED, cascades to properties)
+         * @description B5: 409 `UNPAID_INVOICES` (with `count` and `total` of the SENT invoices) while the customer has unpaid invoices; allowed once they are paid or void.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -6962,6 +7898,15 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                /** @description UNPAID_INVOICES: the customer has unpaid invoices. Body also carries `count` and `total`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
@@ -7399,7 +8344,10 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Soft-delete property (status → CANCELLED, cancels service plan) */
+        /**
+         * Soft-delete property (status → CANCELLED, cancels service plan)
+         * @description B5: 409 `UNPAID_INVOICES` (with `count` and `total`) while a visit of the property has an unpaid (SENT) invoice.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -7421,6 +8369,15 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                /** @description UNPAID_INVOICES: the property has unpaid invoices. Body also carries `count` and `total`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
@@ -8531,7 +9488,7 @@ export interface paths {
         get?: never;
         /**
          * Replace the round's technicians and split its properties (A1 / GAP-012)
-         * @description Full replace semantics — send the complete list you want to keep (empty array clears). Every id must reference an active, invite-accepted technician (400 otherwise); unknown ids 404. `split.mode`: SINGLE (exactly one technician, 400 otherwise), AUTO (balanced by plan value), MANUAL (`allocations` of `{ propertyId, technicianId }`). Omitted = SINGLE for one technician, AUTO for more. Future SCHEDULED visits are restamped (except manually-overridden ones). `?dryRun=true` returns the same response without saving anything. BREAKING: the response is `{ roundId, allocation, visitsUpdated }` (was the RoundDetail). An invalid MANUAL allocation is 400 `INVALID_ALLOCATION` with a per-property `fields` map.
+         * @description Full replace semantics — send the complete list you want to keep (empty array clears). Every id must reference an active, invite-accepted technician (400 otherwise); unknown ids 404. `split.mode`: SINGLE (exactly one technician, 400 otherwise), AUTO (balanced by plan value), MANUAL (`allocations` of `{ propertyId, technicianId }`). Omitted = SINGLE for one technician, AUTO for more. Future SCHEDULED visits are restamped (except manually-overridden ones), then any due visits for the (ACTIVE) round are generated now and stamped with the new technicians (FLOW-01); the response reports `visitsGenerated`, `overriddenVisits` and `nextVisitDate`. Newly assigned technicians get a SCHEDULE notification ("N visits assigned to you") and removed ones a ROUND_UPDATE notification, best-effort, only on a real save. `?dryRun=true` returns the same response without saving or generating anything (and sends no notifications). BREAKING: the response is `{ roundId, allocation, visitsUpdated, visitsGenerated, overriddenVisits, nextVisitDate }` (was the RoundDetail). An invalid MANUAL allocation is 400 `INVALID_ALLOCATION` with a per-property `fields` map.
          */
         put: {
             parameters: {
@@ -9669,7 +10626,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
-                /** @description GHL is not connected (code GHL_NOT_CONNECTED). */
+                /** @description CHANNEL_UNAVAILABLE with `reason` (GHL_NOT_CONNECTED for SMS/WhatsApp, EMAIL_* for email, NO_AVAILABLE_CHANNEL) or CUSTOMER_OPTED_OUT. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -9678,7 +10635,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description GHL rejected the message (code GHL_SEND_FAILED). */
+                /** @description GHL rejected the message (GHL_SEND_FAILED) or the email provider failed (EMAIL_SEND_FAILED). */
                 502: {
                     headers: {
                         [name: string]: unknown;
@@ -9748,7 +10705,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
-                /** @description STRIPE_NOT_CONNECTED, GHL_NOT_CONNECTED, or INVOICE_NOT_PAYABLE (PAID/VOID). */
+                /** @description STRIPE_NOT_CONNECTED, CHANNEL_UNAVAILABLE (see `reason`), or INVOICE_NOT_PAYABLE (PAID/VOID). */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -9986,6 +10943,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/invoices/bulk-send/{batchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        /** Per-invoice results of a bulk send (ACT-01) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    batchId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Batch results. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvoiceBulkSendBatch"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/invoices/{id}/send": {
         parameters: {
             query?: never;
@@ -10045,7 +11045,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
-                /** @description INVOICE_ALREADY_SENT (send again with resend: true), INVOICE_NOT_SENDABLE (PAID/VOID), or GHL_NOT_CONNECTED. */
+                /** @description INVOICE_ALREADY_SENT (send again with resend: true), INVOICE_NOT_SENDABLE (PAID/VOID), or CHANNEL_UNAVAILABLE (see `reason`). */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -10902,7 +11902,7 @@ export interface paths {
         head?: never;
         /**
          * Complete a visit and create its Payment
-         * @description Same shared completion service as PATCH /visits/{id}/complete (D-2): `payment` { method: CASH | CHEQUE | NONE, amount?, chequeNumber? } is validated before anything is written, then visit + Payment + events are written in one transaction. CHEQUE stores `chequeNumber` on Payment.reference (PENDING). Optional `note` (≤2000 chars) is saved on the visit. Queues GHL `visit.completed` and (unless opted out) the visit-completed customer message. Already-COMPLETED returns `payment: null`; SKIPPED/CANCELLED → 409.
+         * @description Same shared completion service as PATCH /visits/{id}/complete (D-2): `payment` { method: CASH | CHEQUE | BACS | GOCARDLESS | STRIPE | NONE, amount?, chequeNumber?, collectVia?, updateCustomerDefault? } is validated before anything is written, then visit + Payment + events are written in one transaction. CHEQUE stores `chequeNumber` on Payment.reference (PENDING). Optional `note` (≤2000 chars) is saved on the visit. Queues GHL `visit.completed` and (unless opted out) the visit-completed customer message. Already-COMPLETED returns `payment: null`; SKIPPED/CANCELLED → 409.
          */
         patch: {
             parameters: {
@@ -11217,7 +12217,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record an uploaded photo */
+        /**
+         * Record an uploaded photo
+         * @description `url` (or its alias `path`) must be a storage path from `POST /mobile/visits/{id}/photos/upload-url`, i.e. start with `<tenantId>/visits/<visitId>/` and contain no `..`. Anything else is 400 `INVALID_PHOTO_PATH`.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -11250,7 +12253,15 @@ export interface paths {
                         };
                     };
                 };
-                400: components["responses"]["BadRequest"];
+                /** @description Invalid body, or `INVALID_PHOTO_PATH` (path is not this visit's). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 401: components["responses"]["Unauthorized"];
                 /** @description `code` is one of: NO_PROFILE (no Profile for the signed-in user yet), TECHNICIAN_ONLY (caller isn't a TECHNICIAN), NO_TECHNICIAN (no Technician row linked), NOT_YOUR_VISIT (visit assigned to someone else / nobody), NOT_YOUR_ROUND (chat on a round the caller isn't on), IDEMPOTENCY_KEY_CONFLICT (X-Idempotency-Key belongs to another technician), or a debt-gate block on start. */
                 403: {
@@ -11736,6 +12747,121 @@ export interface paths {
         };
         trace?: never;
     };
+    "/integrations/outbox/{id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay a dead or failed outbox row
+         * @description ADMIN only. Resets the row to `pending` with a fresh attempt budget; the next worker run (every 30 s, GHL-connected tenants) retries it. Logged as OUTBOX_REPLAYED. 404 `OUTBOX_NOT_FOUND`; 409 `OUTBOX_NOT_REPLAYABLE` when the row is not dead/failed.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Re-queued. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            /** @enum {string} */
+                            status: "pending";
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Unknown row (code OUTBOX_NOT_FOUND). */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Row is not dead/failed (code OUTBOX_NOT_REPLAYABLE). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark one notification read
+         * @description Scoped to the caller's own rows; an unknown or someone else's id is a silent no-op (still 200).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Done. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            ok: true;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat/rounds/{roundId}/messages": {
         parameters: {
             query?: never;
@@ -12074,8 +13200,11 @@ export interface components {
          * @enum {string}
          */
         VisitStatus: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "SKIPPED" | "CANCELLED";
-        /** @enum {string} */
-        PaymentStatus: "NOT_DUE" | "PENDING" | "PAID" | "FAILED" | "OVERDUE" | "CANCELLED";
+        /**
+         * @description State machine (Wave 2B-1): PENDING/NOT_DUE/OVERDUE -> PROCESSING (direct debit accepted, being collected: NOT paid) | PAID | FAILED | CANCELLED; FAILED -> PAID (retry); PAID is terminal except REFUNDED and DISPUTED; DISPUTED -> PAID (won) | REFUNDED. OVERDUE is written by the nightly sweep for unpaid non-direct-debit payments past the invoice due date. GoCardless direct debits that are PENDING/PROCESSING are not counted as debt.
+         * @enum {string}
+         */
+        PaymentStatus: "NOT_DUE" | "PENDING" | "PAID" | "FAILED" | "OVERDUE" | "CANCELLED" | "PROCESSING" | "REFUNDED" | "DISPUTED";
         /** @enum {string} */
         PaymentMethod: "GOCARDLESS" | "CASH" | "CHEQUE" | "BACS" | "STRIPE";
         /** @enum {string} */
@@ -12128,15 +13257,25 @@ export interface components {
          */
         CustomerPaymentStatus: "NONE" | "PAID" | "UNPAID" | "OVERDUE" | "ON_HOLD" | "FAILED";
         /**
-         * @description Typed errors may carry extra fields, forwarded as-is by the central error handler (e.g. `fields` on INVALID_ALLOCATION, `suggestions` + `proposedName` on NO_MATCHING_ROUND).
+         * @description Typed errors may carry extra fields, forwarded as-is by the central error handler (e.g. `fields` on INVALID_ALLOCATION, `suggestions` + `proposedName` on NO_MATCHING_ROUND). `requestId` is always present on errors produced by the central handler and on 413/429.
          * @example {
          *       "error": "Unauthorized"
          *     }
          */
         Error: {
             error: string;
-            /** @description Machine-readable reason, present on some errors (e.g. INVITE_ACCEPTED, INVITE_EXPIRED, NO_MATCHING_ROUND). See the API description for the full list. */
+            /** @description Machine-readable reason, present on some errors (e.g. INVITE_ACCEPTED, INVITE_EXPIRED, NO_MATCHING_ROUND, ADMIN_ONLY, RATE_LIMITED, PAYLOAD_TOO_LARGE, IDEMPOTENCY_IN_PROGRESS, INVALID_PAYMENT_TRANSITION). See the API description for the full list. */
             code?: string;
+            /** @description Echo of the `X-Request-Id` response header (every response carries one). Quote it when reporting a problem. */
+            requestId?: string;
+            /** @description Optional per-field detail on validation errors (`code: VALIDATION_FAILED` and newer validators): one entry per problem. Older endpoints may still return a differently shaped `fields` (e.g. INVALID_ALLOCATION). */
+            fields?: {
+                /** @example email */
+                path: string;
+                /** @example INVALID_EMAIL */
+                code: string;
+                message: string;
+            }[];
         } & {
             [key: string]: unknown;
         };
@@ -12262,6 +13401,31 @@ export interface components {
             acceptedPaymentMethods?: components["schemas"]["PaymentMethod"][];
             /** @example 7 */
             invoiceDueDays?: number;
+            /** @description GHL-10: free text printed at the bottom of invoices. */
+            invoiceFooter?: string | null;
+            /** @description Wave 2B-2: display name customers see on emails (defaults to the business name). */
+            emailSenderName?: string | null;
+            emailReplyTo?: string | null;
+            emailSenderDomain?: string | null;
+            emailSenderLocalPart?: string | null;
+            /** @enum {string} */
+            emailDomainStatus?: "NONE" | "PENDING" | "VERIFIED" | "FAILED";
+            emailDkimRecords?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Format: date-time */
+            emailDomainVerifiedAt?: string | null;
+            emailEnabled?: boolean;
+            emailDailyLimit?: number | null;
+            emailPausedReason?: string | null;
+            /** Format: date-time */
+            emailPausedAt?: string | null;
+            logoPath?: string | null;
+            logoAltText?: string | null;
+            /** @example #00758C */
+            brandColour?: string | null;
+            /** @description GHL-10: free-text payment terms; replaces "Payment due within N days" on the invoice. */
+            paymentTerms?: string | null;
             noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
             /** @description Setup wizard steps saved at least once (drives GET /setup/status). */
             completedSteps?: number[];
@@ -13092,12 +14256,19 @@ export interface components {
             /** @example NE66 1SS */
             postcode: string;
             /**
-             * @description Null until the next geocoding backfill tick picks up the new postcode.
+             * @description Null until the property is geocoded (on create/address change, or the backfill).
              * @example 55.4042
              */
             latitude?: number | null;
             /** @example -1.7073 */
             longitude?: number | null;
+            /**
+             * @description ACT-10: how precise latitude/longitude are. null = not geocoded yet, or a legacy postcode-centre result.
+             * @enum {string|null}
+             */
+            geocodePrecision?: "ROOFTOP" | "RANGE_INTERPOLATED" | "GEOMETRIC_CENTER" | "APPROXIMATE" | "POSTCODE_FALLBACK" | null;
+            /** @description ACT-10: true when the pin is only approximate (POSTCODE_FALLBACK, APPROXIMATE or legacy postcode centre). Show "approximate location". */
+            locationApproximate?: boolean;
             customerId: string;
             /** @example John Smith */
             customerName: string;
@@ -13181,9 +14352,23 @@ export interface components {
             propertyName?: string | null;
             addressLine: string;
             postcode: string;
-            /** @description Null until the next geocoding backfill tick picks up the new postcode. */
+            /** @description Null until the property is geocoded (on create/address change, or the backfill). */
             latitude?: number | null;
             longitude?: number | null;
+            /**
+             * @description ACT-10: how precise latitude/longitude are. null = not geocoded yet, or a legacy postcode-centre result.
+             * @enum {string|null}
+             */
+            geocodePrecision?: "ROOFTOP" | "RANGE_INTERPOLATED" | "GEOMETRIC_CENTER" | "APPROXIMATE" | "POSTCODE_FALLBACK" | null;
+            /** @description ACT-10: true when the pin is only approximate (POSTCODE_FALLBACK, APPROXIMATE or legacy postcode centre). Show "approximate location". */
+            locationApproximate?: boolean;
+            /** @description ACT-02..04: true when the visit was carried over from an earlier day. */
+            carriedOver?: boolean;
+            /**
+             * Format: date
+             * @description The day it was last due before being carried over.
+             */
+            carriedOverFromDate?: string | null;
             customerName?: string | null;
             price: number;
             status: components["schemas"]["VisitStatus"];
@@ -13229,9 +14414,23 @@ export interface components {
             visitId: string;
             customerName?: string | null;
             addressLine: string;
-            /** @description Null until the next geocoding backfill tick picks up the new postcode. */
+            /** @description Null until the property is geocoded (on create/address change, or the backfill). */
             latitude?: number | null;
             longitude?: number | null;
+            /**
+             * @description ACT-10: how precise latitude/longitude are. null = not geocoded yet, or a legacy postcode-centre result.
+             * @enum {string|null}
+             */
+            geocodePrecision?: "ROOFTOP" | "RANGE_INTERPOLATED" | "GEOMETRIC_CENTER" | "APPROXIMATE" | "POSTCODE_FALLBACK" | null;
+            /** @description ACT-10: true when the pin is only approximate (POSTCODE_FALLBACK, APPROXIMATE or legacy postcode centre). Show "approximate location". */
+            locationApproximate?: boolean;
+            /** @description ACT-02..04: true when the visit was carried over from an earlier day. */
+            carriedOver?: boolean;
+            /**
+             * Format: date
+             * @description The day it was last due before being carried over.
+             */
+            carriedOverFromDate?: string | null;
             status: components["schemas"]["VisitStatus"];
             paymentHold: boolean;
             hasIssue: boolean;
@@ -13281,7 +14480,10 @@ export interface components {
          *           "value": "37.00"
          *         }
          *       ],
-         *       "visitsUpdated": 6
+         *       "visitsUpdated": 6,
+         *       "visitsGenerated": 2,
+         *       "overriddenVisits": 1,
+         *       "nextVisitDate": "2026-11-09"
          *     }
          */
         SetTechniciansResult: {
@@ -13289,6 +14491,15 @@ export interface components {
             allocation: components["schemas"]["AllocationEntry"][];
             /** @description Future SCHEDULED visits restamped (or that would be, on a dry run). */
             visitsUpdated: number;
+            /** @description Due visits created for this round right after the assignment (FLOW-01). Always 0 on a dry run (nothing is written) and for a round that is not ACTIVE. */
+            visitsGenerated: number;
+            /** @description Future SCHEDULED visits skipped by the restamp because a manager hand-assigned them (`technicianOverride`) (FLOW-04). */
+            overriddenVisits: number;
+            /**
+             * Format: date
+             * @description YYYY-MM-DD of the earliest SCHEDULED visit on or after today (tenant-local) for the round, after generation. null = the round has no upcoming visits, so nothing will show in the technician's app yet (FLOW-02).
+             */
+            nextVisitDate: string | null;
         };
         RoundAllocation: {
             /** @enum {string} */
@@ -13307,6 +14518,8 @@ export interface components {
             /** @description Visits today with ≥ 1 issue. */
             issues: number;
             paymentHolds: number;
+            /** @description Visits today that were carried over from an earlier day. */
+            carriedOver: number;
             valueCompleted: number;
         };
         TodayRoundRow: {
@@ -13321,6 +14534,8 @@ export interface components {
             skipped: number;
             issueCount: number;
             paymentHolds: number;
+            /** @description Visits on this round today that were carried over from an earlier day. */
+            carriedOver?: number;
             /** @description Sum of every non-cancelled stop's price today (GAP-035). */
             scheduledValue?: number;
             /** @description Sum of COMPLETED stops' prices today. */
@@ -13369,6 +14584,15 @@ export interface components {
             paymentHolds: number;
             /** @description Sum of completed-visit prices for the day. */
             revenue: number;
+            /**
+             * Format: date
+             * @description ACT-02..04: the day the unfinished visits were carried to (push_to_tomorrow); null otherwise.
+             */
+            carriedToDate?: string | null;
+            /** @description Customers messaged about the carryover (notifyCustomers); 0 otherwise. */
+            notifiedCustomers?: number;
+            /** @description Set when notifyCustomers was requested but messaging failed; the close itself succeeded. */
+            customerNotificationError?: string;
         };
         TechnicianServiceAreaRow: {
             serviceAreaId: string;
@@ -13426,7 +14650,12 @@ export interface components {
             customerId: string;
             customerName: string;
             /** @enum {string} */
-            status: "sent" | "scheduled" | "skipped_opted_out" | "skipped_no_contact" | "failed";
+            status: "sent" | "scheduled" | "skipped_opted_out" | "skipped_no_contact" | "skipped_no_channel" | "failed";
+            /**
+             * @description Machine-readable skip reason.
+             * @enum {string}
+             */
+            reason?: "CUSTOMER_OPTED_OUT" | "NO_AVAILABLE_CHANNEL";
             /**
              * @description The channel used / queued (absent when skipped for opt-out).
              * @enum {string}
@@ -13434,6 +14663,88 @@ export interface components {
             channel?: "SMS" | "EMAIL" | "WHATSAPP";
             /** @description Why the recipient was skipped (no contact detail) or failed. */
             error?: string;
+        };
+        Channels: {
+            /** @description SES configured, email switched on for the tenant and not paused. */
+            email: boolean;
+            /** @description GoHighLevel connected. */
+            sms: boolean;
+            /** @description GoHighLevel connected. */
+            whatsapp: boolean;
+            /** @description tel: links; always true. */
+            calls: boolean;
+        };
+        EmailDomain: {
+            domain: string | null;
+            /** @description Local part of the tenant sending address; default `accounts`. */
+            localPart: string | null;
+            /** @enum {string} */
+            status: "NONE" | "PENDING" | "VERIFIED" | "FAILED";
+            /** @description The 3 DKIM CNAME records to add at the DNS provider (Easy DKIM). */
+            records: {
+                /** @enum {string} */
+                type: "CNAME";
+                name: string;
+                value: string;
+            }[];
+            /** Format: date-time */
+            verifiedAt: string | null;
+            /**
+             * @description 1 = shared RoundFlow address with the tenant name; 2 = the tenant's verified domain.
+             * @enum {integer}
+             */
+            tier: 1 | 2;
+            sendingAddress: string | null;
+        };
+        BrandColourCheck: {
+            /** @example #00758C */
+            colour: string;
+            /**
+             * @description Automatic text colour for a button filled with the brand colour (>= 4.5:1).
+             * @enum {string}
+             */
+            textColour: "#000000" | "#FFFFFF";
+            buttonContrast: number;
+            /** @description Set when the colour fails 4.5:1 as text on white; the colour is still saved, links and accents use `safeAccentColour`. */
+            warning: {
+                /** @enum {string} */
+                code?: "LOW_CONTRAST_ON_WHITE";
+                message?: string;
+                textColour?: string;
+                safeAccentColour?: string;
+            } | null;
+        };
+        /** @description Settings > Email and branding view. */
+        EmailSettings: {
+            configured?: boolean;
+            enabled?: boolean;
+            paused?: boolean;
+            pausedReason?: string | null;
+            /** Format: date-time */
+            pausedAt?: string | null;
+            senderName?: string | null;
+            replyTo?: string | null;
+            dailyLimit?: number | null;
+            sentToday?: number;
+            brandColour?: string | null;
+            brandColourCheck?: components["schemas"]["BrandColourCheck"] | null;
+            logoPath?: string | null;
+            /** @description Short-lived signed read URL. */
+            logoUrl?: string | null;
+            logoAltText?: string | null;
+            /** @description { tier, from, fromAddress, displayName, replyTo }: what customers see right now. */
+            sender?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description { sampleSize, delivered, bounced, complaints, bounceRate, complaintRate } over the last 100 emails. */
+            health?: {
+                [key: string]: unknown;
+            };
+            domain?: components["schemas"]["EmailDomain"];
+            channels?: components["schemas"]["Channels"];
+            warning?: components["schemas"]["BrandColourCheck"] | null;
+        } & {
+            [key: string]: unknown;
         };
         /** @description Per-recipient outcome of a round broadcast (POST /messages/bulk) or of the customer notification in a weather hold. */
         MessageBulkResult: {
@@ -13445,8 +14756,10 @@ export interface components {
             scheduled: number;
             /** @description Customers with messagesOptOut — never contacted. */
             skippedOptedOut: number;
-            /** @description No mobile / email on file for the channel. */
+            /** @description No mobile / email on file for the explicitly chosen channel. */
             skippedNoContact: number;
+            /** @description No usable channel for the customer (e.g. only a mobile and GoHighLevel is not connected, or the email bounced). */
+            skippedNoChannel: number;
             /** @description GHL rejected the send or it could not be queued. */
             failed: number;
             /** Format: date-time */
@@ -13469,6 +14782,170 @@ export interface components {
             /** @description Recipients with status ok. */
             reachable: number;
             recipients: components["schemas"]["BulkRecipient"][];
+        };
+        CarryoverOption: {
+            /** @enum {string} */
+            key: "NEXT_WORKING_DAY" | "SATURDAY" | "MONDAY";
+            /** Format: date */
+            date: string;
+            /** @example Monday 9 Nov */
+            label: string;
+            default: boolean;
+        };
+        /** @description On a Friday the options are ALWAYS Saturday and Monday (Sunday is never offered; Monday is the default unless Monday is not a working day and Saturday is). Any other day: just the next working day per BusinessSettings.defaultWorkingDays (Mon–Fri when unset). */
+        CarryoverOptions: {
+            /** Format: date */
+            date: string;
+            options: components["schemas"]["CarryoverOption"][];
+        };
+        /**
+         * @example {
+         *       "date": "2026-11-06",
+         *       "target": "MONDAY",
+         *       "notifyCustomers": false,
+         *       "dryRun": true
+         *     }
+         */
+        CarryoverInput: {
+            /**
+             * Format: date
+             * @description The day whose unfinished visits are carried.
+             */
+            date: string;
+            /**
+             * @description One of the keys offered by GET /visits/carryover/options for `date`.
+             * @enum {string}
+             */
+            target: "NEXT_WORKING_DAY" | "SATURDAY" | "MONDAY";
+            /** @description Default: every SCHEDULED/IN_PROGRESS visit on `date`. */
+            visitIds?: string[];
+            /**
+             * @description Message the affected customers through GHL (skips opted-out; best effort, never fails the carryover).
+             * @default false
+             */
+            notifyCustomers: boolean;
+            /**
+             * @description Report what would move and the conflicts; write and notify nothing.
+             * @default false
+             */
+            dryRun: boolean;
+        };
+        CarryoverResult: {
+            moved: number;
+            /** Format: date */
+            targetDate: string;
+            /** @description Visits moved onto a day when their technician is unavailable or deactivated; reassign them. */
+            conflicts: {
+                visitId: string;
+                technicianId: string;
+                /** @enum {string} */
+                reason: "TECHNICIAN_UNAVAILABLE" | "TECHNICIAN_INACTIVE";
+            }[];
+            notifiedTechnicians: number;
+            notifiedCustomers: number;
+            skipped: {
+                visitId: string;
+                /** @enum {string} */
+                reason: "NOT_FOUND" | "NOT_ON_DATE" | "NOT_UNFINISHED";
+            }[];
+            dryRun: boolean;
+            /** @description Present when notifyCustomers failed; the carryover itself is done. */
+            customerNotificationError?: string;
+        };
+        /**
+         * @description Select by `ids` (max 500) or by `status` (default DRAFT, oldest first, first 500). `filters` narrows a status selection to the current view.
+         * @example {
+         *       "status": "DRAFT",
+         *       "resend": false
+         *     }
+         */
+        InvoiceBulkSendInput: {
+            ids?: string[];
+            /** @enum {string} */
+            status?: "DRAFT" | "SENT" | "PAID" | "VOID" | "OVERDUE";
+            filters?: {
+                customerId?: string;
+                q?: string;
+                /** Format: date */
+                from?: string;
+                /** Format: date */
+                to?: string;
+            };
+            /**
+             * @description Default AUTO: SMS when the customer has a mobile, else email (through GHL today; native email in Wave 2B).
+             * @enum {string}
+             */
+            channel?: "AUTO" | "SMS" | "EMAIL" | "WHATSAPP";
+            /**
+             * @description Allow invoices already SENT.
+             * @default false
+             */
+            resend: boolean;
+        };
+        InvoiceBulkSendPreview: {
+            total: number;
+            willSend: number;
+            /**
+             * @example {
+             *       "EMAIL": 12,
+             *       "SMS": 3
+             *     }
+             */
+            byChannel: {
+                [key: string]: number;
+            };
+            /**
+             * @description Counts by reason: NOT_DRAFT, PAID, VOID, NO_CONTACT_FOR_CHANNEL, CUSTOMER_OPTED_OUT, NO_AVAILABLE_CHANNEL, NOT_FOUND.
+             * @example {
+             *       "CUSTOMER_OPTED_OUT": 1,
+             *       "NO_CONTACT_FOR_CHANNEL": 2
+             *     }
+             */
+            skipped: {
+                [key: string]: number;
+            };
+            /** @description More than 500 invoices match; only the first 500 are included. */
+            truncated: boolean;
+            totalMatching: number;
+            invoices: {
+                id?: string;
+                invoiceNumber?: string;
+                customerName?: string;
+                channel?: string | null;
+                skip?: string | null;
+            }[];
+        };
+        InvoiceBulkSendQueued: {
+            batchId: string;
+            queued: number;
+            skipped: {
+                id: string;
+                /** @enum {string} */
+                reason: "NOT_FOUND" | "NOT_DRAFT" | "PAID" | "VOID" | "NO_CONTACT_FOR_CHANNEL" | "CUSTOMER_OPTED_OUT" | "NO_AVAILABLE_CHANNEL" | "ALREADY_QUEUED";
+            }[];
+            /** @description Present (true) when more than 500 matched; run it again for the rest. */
+            truncated?: boolean;
+        };
+        InvoiceBulkSendBatch: {
+            batchId: string;
+            total: number;
+            /** @description No row is QUEUED any more. */
+            done: boolean;
+            counts: {
+                QUEUED?: number;
+                SENT?: number;
+                FAILED?: number;
+                SKIPPED?: number;
+            };
+            results: {
+                /** @description Invoice id. */
+                id: string;
+                /** @enum {string} */
+                status: "QUEUED" | "SENT" | "FAILED" | "SKIPPED";
+                error?: string;
+                /** @description e.g. NO_CONTACT_FOR_CHANNEL, GHL_SEND_FAILED, OPTED_OUT, INVOICE_ALREADY_SENT, INVOICE_NOT_SENDABLE. */
+                code?: string;
+            }[];
         };
         /**
          * @example {
@@ -13551,6 +15028,11 @@ export interface components {
         };
         /** @description Raw Customer row, as created by Setup step 9 (not the transformed CustomerListRow/CustomerDetail shapes used elsewhere). */
         Customer: {
+            /**
+             * Format: date-time
+             * @description Set by a hard bounce or complaint: email is not used for this customer until the address is edited.
+             */
+            emailInvalidAt?: string | null;
             id?: string;
             name?: string;
             phone?: string | null;
@@ -13891,6 +15373,31 @@ export interface components {
             technicianName?: string | null;
             amount: number;
         };
+        /** @description GHL-10: the supplier block printed on the invoice PDF. */
+        InvoiceBusiness: {
+            name: string | null;
+            email: string | null;
+            phone: string | null;
+            address: {
+                line1?: string | null;
+                line2?: string | null;
+                town?: string | null;
+                postcode?: string | null;
+            } | null;
+            /** @description BusinessSettings.vatRegistration. */
+            vatNumber: string | null;
+            companyNumber: string | null;
+            /** @description From BusinessSettings.bankDetails; null unless account name, number and sort code are all set. */
+            bank: {
+                accountName?: string;
+                bankName?: string | null;
+                sortCode?: string;
+                accountNumber?: string;
+            } | null;
+            /** @description BusinessSettings.paymentTerms when set, else "Payment due within N days" (invoiceDueDays). */
+            paymentTerms: string;
+            invoiceFooter: string | null;
+        };
         /** @description GET /invoices/preview and /invoices/preview/pdf — a not-yet-saved invoice computed live from a visit. 409 if the visit already has an invoice. */
         InvoicePreview: {
             invoiceNumber: string;
@@ -13923,10 +15430,9 @@ export interface components {
              * @example £
              */
             currency: string;
-            business?: {
-                name?: string | null;
-                email?: string | null;
-            };
+            business?: components["schemas"]["InvoiceBusiness"];
+            /** @description GHL-10: what the customer quotes when paying (the invoice number). */
+            paymentReference?: string;
         };
         /** @description GET /invoices/{id} — the saved invoice with line items, technician, visit date, and a VAT/subtotal breakdown. Degrades gracefully (visitId/visitDate/technicianName/roundName all null, lineItems empty) when the invoice has no linked visit — unlike the PDF route, which 409s in that case. */
         InvoiceDetail: {
@@ -14025,7 +15531,7 @@ export interface components {
             } | null;
         };
         /**
-         * @description What the technician collected on site. CASH → PAID payment; CHEQUE → PENDING payment with the cheque number on Payment.reference; NONE → fall back to the effective method.
+         * @description What the technician collected on site. CASH → PAID payment; CHEQUE → PENDING payment with the cheque number on Payment.reference; BACS / GOCARDLESS / STRIPE → no cash is taken, the normal flow follows (PENDING BACS payment, GoCardless charge on an active mandate, or nothing for STRIPE) and the invoice is left DRAFT/SENT; NONE → fall back to the effective method. The chosen method is recorded on Visit.collectedVia and in the activity log (PAYMENT_METHOD_RECORDED).
          * @example {
          *       "method": "CHEQUE",
          *       "chequeNumber": "000123"
@@ -14033,7 +15539,14 @@ export interface components {
          */
         CompletionPaymentInput: {
             /** @enum {string} */
-            method: "CASH" | "CHEQUE" | "NONE";
+            method: "CASH" | "CHEQUE" | "BACS" | "GOCARDLESS" | "STRIPE" | "NONE";
+            /**
+             * @description App extra: the method the technician picked when `method` is NONE. Ignored when `method` is a real method.
+             * @enum {string}
+             */
+            collectVia?: "CASH" | "CHEQUE" | "BACS" | "GOCARDLESS" | "STRIPE";
+            /** @description Also make the chosen method the customer's usual payment method. */
+            updateCustomerDefault?: boolean;
             /** @description Defaults to the visit price. */
             amount?: number;
             /** @description Required for CHEQUE (400 CHEQUE_NUMBER_REQUIRED). */
@@ -14121,8 +15634,44 @@ export interface components {
             title: string;
             body: string | null;
             read: boolean;
+            data: components["schemas"]["NotificationData"];
             /** Format: date-time */
             createdAt: string;
+        };
+        /** @description Deep-link payload; null on notifications created before Wave 1 or without a target. Keys present depend on the event. */
+        NotificationData: {
+            visitId?: string;
+            roundId?: string;
+            customerId?: string;
+            invoiceId?: string;
+            propertyId?: string;
+            /**
+             * Format: date
+             * @description YYYY-MM-DD
+             */
+            date?: string;
+        } | null;
+        AdminNotification: {
+            id: string;
+            /**
+             * @description Open string in the database; these are the values the backend produces.
+             * @enum {string}
+             */
+            type: "SCHEDULE" | "ROUND_UPDATE" | "CHAT" | "PAYMENT" | "COMPLAINT" | "ACCESS_ISSUE" | "DAY_CLOSED" | "INVITE" | "KPI_ALERT";
+            title: string;
+            body: string | null;
+            read: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            data: components["schemas"]["NotificationData"];
+        };
+        AdminNotificationPage: {
+            /** @description The caller's own rows, newest first, 30 per page. */
+            notifications: components["schemas"]["AdminNotification"][];
+            /** @description All of the caller's unread rows, not just this page. */
+            unreadCount: number;
+            /** @description Pass as `?cursor=` for the next page; null on the last page. */
+            nextCursor: string | null;
         };
         MobileNotificationPage: {
             /** @description Newest first, 30 per page. */
@@ -14144,11 +15693,27 @@ export interface components {
             price: number;
             /** @description Effective method: visit override → service plan → customer default; null only when none of those is set. */
             paymentMethod: components["schemas"]["PaymentMethod"] | null;
+            /** @description Status of the visit's Payment (PENDING, PROCESSING, PAID, FAILED, OVERDUE, REFUNDED, DISPUTED...); null when no payment exists yet. Also on schedule and completions rows. */
+            paymentStatus: string | null;
             customerName: string;
             addressLine: string;
             postcode: string;
             latitude: number | null;
             longitude: number | null;
+            /**
+             * @description ACT-10: how precise latitude/longitude are. null = not geocoded yet, or a legacy postcode-centre result.
+             * @enum {string|null}
+             */
+            geocodePrecision: "ROOFTOP" | "RANGE_INTERPOLATED" | "GEOMETRIC_CENTER" | "APPROXIMATE" | "POSTCODE_FALLBACK" | null;
+            /** @description ACT-10: true when the pin is only approximate (POSTCODE_FALLBACK, APPROXIMATE or legacy postcode centre). Show "approximate location". */
+            locationApproximate: boolean;
+            /** @description ACT-02..04: true when the visit was carried over from an earlier day. */
+            carriedOver: boolean;
+            /**
+             * Format: date
+             * @description The day it was last due before being carried over.
+             */
+            carriedOverFromDate: string | null;
             roundId: string | null;
             roundName: string | null;
             serviceName: string | null;
@@ -14447,6 +16012,10 @@ export interface components {
             /** @description BUG-05: accepted methods; defaultPaymentMethod must be one of them (400). */
             acceptedPaymentMethods?: components["schemas"]["PaymentMethod"][];
             invoiceDueDays?: number;
+            /** @description GHL-10. Blank or null clears. */
+            invoiceFooter?: string | null;
+            /** @description GHL-10. Blank or null clears. */
+            paymentTerms?: string | null;
             noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
         };
         /**
@@ -14662,6 +16231,8 @@ export interface components {
             /** @description BUG-05: accepted methods; defaultPaymentMethod must be one of them (400). Setting only a default seeds an empty list with it. */
             acceptedPaymentMethods?: components["schemas"]["PaymentMethod"][];
             invoiceDueDays?: number;
+            invoiceFooter?: string | null;
+            paymentTerms?: string | null;
             noDirectDebitAction?: components["schemas"]["NoDirectDebitAction"];
         };
         Property: {
@@ -14670,9 +16241,16 @@ export interface components {
             propertyName?: string | null;
             addressLine?: string;
             postcode?: string;
-            /** @description Geocoded from postcode; null until the next geocoding backfill tick. */
+            /** @description Geocoded from the full address (Google, ACT-10); null until geocoded. */
             latitude?: number | null;
             longitude?: number | null;
+            /**
+             * @description ACT-10: how precise latitude/longitude are. null = not geocoded yet, or a legacy postcode-centre result.
+             * @enum {string|null}
+             */
+            geocodePrecision?: "ROOFTOP" | "RANGE_INTERPOLATED" | "GEOMETRIC_CENTER" | "APPROXIMATE" | "POSTCODE_FALLBACK" | null;
+            /** @description ACT-10: true when the pin is only approximate (POSTCODE_FALLBACK, APPROXIMATE or legacy postcode centre). Show "approximate location". */
+            locationApproximate?: boolean;
             serviceAreaId?: string | null;
             propertyType?: string | null;
             accessNotes?: string | null;
@@ -14726,9 +16304,16 @@ export interface components {
             propertyId?: string | null;
             addressLine?: string | null;
             postcode?: string | null;
-            /** @description Null until the next geocoding backfill tick picks up the new postcode. */
+            /** @description Null until the property is geocoded (on create/address change, or the backfill). */
             latitude?: number | null;
             longitude?: number | null;
+            /**
+             * @description ACT-10: how precise latitude/longitude are. null = not geocoded yet, or a legacy postcode-centre result.
+             * @enum {string|null}
+             */
+            geocodePrecision?: "ROOFTOP" | "RANGE_INTERPOLATED" | "GEOMETRIC_CENTER" | "APPROXIMATE" | "POSTCODE_FALLBACK" | null;
+            /** @description ACT-10: true when the pin is only approximate (POSTCODE_FALLBACK, APPROXIMATE or legacy postcode centre). Show "approximate location". */
+            locationApproximate?: boolean;
             roundId?: string | null;
             roundName?: string | null;
             frequency?: components["schemas"]["CleaningFrequency"] | null;
@@ -14822,9 +16407,16 @@ export interface components {
                 id?: string;
                 addressLine?: string;
                 postcode?: string;
-                /** @description Null until the next geocoding backfill tick picks up the new postcode. */
+                /** @description Null until the property is geocoded (on create/address change, or the backfill). */
                 latitude?: number | null;
                 longitude?: number | null;
+                /**
+                 * @description ACT-10: how precise latitude/longitude are. null = not geocoded yet, or a legacy postcode-centre result.
+                 * @enum {string|null}
+                 */
+                geocodePrecision?: "ROOFTOP" | "RANGE_INTERPOLATED" | "GEOMETRIC_CENTER" | "APPROXIMATE" | "POSTCODE_FALLBACK" | null;
+                /** @description ACT-10: true when the pin is only approximate (POSTCODE_FALLBACK, APPROXIMATE or legacy postcode centre). Show "approximate location". */
+                locationApproximate?: boolean;
                 propertyType?: string | null;
                 accessNotes?: string | null;
                 riskNotes?: string | null;
@@ -15470,7 +17062,8 @@ export interface components {
         };
         /**
          * @example {
-         *       "unfinishedAction": "push_to_tomorrow"
+         *       "unfinishedAction": "push_to_tomorrow",
+         *       "target": "MONDAY"
          *     }
          */
         CloseDayInput: {
@@ -15479,6 +17072,18 @@ export interface components {
              * @enum {string}
              */
             unfinishedAction: "push_to_tomorrow" | "mark_as_skipped";
+            /** @description mark_as_skipped only. */
+            skipReason?: string;
+            /**
+             * @description ACT-02..04, push_to_tomorrow only: which carryover option to use (see GET /visits/carryover/options). Omitted = the option flagged `default`. A key that is not offered for today is 400 `INVALID_CARRYOVER_TARGET`.
+             * @enum {string}
+             */
+            target?: "NEXT_WORKING_DAY" | "SATURDAY" | "MONDAY";
+            /**
+             * @description push_to_tomorrow only: also message the customers of the carried visits (best effort, same service as POST /visits/carryover).
+             * @default false
+             */
+            notifyCustomers: boolean;
         };
         /**
          * @example {
@@ -15492,11 +17097,8 @@ export interface components {
             notes?: string | null;
             /** Format: date */
             dueDate?: string | null;
-            /**
-             * @description Accepted but ignored — no delivery is performed (invoice email delivery is not implemented).
-             * @default false
-             */
-            sendEmail: boolean;
+            /** @description `true` creates the invoice and then emails it (PDF attached when Gotenberg is up). The invoice flips to SENT only after SES accepted the email. If the email cannot be sent the invoice is still created (201) and the response carries `emailSent: false` and `emailError`. */
+            sendEmail?: boolean;
         };
         /**
          * @description Creates a one-time Stripe Checkout session for an invoice. Returns the existing PENDING session's URL instead of creating a duplicate if one already exists.
@@ -15540,6 +17142,8 @@ export interface components {
             };
             total: number;
             status: components["schemas"]["InvoiceStatus"];
+            /** @description ACT-01: SENT with a due date before today (the filter `status=OVERDUE`). */
+            overdue: boolean;
             /** Format: date-time */
             issuedAt: string;
             /** Format: date-time */
@@ -15995,7 +17599,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Caller's role is not allowed (admin routers need ADMIN/MANAGER), no Profile exists for the user (`code: NO_PROFILE`), or a setup-state lock applies: a wizard mutation after setup is complete, or a Settings mutation before it is. */
+        /** @description Caller's role is not allowed (admin routers need ADMIN/MANAGER; the ADMIN-only actions answer `code: ADMIN_ONLY` to a MANAGER: inviting an ADMIN, connecting/disconnecting Stripe/GoCardless/GHL, payment/bank/VAT settings, deleting technicians, the integration dead-letter queue), no Profile exists for the user (`code: NO_PROFILE`), or a setup-state lock applies: a wizard mutation after setup is complete, or a Settings mutation before it is. */
         Forbidden: {
             headers: {
                 [name: string]: unknown;
@@ -16010,6 +17614,32 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description JSON body larger than the limit (default 100 kb, env JSON_BODY_LIMIT). `code: PAYLOAD_TOO_LARGE`. */
+        PayloadTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Rate limit hit. `code: RATE_LIMITED`; the `Retry-After` header says how many seconds to wait. Limits (per IP, env-configurable): 600/min global, 10/hour on POST /auth/signup, 20/min on the public invite lookup/accept, 300/min per webhook source. */
+        TooManyRequests: {
+            headers: {
+                /** @description Seconds until the limit resets. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "Too many requests. Please slow down and try again shortly.",
+                 *       "code": "RATE_LIMITED"
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };

@@ -1,14 +1,9 @@
 import { getCachedAccessToken, refreshAccessToken } from '@/lib/supabase'
+import { apiErrorFromResponse } from '@/lib/api-error'
 import { ApiError } from '@/lib/errors'
 import { apiBaseUrl } from '@/lib/env'
 import { fetchOrNetworkError } from '@/lib/network-error'
-
-interface ApiErrorBody {
-  error?: string
-  message?: string
-  code?: string
-  fields?: Record<string, string>
-}
+import { handleSessionExpired } from '@/lib/session-expiry'
 
 async function parseBody(response: Response): Promise<unknown> {
   return response.json().catch(() => ({}))
@@ -22,12 +17,14 @@ type ApiInit = RequestInit & {
    * request without a bearer token instead of failing with "Not signed in".
    */
   public?: boolean
+  /** Sent as `Idempotency-Key`: the same key on a retry makes the server run the action once. */
+  idempotencyKey?: string
 }
 
 async function requestWithAuth(path: string, init: ApiInit = {}): Promise<Response> {
   const baseUrl = apiBaseUrl()
 
-  const { accessToken, headers, public: isPublic = false, ...requestInit } = init
+  const { accessToken, headers, public: isPublic = false, idempotencyKey, ...requestInit } = init
 
   // Hot path: read the in-memory token so concurrent requests don't serialize on
   // the Supabase navigator lock. Cold start (cache not seeded yet) falls back to a
@@ -48,6 +45,7 @@ async function requestWithAuth(path: string, init: ApiInit = {}): Promise<Respon
         Accept: 'application/json',
         ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         ...(headers ?? {}),
       },
     })
@@ -55,14 +53,16 @@ async function requestWithAuth(path: string, init: ApiInit = {}): Promise<Respon
   let response = await send(token)
 
   // The cached token can be stale after the tab was suspended (sleep/wake) before
-  // autoRefresh caught up. Refresh once and retry — but only when we used the cache,
-  // never an explicit `accessToken` override (provisioning), and not for GET bodies.
-  if (response.status === 401 && !accessToken && requestInit.body == null) {
+  // autoRefresh caught up. Refresh once and retry — for every method: `send` re-sends the
+  // same body. Never for an explicit `accessToken` override (provisioning) or a public call.
+  if (response.status === 401 && !accessToken && !isPublic) {
     const refreshed = await refreshAccessToken()
     if (refreshed && refreshed !== token) {
       token = refreshed
       response = await send(token)
     }
+    // Still 401: the session is gone. Sign out and go to Login with "Your session expired" (WEB-01).
+    if (response.status === 401) await handleSessionExpired()
   }
 
   return response
@@ -77,14 +77,7 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
 
   const body = await parseBody(response)
   if (!response.ok) {
-    const errorBody = body as ApiErrorBody
-    throw new ApiError(
-      response.status,
-      errorBody.error ?? errorBody.message ?? 'Request failed',
-      errorBody.code,
-      errorBody.fields,
-      errorBody,
-    )
+    throw apiErrorFromResponse(response, body)
   }
 
   return body as T
@@ -99,14 +92,7 @@ export async function apiBlob(path: string, init: ApiInit = {}): Promise<Blob> {
   const response = await requestWithAuth(path, init)
 
   if (!response.ok) {
-    const errorBody = (await parseBody(response)) as ApiErrorBody
-    throw new ApiError(
-      response.status,
-      errorBody.error ?? errorBody.message ?? 'Request failed',
-      errorBody.code,
-      errorBody.fields,
-      errorBody,
-    )
+    throw apiErrorFromResponse(response, await parseBody(response))
   }
 
   return response.blob()

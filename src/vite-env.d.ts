@@ -8,8 +8,10 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY: string
   /** Set to "true" in .env.local to bypass setup redirects in a production build preview. */
   readonly VITE_BYPASS_SETUP_GATE?: string
-  /** Google Cloud API key with Maps JavaScript API + Geocoding API enabled. Round Planner's Map view. */
+  /** Google Cloud API key with the Maps JavaScript API enabled (browser geocoding is no longer used). Round Planner's Map view. */
   readonly VITE_GOOGLE_MAPS_API_KEY?: string
+  /** Google Cloud map ID (Cloud Console > Map Management) — required by Advanced Markers. Defaults to Google's `DEMO_MAP_ID`. */
+  readonly VITE_GOOGLE_MAPS_MAP_ID?: string
   /** "false" turns off the `/app-invite?token=preview` sample screens in a deployed build. */
   readonly VITE_ENABLE_INVITE_PREVIEW?: string
   /** App Store page for the RoundFlow technician app. Shown after a technician sets up their login. */

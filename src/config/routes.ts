@@ -30,6 +30,10 @@ export const ROUTES = {
   settings: '/settings',
   /** Where admins land after Stripe's OAuth completes (`?stripe=connected`). */
   settingsIntegrations: '/settings/integrations',
+  /** Opens Settings on Failed integration messages (admins; the INTEGRATION notification links here). */
+  /** Opens Settings on Email and branding. */
+  settingsEmail: '/settings/email',
+  settingsFailedMessages: '/settings/failed-messages',
   /** Stripe Connect redirect URI — register it in Stripe → Connect → Settings. */
   stripeCallback: '/settings/stripe/callback',
   technicians: '/technicians',
@@ -55,8 +59,10 @@ export function technicianEditPath(technicianId: string) {
   return `/technicians/${technicianId}/edit`
 }
 
-export function technicianConversationPath(technicianId: string) {
-  return `/technicians/${technicianId}/conversation`
+/** `roundId` opens that round's chat first (it need not have a message yet). */
+export function technicianConversationPath(technicianId: string, roundId?: string) {
+  const base = `/technicians/${technicianId}/conversation`
+  return roundId ? `${base}?round=${encodeURIComponent(roundId)}` : base
 }
 
 export function technicianPhotosPath(technicianId: string, visitId: string) {

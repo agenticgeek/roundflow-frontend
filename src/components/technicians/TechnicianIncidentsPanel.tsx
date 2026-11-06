@@ -1,12 +1,14 @@
 import { useState } from 'react'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Pager } from '@/components/ui/pager'
 import { useToast } from '@/components/ui/toast'
 import { RecordIncidentModal } from '@/components/technicians/RecordIncidentModal'
+import { confirmDialogContent } from '@/content/confirm-dialog'
 import { technicianRecordsContent } from '@/content/technician-records'
 import { formatInvoiceDate } from '@/features/invoices/lib/mappers'
 import { useDeleteIncident, useTechnicianIncidents } from '@/features/technicians/hooks/useTechnicianRecords'
 import { errorMessage } from '@/lib/errors'
-import { formatCurrency } from '@/lib/utils'
+import { fillCopy, formatCurrency } from '@/lib/utils'
 
 /** Technician detail › Incidents: list, delete and "Record incident" (GAP-025). */
 export function TechnicianIncidentsPanel({ technicianId, canMutate }: { technicianId: string; canMutate: boolean }) {
@@ -16,13 +18,18 @@ export function TechnicianIncidentsPanel({ technicianId, canMutate }: { technici
   const query = useTechnicianIncidents(technicianId, page)
   const remove = useDeleteIncident(technicianId)
   const [recording, setRecording] = useState(false)
+  /** WEB-02: removing an incident changes the technician's KPIs, so it asks first. */
+  const [pendingRemoval, setPendingRemoval] = useState<{ id: string; label: string } | null>(null)
+  const [removalError, setRemovalError] = useState<string | null>(null)
 
   async function removeIncident(id: string) {
+    setRemovalError(null)
     try {
       await remove.mutateAsync(id)
+      setPendingRemoval(null)
       showToast(copy.removed)
     } catch (caught) {
-      showToast(errorMessage(caught), { tone: 'error' })
+      setRemovalError(errorMessage(caught))
     }
   }
 
@@ -62,7 +69,7 @@ export function TechnicianIncidentsPanel({ technicianId, canMutate }: { technici
                     type="button"
                     aria-label={copy.removeLabel.replace('{note}', incident.note ?? copy.types[incident.type])}
                     disabled={remove.isPending}
-                    onClick={() => void removeIncident(incident.id)}
+                    onClick={() => setPendingRemoval({ id: incident.id, label: incident.note ?? copy.types[incident.type] })}
                     className="text-xs font-semibold text-danger disabled:opacity-50"
                   >
                     {copy.remove}
@@ -76,6 +83,21 @@ export function TechnicianIncidentsPanel({ technicianId, canMutate }: { technici
           <Pager pagination={query.data.pagination} loading={query.isFetching} onPage={setPage} />
         ) : null}
       </div>
+      {pendingRemoval ? (
+        <ConfirmDialog
+          open
+          title={confirmDialogContent.incident.title}
+          description={fillCopy(confirmDialogContent.incident.description, { name: pendingRemoval.label })}
+          confirmLabel={confirmDialogContent.incident.confirm}
+          pending={remove.isPending}
+          error={removalError}
+          onConfirm={() => void removeIncident(pendingRemoval.id)}
+          onClose={() => {
+            setPendingRemoval(null)
+            setRemovalError(null)
+          }}
+        />
+      ) : null}
       {recording ? <RecordIncidentModal technicianId={technicianId} onClose={() => setRecording(false)} /> : null}
     </section>
   )

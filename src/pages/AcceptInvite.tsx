@@ -13,12 +13,15 @@ import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
 import { useAcceptInvite, useInvitePreview } from '@/features/invites/hooks/useInvites'
 import { useAuth } from '@/lib/auth'
+import { friendlyApiMessage } from '@/lib/api-error-copy'
 import { ApiError } from '@/lib/errors'
 import { stashPendingInvite } from '@/lib/pending-invite'
 import { supabase } from '@/lib/supabase'
 
 function inviteErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
+    const friendly = friendlyApiMessage(error)
+    if (friendly) return friendly
     if (error.status === 410) return authContent.acceptInvite.expired
     if (error.status === 404) return authContent.acceptInvite.notFound
     if (error.status === 403) return error.message

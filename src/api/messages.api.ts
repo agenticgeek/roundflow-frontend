@@ -1,19 +1,13 @@
 import { api } from '@/api/client'
 import type { components } from '@/api/types.gen'
-
-/** `send` is hand-typed (live per the 2026-10-13 backend response); the bulk types come from the generated OpenAPI. */
+import { idempotencyKeyFor } from '@/lib/idempotency'
 
 export type MessageChannel = 'sms' | 'email' | 'whatsapp'
 
-/** One of propertyId / customerId is required. */
-export type MessageSendInput = {
-  propertyId?: string
-  customerId?: string
-  channel: MessageChannel
-  body: string
-}
+/** One of propertyId / customerId is required. The API accepts either case for `channel`; this app sends lower case. */
+export type MessageSendInput = Omit<components['schemas']['MessageSendInput'], 'channel'> & { channel: MessageChannel }
 
-export type MessageSendResult = { status: 'sent' }
+export type MessageSendResult = components['schemas']['MessageSendResult']
 
 type Schemas = components['schemas']
 
@@ -37,10 +31,10 @@ function jsonRequest(method: 'POST', body?: unknown): RequestInit {
 
 export const messagesApi = {
   send: (input: MessageSendInput) =>
-    api<MessageSendResult>('/messages/send', jsonRequest('POST', input)),
+    api<MessageSendResult>('/messages/send', { ...jsonRequest('POST', input), idempotencyKey: idempotencyKeyFor(input) }),
 
   bulk: (input: MessageBulkInput) =>
-    api<MessageBulkResult>('/messages/bulk', jsonRequest('POST', input)),
+    api<MessageBulkResult>('/messages/bulk', { ...jsonRequest('POST', input), idempotencyKey: idempotencyKeyFor(input) }),
 
   /** The server-confirmed audience of a round broadcast, with a per-customer status for the channel. */
   bulkRecipients: (
