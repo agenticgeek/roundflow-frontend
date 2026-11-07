@@ -9,6 +9,8 @@ import { useBulkMessage, useBulkRecipients } from '@/features/messages/hooks/use
 import { futureIsoFromLocal } from '@/features/messages/lib/broadcast-summary'
 import { useRounds } from '@/features/rounds/hooks/useRounds'
 import { useMessageTemplates } from '@/features/settings/hooks/useSettings'
+import { useChannels } from '@/features/messaging/hooks/useChannels'
+import { defaultMessageChannel } from '@/features/messaging/lib/channels'
 import { ApiError } from '@/lib/errors'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
@@ -77,10 +79,11 @@ export function BulkMessageModal({ open, onClose }: BulkMessageModalProps) {
     }
   }, [open, templates, templateId])
 
+  const messageChannel = defaultMessageChannel(useChannels())
   const selectedRound = rounds.find((round) => round.id === roundId)
   const selectedTemplate = templates.find((template) => template.id === templateId)
   const recipients = useBulkRecipients(
-    { roundId: selectedRound?.id ?? '', channel: 'sms', excludePaymentHold: excludeOnHold },
+    { roundId: selectedRound?.id ?? '', channel: messageChannel, excludePaymentHold: excludeOnHold },
     open && !result,
   )
   const reachable = recipients.data?.reachable
@@ -100,7 +103,7 @@ export function BulkMessageModal({ open, onClose }: BulkMessageModalProps) {
     try {
       const outcome = await bulkMessage.mutateAsync({
         roundId: selectedRound.id,
-        channel: 'sms',
+        channel: messageChannel,
         body: selectedTemplate.body,
         excludePaymentHold: excludeOnHold,
         templateId: selectedTemplate.id,

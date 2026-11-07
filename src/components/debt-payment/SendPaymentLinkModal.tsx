@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { SendChannel } from '@/api/invoices.api'
 import type { DebtCustomerRecord } from '@/content/debt-payment'
 import { debtPaymentContent } from '@/content/debt-payment'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { ChannelPicker, MessagingErrorNotice } from '@/components/messaging/ChannelPicker'
+import { useChannelChoice } from '@/features/messaging/hooks/useChannels'
 import { Field, Textarea } from '@/components/ui'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
@@ -41,15 +41,15 @@ export function SendPaymentLinkModal({ open, record, onClose }: SendPaymentLinkM
   const { canMutate } = useAppBootstrap()
   const paymentLink = useDebtPaymentLink()
   const { reset } = paymentLink
-  const [channel, setChannel] = useState<SendChannel>('AUTO')
+  const [channel, setChannel, resetChannel] = useChannelChoice()
   const [message, setMessage] = useState('')
 
   useEffect(() => {
     if (!open || !record) return
-    setChannel('AUTO')
+    resetChannel()
     setMessage(applyTemplate(paymentLinkModal.defaultMessage, record))
     reset()
-  }, [open, paymentLinkModal, record, reset])
+  }, [open, paymentLinkModal, record, reset, resetChannel])
 
   if (!record?.invoiceId) return null
   const invoiceId = record.invoiceId

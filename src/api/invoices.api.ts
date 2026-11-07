@@ -1,88 +1,28 @@
 import { api, apiBlob } from '@/api/client'
 import type { components, paths } from '@/api/types.gen'
+import { idempotencyKeyFor } from '@/lib/idempotency'
 
-/** CONTRACT-DIFF: `/invoices` not in generated OpenAPI yet — live per INVOICING_HANDOFF. */
-
-export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PAID'
-
-export type InvoicePreviewCustomer = {
-  name: string
-  addressLine: string
-  postcode: string | null
-  email: string | null
-  phone: string | null
-}
-
-export type InvoicePreviewLineItem = {
-  description: string
-  technicianName: string | null
-  amount: number
-}
-
-export type InvoicePreviewBusiness = {
-  name: string
-  email: string | null
-}
-
-export type InvoicePreview = {
-  invoiceNumber: string
-  invoiceDate: string
-  visitDate: string
-  dueDate: string | null
-  paymentMethod: string | null
-  customer: InvoicePreviewCustomer
-  lineItems: InvoicePreviewLineItem[]
-  subtotal: number
-  vatAmount: number
-  total: number
-  amount: number
+export type InvoiceStatus = components['schemas']['InvoiceStatus']
+export type InvoicePreviewLineItem = components['schemas']['InvoiceLineItem']
+export type InvoicePreviewBusiness = components['schemas']['InvoiceBusiness']
+type GeneratedPreview = components['schemas']['InvoicePreview']
+/** The spec marks `customer` and `business` optional; the server always sends both. */
+export type InvoicePreview = Omit<GeneratedPreview, 'customer' | 'business'> & {
+  customer: NonNullable<GeneratedPreview['customer']>
   business: InvoicePreviewBusiness
 }
+export type InvoiceRecord = components['schemas']['InvoiceDetail']
 
-export type InvoiceCreateInput = {
-  visitId: string
-  dueDate?: string | null
-  notes?: string | null
-  sendEmail?: boolean
+/** The invoice's email outcome; documented on `POST /invoices` but not in the response schema. */
+export type InvoiceEmailOutcome = {
+  emailSent?: boolean
+  pdfAttached?: boolean
+  /** Present when `emailSent` is false: the invoice still exists (as a DRAFT). */
+  emailError?: { code: string; message: string }
 }
 
-export type InvoiceCreateResult = {
-  id: string
-  invoiceNumber: string
-  status: InvoiceStatus
-  sentToCustomer: boolean
-  sentAt: string | null
-}
-
-export type InvoiceRecord = {
-  id: string
-  invoiceNumber: string
-  status: InvoiceStatus
-  amount: number
-  dueDate: string | null
-  notes?: string | null
-  sentToCustomer: boolean
-  sentAt: string | null
-  createdAt: string
-  customerId: string
-  visitId: string | null
-  // Audit follow-up 2026-10-22: GET /invoices/:id now carries what the PDF shows.
-  visitDate?: string | null
-  technicianName?: string | null
-  roundName?: string | null
-  paymentMethod?: string | null
-  customer?: {
-    name: string
-    email: string | null
-    phone: string | null
-    addressLine: string | null
-    postcode: string | null
-  }
-  lineItems?: { description: string; technicianName: string | null; amount: number }[]
-  /** `amount` minus VAT (VAT is 0 when the business isn't VAT registered). */
-  subtotal?: number
-  vatAmount?: number
-}
+export type InvoiceCreateInput = components['schemas']['InvoiceCreateInput']
+export type InvoiceCreateResult = components['schemas']['InvoiceActionResult'] & InvoiceEmailOutcome
 
 export type CustomerInvoiceListItem = {
   id: string
@@ -100,7 +40,8 @@ export type CustomerInvoiceListItem = {
 export type SendChannel = 'AUTO' | 'SMS' | 'EMAIL' | 'WHATSAPP'
 
 export type InvoiceSendInput = { channel?: SendChannel; resend?: boolean }
-export type InvoiceSendResult = components['schemas']['InvoiceSendResult']
+/** `pdfAttached` is documented but not in the schema: false when the email went without the PDF. */
+export type InvoiceSendResult = components['schemas']['InvoiceSendResult'] & { pdfAttached?: boolean }
 
 export type ManualPaymentMethod = 'BACS' | 'CHEQUE' | 'CASH'
 export type MarkInvoicePaidInput = {
@@ -114,7 +55,10 @@ export type MarkInvoicePaidResult = components['schemas']['MarkPaidResult']
 export type InvoiceListRow = components['schemas']['InvoiceListRow']
 export type InvoiceListFilters = NonNullable<paths['/invoices']['get']['parameters']['query']>
 export type InvoiceListPage = { rows: InvoiceListRow[]; pagination: components['schemas']['Pagination'] }
-export type InvoiceExportFilters = NonNullable<paths['/invoices/export.csv']['get']['parameters']['query']>
+/** The spec types export `status` without OVERDUE although the description says "same filters as GET /invoices". */
+export type InvoiceExportFilters = Omit<NonNullable<paths['/invoices/export.csv']['get']['parameters']['query']>, 'status'> & {
+  status?: InvoiceListFilters['status']
+}
 
 export type InvoiceBulkPreview = components['schemas']['InvoiceBulkPreview']
 export type InvoiceBulkResult = components['schemas']['InvoiceBulkResult']
@@ -149,7 +93,7 @@ export const invoicesApi = {
     ),
 
   create: (input: InvoiceCreateInput) =>
-    api<InvoiceCreateResult>('/invoices', jsonRequest('POST', input)),
+    api<InvoiceCreateResult>('/invoices', { ...jsonRequest('POST', input), idempotencyKey: idempotencyKeyFor(input) }),
 
   /** POST /invoices/:id/send — `channel` (GAP-034) and `resend` for an already-SENT invoice. */
   send: (id: string, input: InvoiceSendInput = {}) =>

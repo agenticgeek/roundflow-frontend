@@ -15,7 +15,7 @@ const template = (id: string, name: string, body: string) => ({
 })
 
 const result = (over: Partial<MessageBulkResult> = {}): MessageBulkResult => ({
-  queued: 2, sent: 2, scheduled: 0, skippedOptedOut: 0, skippedNoContact: 0, failed: 0, scheduledFor: null, recipients: [], ...over,
+  queued: 2, sent: 2, scheduled: 0, skippedOptedOut: 0, skippedNoContact: 0, skippedNoChannel: 0, failed: 0, scheduledFor: null, recipients: [], ...over,
 })
 
 const recipients: BulkRecipientsResult = {
@@ -77,7 +77,7 @@ describe('MessageCustomersModal', () => {
     expect(screen.getByText(/2 more won’t be messaged/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Send to 2 Customers' })).toBeEnabled()
     expect(queries[0].searchParams.get('roundId')).toBe('r1')
-    expect(queries[0].searchParams.get('channel')).toBe('sms')
+    expect(queries[0].searchParams.get('channel')).toBe('email')
     expect(queries[0].searchParams.get('excludePaymentHold')).toBe('true')
   })
 
@@ -134,7 +134,7 @@ describe('MessageCustomersModal', () => {
 
     expect(await screen.findByText('Sent to 7 customers · 1 opted out · 1 failed')).toBeInTheDocument()
     expect(sent).toEqual([
-      { roundId: 'r1', channel: 'sms', body: 'Hi {{firstName}}, delayed.', excludePaymentHold: true, templateId: 't1' },
+      { roundId: 'r1', channel: 'email', body: 'Hi {{firstName}}, delayed.', excludePaymentHold: true, templateId: 't1' },
     ])
     expect(screen.getByText('Opted Out Ltd')).toBeInTheDocument()
     expect(screen.getByText('Failed Fred')).toBeInTheDocument()
@@ -224,5 +224,32 @@ describe('MessageCustomersModal', () => {
     renderModal()
     expect(screen.getByRole('button', { name: /Send to/ })).toBeDisabled()
     expect(sent).toHaveLength(0)
+  })
+
+  it('without GoHighLevel: SMS and WhatsApp are disabled with the reason, Email is selected and used', async () => {
+    const sent = mockApi(() => HttpResponse.json(result()))
+    server.use(
+      on('get', '/settings/business-profile', () => HttpResponse.json({ businessName: 'X', channels: { email: true, sms: false, whatsapp: false, calls: true } })),
+    )
+    const { user } = renderModal()
+    const note = await screen.findByText('SMS and WhatsApp need GoHighLevel, which is not connected. Email works without it.')
+    expect(screen.getByRole('button', { name: 'SMS' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'WhatsApp' })).toHaveAccessibleDescription(note.textContent!)
+    expect(screen.getByRole('button', { name: 'Email' })).toHaveAttribute('aria-pressed', 'true')
+    await screen.findByText('2 recipients')
+    await user.type(screen.getByLabelText('Message'), 'Hello')
+    await user.click(screen.getByRole('button', { name: 'Send to 2 Customers' }))
+    await screen.findByText(/Sent to/)
+    expect(sent[0]?.channel).toBe('email')
+  })
+
+  it('with email off it starts on SMS', async () => {
+    mockApi(() => HttpResponse.json(result()))
+    server.use(
+      on('get', '/settings/business-profile', () => HttpResponse.json({ businessName: 'X', channels: { email: false, sms: true, whatsapp: true, calls: true } })),
+    )
+    renderModal()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'SMS' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.getByRole('button', { name: 'Email' })).toBeDisabled()
   })
 })

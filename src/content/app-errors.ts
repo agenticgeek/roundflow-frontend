@@ -16,6 +16,12 @@ export const appErrorsContent = {
     timeoutTitle: 'Can’t reach RoundFlow',
     timeoutDescription: 'This is taking longer than it should. Check your connection, then retry.',
   },
+  session: {
+    /** Shown on Login after the API rejected a refreshed token (WEB-01). */
+    expired: 'Your session expired. Sign in again to continue.',
+    /** Toast title when the API answers 403 to a change the screen does not render itself. */
+    forbidden: 'You don’t have permission to do that.',
+  },
 } as const
 
 /** Splash and page spinners give up waiting after this long (GAP-005). */

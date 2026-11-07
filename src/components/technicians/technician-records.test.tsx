@@ -385,11 +385,29 @@ describe('incidents (GAP-025)', () => {
     expect(await screen.findByText('Cracked pane')).toBeInTheDocument()
     expect(screen.getByText('· £12.50')).toBeInTheDocument()
     expect(screen.getByText('Upsell')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Delete incident Upsell' }))
-    expect(await screen.findByText('Incident not found')).toBeInTheDocument()
+    // WEB-02: asks first — cancelling deletes nothing.
+    const trigger = screen.getByRole('button', { name: 'Delete incident Upsell' })
+    await user.click(trigger)
+    let confirm = screen.getByRole('alertdialog', { name: 'Delete this incident?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    expect(screen.getByText('Upsell')).toBeInTheDocument()
+
+    // A server failure stays in the dialog, which stays open.
+    await user.click(trigger)
+    confirm = screen.getByRole('alertdialog')
+    await user.click(within(confirm).getByRole('button', { name: 'Delete incident' }))
+    expect(await within(confirm).findByRole('alert')).toHaveTextContent('Incident not found')
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+
     await user.click(screen.getByRole('button', { name: 'Delete incident Cracked pane' }))
+    confirm = screen.getByRole('alertdialog')
+    await user.click(within(confirm).getByRole('button', { name: 'Delete incident' }))
     expect(await screen.findByText('Incident deleted')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('Cracked pane')).not.toBeInTheDocument())
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Record incident' }))
     const dialog = screen.getByRole('dialog')

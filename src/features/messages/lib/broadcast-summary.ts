@@ -13,6 +13,7 @@ export function summariseBroadcast(result: MessageBulkResult): string {
   if (parts.length === 0) parts.push('No messages sent')
   if (result.skippedOptedOut > 0) parts.push(`${result.skippedOptedOut} opted out`)
   if (result.skippedNoContact > 0) parts.push(`${result.skippedNoContact} with no contact details`)
+  if (result.skippedNoChannel > 0) parts.push(`${result.skippedNoChannel} with no way to reach them`)
   if (result.failed > 0) parts.push(`${result.failed} failed`)
   return parts.join(' · ')
 }
@@ -35,5 +36,6 @@ export const RECIPIENT_STATUS_LABELS = {
   scheduled: 'Scheduled',
   skipped_opted_out: 'Opted out of messages',
   skipped_no_contact: 'No contact details',
+  skipped_no_channel: 'No way to reach them (no email, or SMS is not set up)',
   failed: 'Failed',
 } as const

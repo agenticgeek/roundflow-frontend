@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ROUTES } from '@/config/routes'
 
 const auth = vi.hoisted(() => ({ session: null as object | null, loading: false }))
@@ -22,9 +22,19 @@ describe('StripeCallbackRoute', () => {
   function renderGuard() {
     return render(
       <MemoryRouter>
-        <StripeCallbackRoute>
-          <p>callback page</p>
-        </StripeCallbackRoute>
+        {/* The guard must sit on a route: its redirect to Login carries the current location. */}
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <StripeCallbackRoute>
+                <p>callback page</p>
+              </StripeCallbackRoute>
+            }
+          />
+          <Route path={ROUTES.login} element={<p>login page</p>} />
+          <Route path={ROUTES.technicianApp} element={<p>technician page</p>} />
+        </Routes>
       </MemoryRouter>,
     )
   }
@@ -37,11 +47,15 @@ describe('StripeCallbackRoute', () => {
 
     auth.loading = false
     auth.session = null
-    renderGuard().unmount()
+    const signedOut = renderGuard()
+    expect(screen.getByText('login page')).toBeInTheDocument()
+    signedOut.unmount()
 
     auth.session = {}
     setBootstrap({ isTechnician: true })
-    renderGuard().unmount()
+    const technician = renderGuard()
+    expect(screen.getByText('technician page')).toBeInTheDocument()
+    technician.unmount()
 
     setBootstrap({ isTechnician: false })
     renderGuard()

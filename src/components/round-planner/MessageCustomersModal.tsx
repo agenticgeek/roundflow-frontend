@@ -11,6 +11,8 @@ import { useBulkMessage, useBulkRecipients } from '@/features/messages/hooks/use
 import { RECIPIENT_STATUS_LABELS, futureIsoFromLocal } from '@/features/messages/lib/broadcast-summary'
 import { useMessageTemplates } from '@/features/settings/hooks/useSettings'
 import type { MessageBulkResult, MessageChannel } from '@/api/messages.api'
+import { useChannels } from '@/features/messaging/hooks/useChannels'
+import { channelNotes, defaultMessageChannel } from '@/features/messaging/lib/channels'
 import { ApiError } from '@/lib/errors'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
@@ -41,7 +43,9 @@ export function MessageCustomersModal({ open, round, onClose }: MessageCustomers
   const [excludePaymentHold, setExcludePaymentHold] = useState(true)
   const [sendOptionId, setSendOptionId] = useState('now')
   const [scheduleAt, setScheduleAt] = useState('')
-  const [channel, setChannel] = useState<string>(messageCustomersModal.channels[0] ?? 'SMS')
+  const channels = useChannels()
+  const defaultChannel = defaultMessageChannel(channels) === 'sms' ? 'SMS' : 'Email'
+  const [channel, setChannel] = useState<string>(defaultChannel)
   const [result, setResult] = useState<MessageBulkResult | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [deselected, setDeselected] = useState<string[]>([])
@@ -67,11 +71,11 @@ export function MessageCustomersModal({ open, round, onClose }: MessageCustomers
     setExcludePaymentHold(true)
     setSendOptionId('now')
     setScheduleAt('')
-    setChannel(messageCustomersModal.channels[0] ?? 'SMS')
+    setChannel(defaultChannel)
     setResult(null)
     setPickerOpen(false)
     setDeselected([])
-  }, [open, messageCustomersModal.channels])
+  }, [open, defaultChannel])
 
   if (!round) return null
 
@@ -357,14 +361,18 @@ export function MessageCustomersModal({ open, round, onClose }: MessageCustomers
             <div className="mt-2 inline-flex rounded-xl bg-surface p-1">
               {messageCustomersModal.channels.map((item) => {
                 const active = channel === item
+                const unavailable = !(item === 'Email' ? channels.email : item === 'SMS' ? channels.sms : channels.whatsapp)
 
                 return (
                   <button
                     key={item}
                     type="button"
+                    aria-pressed={active}
+                    disabled={unavailable}
+                    aria-describedby={unavailable ? 'round-message-channel-notes' : undefined}
                     onClick={() => setChannel(item)}
                     className={cn(
-                      'rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
+                      'rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                       active ? 'bg-primary text-primary-foreground' : 'text-muted hover:text-foreground',
                     )}
                   >
@@ -373,6 +381,13 @@ export function MessageCustomersModal({ open, round, onClose }: MessageCustomers
                 )
               })}
             </div>
+            {channelNotes(channels).length > 0 ? (
+              <div id="round-message-channel-notes" className="mt-1.5 space-y-0.5 text-xs text-muted">
+                {channelNotes(channels).map((note) => (
+                  <p key={note}>{note}</p>
+                ))}
+              </div>
+            ) : null}
           </section>
         </>
       )}

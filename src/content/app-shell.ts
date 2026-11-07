@@ -47,6 +47,8 @@ export const appShellContent = {
     expand: 'Expand sidebar',
     openMenu: 'Open navigation menu',
     closeMenu: 'Close navigation menu',
+    /** Accessible name of the mobile navigation drawer (a dialog). */
+    mobileNavLabel: 'Main menu',
   },
   modulePlaceholder: {
     backLabel: 'Back to Dashboard',

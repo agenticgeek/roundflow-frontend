@@ -1,6 +1,15 @@
 import type { CustomerVisitRow } from '@/api/customer-records.api'
-import type { PropertyVisitRecord } from '@/content/property-detail'
+import type { PropertyVisitRecord, VisitPaymentStatus } from '@/content/property-detail'
 import { formatDate, mapVisitStatus } from '@/features/customers/lib/mappers'
+
+const VISIT_PAYMENTS: Partial<Record<string, VisitPaymentStatus>> = {
+  PAID: 'paid',
+  PROCESSING: 'processing',
+  REFUNDED: 'refunded',
+  DISPUTED: 'disputed',
+  OVERDUE: 'overdue',
+  FAILED: 'failed',
+}
 
 /**
  * GET /customers/:id/visits rows → Visit History rows (GAP-020). Includes CANCELLED visits
@@ -14,7 +23,8 @@ export function customerVisitsToRecords(rows: readonly CustomerVisitRow[]): Prop
     round: row.roundName ?? '—',
     technician: '—',
     status: mapVisitStatus(row.status, row.cancelReason),
-    payment: row.paymentStatus === 'PAID' ? 'paid' : 'pending',
+    payment: VISIT_PAYMENTS[row.paymentStatus ?? ''] ?? 'pending',
+    collectedVia: row.collectedVia && row.collectedVia !== 'NONE' ? row.collectedVia : null,
     price: '—',
     invoice: 'generate',
     invoiceId: null,

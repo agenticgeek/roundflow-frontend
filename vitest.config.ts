@@ -105,6 +105,87 @@ const AUDIT_REMEDIATION_FILES = [
   'src/features/dashboard/lib/technician-kpis.ts',
   'src/components/dashboard/KpiAlertsPanel.tsx',
   'src/components/complaints/RevisitBookedNotice.tsx',
+  // Wave 1 (docs/GAP_ANALYSIS_AND_REMEDIATION_PLAN_2026-11-06.md, Phase 0 + 1C web items)
+  // WEB-01 / WEB-04: 401 refresh-and-retry, session expiry, deep link after sign-in
+  'src/api/client.ts',
+  'src/lib/session-expiry.ts',
+  // WEB-02 / WEB-13: ConfirmDialog and the shared dialog behaviour
+  'src/components/ui/confirm-dialog.tsx',
+  'src/components/ui/modal.tsx',
+  'src/components/ui/side-panel.tsx',
+  'src/hooks/use-dialog-a11y.ts',
+  'src/components/technicians/TechnicianIncidentsPanel.tsx',
+  // CHAT-01: start a conversation
+  'src/components/chat/TechnicianChat.tsx',
+  'src/features/chat/hooks/useTechnicianRounds.ts',
+  // FLOW-02: result of assigning technicians
+  'src/features/rounds/lib/assignment-result.ts',
+  'src/components/round-planner/AssignmentResultSummary.tsx',
+  // NOTIF-02 / NOTIF-06: admin notification centre
+  'src/api/notifications.api.ts',
+  'src/features/notifications/hooks/useNotifications.ts',
+  'src/features/notifications/lib/notification-link.ts',
+  'src/features/notifications/lib/format-time.ts',
+  'src/components/app/NotificationCentre.tsx',
+  // Wave 2A (docs/GAP_ANALYSIS_AND_REMEDIATION_PLAN_2026-11-06.md, web items)
+  // ACT-01: send all draft invoices
+  'src/api/invoice-bulk-send.api.ts',
+  'src/components/invoices/BulkSendInvoicesModal.tsx',
+  'src/features/invoices/hooks/useBulkSend.ts',
+  'src/features/invoices/lib/bulk-send.ts',
+  // ACT-02..04: carryover choice, dry-run preview and result
+  'src/api/carryover.api.ts',
+  'src/content/carryover.ts',
+  'src/components/todays-work/CarryoverChoice.tsx',
+  'src/components/todays-work/CarryoverPreview.tsx',
+  'src/features/today/hooks/useCarryover.ts',
+  'src/features/today/lib/carryover.ts',
+  // ACT-10 / WEB-10 / WEB-19: map pins, grouping, accessible names, approximate-location notices
+  'src/content/maps.ts',
+  'src/components/maps/StopsMapCanvas.tsx',
+  'src/components/maps/LocationNote.tsx',
+  'src/components/round-planner/RoundPlannerMapView.tsx',
+  'src/features/maps/lib/markers.ts',
+  'src/features/maps/lib/gmaps.ts',
+  'src/features/maps/hooks/useLocationWarning.ts',
+  'src/lib/google-maps.ts',
+  // GHL-10: invoice footer and payment terms
+  'src/features/settings/lib/invoice-details.ts',
+  // Deep links (?visitId= ?round= ?date=)
+  // Reconcile with backend Waves 1, 2A, 2B-1 (docs/2026-11-06-reconcile-web.md)
+  // ADMIN_ONLY, RATE_LIMITED / PAYLOAD_TOO_LARGE copy, support reference, Idempotency-Key
+  'src/lib/api-error.ts',
+  'src/lib/api-error-copy.ts',
+  'src/lib/idempotency.ts',
+  'src/content/api-errors.ts',
+  'src/hooks/use-is-admin.ts',
+  'src/components/settings/AdminOnlyNote.tsx',
+  'src/features/settings/lib/admin-only.ts',
+  // Wave 2B-2: email and branding, channel-aware messaging (docs/2026-11-06-wave2b2-web.md)
+  'src/api/email-settings.api.ts',
+  'src/content/email-settings.ts',
+  'src/features/email/hooks/useEmailSettings.ts',
+  'src/features/email/lib/colour.ts',
+  'src/features/email/lib/errors.ts',
+  'src/features/email/components/CopyButton.tsx',
+  'src/features/email/components/DomainVerificationPanel.tsx',
+  'src/features/email/components/BrandColourField.tsx',
+  'src/features/email/components/LogoField.tsx',
+  'src/features/email/components/EmailBrandingPanel.tsx',
+  'src/features/messaging/lib/channels.ts',
+  'src/features/messaging/hooks/useChannels.ts',
+  'src/features/messages/lib/delivery-status.ts',
+  'src/components/messages/DeliveryStatusChip.tsx',
+  'src/lib/tel.ts',
+  // Failed integration messages (outbox dead letters)
+  'src/api/integrations.api.ts',
+  'src/content/integrations.ts',
+  'src/features/integrations/hooks/useOutbox.ts',
+  'src/features/integrations/lib/format.ts',
+  'src/features/integrations/components/FailedMessagesPanel.tsx',
+  'src/content/deep-link.ts',
+  'src/lib/deep-link.ts',
+  'src/hooks/use-deep-link.ts',
 ]
 
 export default defineConfig({

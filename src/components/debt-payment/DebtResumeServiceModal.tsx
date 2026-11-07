@@ -9,6 +9,8 @@ import { useDebtSetHold } from '@/features/debt/hooks/useDebt'
 import { useSendMessage } from '@/features/messages/hooks/useMessages'
 import { todayIsoDate } from '@/features/rounds/lib/planner'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { useChannels } from '@/features/messaging/hooks/useChannels'
+import { defaultMessageChannel } from '@/features/messaging/lib/channels'
 import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +31,7 @@ export function DebtResumeServiceModal({ open, record, onClose }: DebtResumeServ
   const { canMutate } = useAppBootstrap()
   const setHold = useDebtSetHold()
   const sendMessage = useSendMessage()
+  const messageChannel = defaultMessageChannel(useChannels())
   const [resumeFrom, setResumeFrom] = useState<string>(todayIsoDate)
   const [notify, setNotify] = useState(true)
 
@@ -62,7 +65,7 @@ export function DebtResumeServiceModal({ open, record, onClose }: DebtResumeServ
       try {
         await sendMessage.mutateAsync({
           customerId: record.customerId,
-          channel: 'sms',
+          channel: messageChannel,
           body: resumeModal.defaultMessage.replace('{firstName}', record.customer.trim().split(/\s+/)[0] ?? record.customer),
         })
       } catch (error) {

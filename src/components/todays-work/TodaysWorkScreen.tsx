@@ -1,4 +1,8 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ROUTES } from '@/config/routes'
+import { deepLinkContent } from '@/content/deep-link'
+import { buildDeepLink } from '@/lib/deep-link'
 import { emergenciesContent } from '@/content/emergencies'
 import { todaysWorkContent } from '@/content/todays-work'
 import { ReportEmergencyModal } from '@/components/emergencies/ReportEmergencyModal'
@@ -13,7 +17,7 @@ import { TodaysWorkRoundDetailPanel } from '@/components/todays-work/TodaysWorkR
 import { TodaysWorkRoundsTable } from '@/components/todays-work/TodaysWorkRoundsTable'
 import { TodaysWorkToolbar } from '@/components/todays-work/TodaysWorkToolbar'
 import { BulkInvoicesModal } from '@/components/todays-work/BulkInvoicesModal'
-import { todayIso } from '@/lib/round-dates'
+import { formatShortDate, todayIso } from '@/lib/round-dates'
 import { mergeRoundTodayDetail } from '@/features/today/lib/mappers'
 import { useRoundToday } from '@/features/today/hooks/useToday'
 import { TodaysWorkScreenSkeleton } from '@/components/todays-work/TodaysWorkSkeletons'
@@ -37,6 +41,10 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
     interactions.selectedRound?.id ?? '',
     Boolean(interactions.selectedRound),
   )
+
+  // A link for another day cannot be shown here (Today's Work is always today): point at the planner.
+  const linkedDate = interactions.deepLink.date
+  const wrongDay = linkedDate && todayQuery.data && linkedDate !== todayQuery.data.date ? linkedDate : null
 
   const selectedRound = useMemo(() => {
     if (!interactions.selectedRound) return null
@@ -64,6 +72,18 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
         createInvoicesLabel={header.createInvoices}
         onCreateInvoices={canMutate ? () => interactions.setBulkInvoicesOpen(true) : undefined}
       />
+
+      {wrongDay ? (
+        <p role="status" className="rounded-xl border border-warning-border bg-warning-surface px-4 py-3 text-sm text-warning-foreground">
+          {deepLinkContent.wrongDay.replace('{date}', formatShortDate(wrongDay))}{' '}
+          <Link
+            to={buildDeepLink(ROUTES.roundPlanner, interactions.deepLink)}
+            className="font-semibold underline underline-offset-2"
+          >
+            {deepLinkContent.openPlanner}
+          </Link>
+        </p>
+      ) : null}
 
       {todayQuery.isPending ? (
         <TodaysWorkScreenSkeleton />
@@ -111,6 +131,7 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
         onClose={interactions.closeRoundDetail}
         onReassignTechnician={canMutate ? interactions.openReassignTechnician : undefined}
         onPushMissedJobs={canMutate ? interactions.openPushMissedJobs : undefined}
+        highlightVisitId={interactions.deepLink.visitId ?? null}
       />
 
       <ReassignTechnicianModal
@@ -127,6 +148,7 @@ export function TodaysWorkScreen({ interactions }: TodaysWorkScreenProps) {
 
       <CloseOperationalDayModal
         open={interactions.closeDayOpen}
+        date={todayQuery.data?.date ?? todayIso()}
         dateLabel={interactions.dateLabel}
         kpi={todayQuery.data?.kpi}
         onClose={interactions.closeCloseDay}

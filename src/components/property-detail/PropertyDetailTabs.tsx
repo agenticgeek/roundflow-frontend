@@ -1,3 +1,5 @@
+import { PAYMENT_METHOD_LABELS } from '@/lib/payment-methods'
+import type { PaymentMethod } from '@/api/types'
 import { useState } from 'react'
 import { MarkInvoicePaidModal } from '@/components/invoices/MarkInvoicePaidModal'
 import { GenerateInvoiceModal } from '@/components/property-detail/GenerateInvoiceModal'
@@ -44,6 +46,11 @@ const visitStatusClass: Record<VisitStatus, string> = {
 const visitPaymentClass: Record<VisitPaymentStatus, string> = {
   paid: 'bg-success/10 text-success',
   pending: 'bg-warning-surface text-warning-foreground',
+  processing: 'bg-warning-surface text-warning-foreground',
+  refunded: 'bg-muted/15 text-muted',
+  disputed: 'bg-danger/10 text-danger',
+  overdue: 'bg-danger/10 text-danger',
+  failed: 'bg-danger/10 text-danger',
 }
 
 interface VisitHistoryTabProps {
@@ -168,6 +175,11 @@ function VisitHistoryRow({
           label={visitHistory.paymentLabels[visit.payment]}
           className={visitPaymentClass[visit.payment]}
         />
+        {visit.collectedVia ? (
+          <p className="mt-1 text-xs text-muted">
+            {visitHistory.collectedVia.replace('{method}', PAYMENT_METHOD_LABELS[visit.collectedVia as PaymentMethod] ?? visit.collectedVia)}
+          </p>
+        ) : null}
       </td>
       <td className="px-4 py-3.5 text-foreground">{visit.price}</td>
       <td className="px-4 py-3.5">

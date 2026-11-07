@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
+import { useDialogA11y } from '@/hooks/use-dialog-a11y'
 import { site } from '@/content/site'
 import { cn } from '@/lib/utils'
 
@@ -48,28 +49,24 @@ export function SidePanel({
 }: SidePanelProps) {
   const titleId = useId()
 
+  // Focus trap, initial focus, focus return, inert background and a stack-aware Escape (WEB-13).
+  const { rootRef, dialogRef } = useDialogA11y<HTMLDivElement, HTMLElement>(open, onClose)
+
   useEffect(() => {
     if (!open) return
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
     document.body.style.overflow = 'hidden'
-
     return () => {
-      document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-50">
+    <div ref={rootRef} className="fixed inset-0 z-50">
       <button
         type="button"
+        tabIndex={-1}
         aria-label={closeLabel}
         onClick={onClose}
         className="absolute inset-0 animate-fade-in bg-foreground/25 backdrop-blur-[1px]"
@@ -77,11 +74,13 @@ export function SidePanel({
 
       <aside
         key={panelKey}
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(
-          'animate-slide-in-right absolute inset-y-0 right-0 flex h-full w-full flex-col overflow-hidden border-l border-border bg-background shadow-2xl',
+          'animate-slide-in-right absolute inset-y-0 right-0 flex h-full w-full flex-col overflow-hidden border-l border-border bg-background shadow-2xl focus:outline-none',
           widthClass,
           className,
         )}

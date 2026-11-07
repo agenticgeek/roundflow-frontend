@@ -115,6 +115,11 @@ export const debtPaymentContent = {
     resultTitle: 'Bulk action finished',
     resultSummary: '{succeeded} succeeded, {failed} failed.',
     resultOk: 'Done',
+    skipped: 'Skipped',
+    skipReasons: {
+      CUSTOMER_OPTED_OUT: 'Skipped: opted out of messages',
+      NO_AVAILABLE_CHANNEL: 'Skipped: no way to reach them',
+    } as Record<string, string>,
     close: 'Close',
     requestFailed: 'The bulk action could not be started.',
   },

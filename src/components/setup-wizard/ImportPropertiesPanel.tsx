@@ -95,6 +95,9 @@ interface ImportPropertiesPanelProps {
   onClose: () => void
 }
 
+/** Backend field names shown to the user as plain labels in the failed-rows list. */
+const FIELD_LABELS: Record<string, string> = { serviceIds: 'Services', serviceId: 'Service' }
+
 interface FailedRow {
   label: string
   error: string
@@ -398,7 +401,7 @@ export function ImportPropertiesPanel({
           label: `${importCsv.rowError.replace('{row}', String(start + rowError.row + 1))}${
             draft?.customerName ? ` · ${draft.customerName}` : ''
           }`,
-          error: rowError.field ? `${rowError.field}: ${rowError.message}` : rowError.message,
+          error: rowError.field ? `${FIELD_LABELS[rowError.field] ?? rowError.field}: ${rowError.message}` : rowError.message,
         })
       }
       setProgress(start + chunk.length)

@@ -11,6 +11,8 @@ export type PreCleanReminder = { type: 'EVENING_BEFORE' | 'MORNING_OF'; time: st
 export type BusinessSettings = components['schemas']['BusinessSettings'] & {
   preCleanReminders?: PreCleanReminder[]
   acceptedPaymentMethods?: PaymentMethod[]
+  /** What can be sent right now (GET /settings/business-profile and /settings/email). */
+  channels?: components['schemas']['Channels']
 }
 export type Service = components['schemas']['Service']
 export type ServiceInput = components['schemas']['ServiceInput']

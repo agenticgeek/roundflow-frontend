@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
 import { useAppQuickActions } from '@/hooks/use-app-quick-actions'
+import { useDeepLink } from '@/hooks/use-deep-link'
 import { useTodaysWorkInteractions } from '@/hooks/use-todays-work-interactions'
 import { AppShell } from '@/components/app/AppShell'
 import { TodaysWorkScreen } from '@/components/todays-work/TodaysWorkScreen'
@@ -11,7 +12,7 @@ export default function TodaysWork() {
   const navigate = useNavigate()
   const [signingOut, setSigningOut] = useState(false)
   const quickActions = useAppQuickActions()
-  const interactions = useTodaysWorkInteractions()
+  const interactions = useTodaysWorkInteractions(useDeepLink())
 
   async function handleSignOut() {
     setSigningOut(true)

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { propertiesApi, type PropertyServicesInput } from '@/api/properties.api'
+import { useLocationWarning } from '@/features/maps/hooks/useLocationWarning'
 import type {
   NoteCreateInput,
   PauseServiceInput,
@@ -15,9 +16,11 @@ import {
 
 export function useCreateProperty() {
   const queryClient = useQueryClient()
+  const warnIfNoLocation = useLocationWarning()
   return useMutation({
     mutationFn: (input: PropertyCreateInput) => propertiesApi.createProperty(input),
-    onSuccess: (_data, input) => {
+    onSuccess: (data, input) => {
+      warnIfNoLocation(data)
       void invalidateCustomers(queryClient)
       if (input.roundId) {
         void invalidateRounds(queryClient)
@@ -28,10 +31,12 @@ export function useCreateProperty() {
 
 export function useUpdateProperty() {
   const queryClient = useQueryClient()
+  const warnIfNoLocation = useLocationWarning()
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: PropertyUpdateInput }) =>
       propertiesApi.updateProperty(id, input),
-    onSuccess: (_data, { input }) => {
+    onSuccess: (data, { input }) => {
+      warnIfNoLocation(data)
       // A round / frequency move changes the header, Today's Work and the planner (GAP-018).
       if (input.roundId !== undefined || input.cleaningFrequency !== undefined) {
         return invalidateServiceChange(queryClient)

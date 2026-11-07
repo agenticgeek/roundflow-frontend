@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
   CloseDaySummaryCard,
   CloseDaySummaryCardTone,
@@ -16,16 +16,24 @@ import {
   modalWarningPanelClass,
 } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
+import { CarryoverChoice } from '@/components/todays-work/CarryoverChoice'
+import { CarryoverPreview, CarryoverResultPanel } from '@/components/todays-work/CarryoverPreview'
+import type { CarryoverTargetKey } from '@/api/carryover.api'
+import { carryoverContent } from '@/content/carryover'
+import { useCarryoverOptions, useCarryoverPreview } from '@/features/today/hooks/useCarryover'
+import { defaultOption } from '@/features/today/lib/carryover'
 import { useCloseToday } from '@/features/today/hooks/useToday'
 import { formatMoney } from '@/features/today/lib/mappers'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
-type CloseDayStep = 'review' | 'confirm'
+type CloseDayStep = 'review' | 'confirm' | 'done'
 
 interface CloseOperationalDayModalProps {
   open: boolean
+  /** The day being closed, `YYYY-MM-DD`. */
+  date: string
   dateLabel: string
   kpi?: TodayKpi
   onClose: () => void
@@ -79,6 +87,7 @@ function summaryCardsFromKpi(kpi?: TodayKpi): CloseDaySummaryCard[] {
 /** Multi-step close-of-day workflow — POST /today/close. */
 export function CloseOperationalDayModal({
   open,
+  date,
   dateLabel,
   kpi,
   onClose,
@@ -90,6 +99,10 @@ export function CloseOperationalDayModal({
   const [step, setStep] = useState<CloseDayStep>('review')
   const [unfinishedOption, setUnfinishedOption] = useState<CloseDayUnfinishedOptionId | null>(null)
   const [confirmInfoOpen, setConfirmInfoOpen] = useState(false)
+  const [chosenTarget, setChosenTarget] = useState<CarryoverTargetKey | null>(null)
+  const [notifyCustomers, setNotifyCustomers] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [outcome, setOutcome] = useState<{ moved: number; date: string; notifiedCustomers?: number; customerError?: string } | null>(null)
 
   const { unfinishedJobs, confirm, alerts } = closeOperationalDayModal
   const unfinishedCount = unfinishedCountFromKpi(kpi)
@@ -101,16 +114,22 @@ export function CloseOperationalDayModal({
     setStep('review')
     setUnfinishedOption(unfinishedCount > 0 ? null : 'mark-as-skipped')
     setConfirmInfoOpen(false)
+    setChosenTarget(null)
+    setNotifyCustomers(false)
+    setSubmitError(null)
+    setOutcome(null)
   }, [open, unfinishedCount])
+
+  const pushing = unfinishedCount > 0 && unfinishedOption === 'push-to-tomorrow'
+  const carryoverOptions = useCarryoverOptions(date, open && pushing)
+  const target = chosenTarget ?? defaultOption(carryoverOptions.data?.options)?.key ?? null
+  const targetDate = carryoverOptions.data?.options.find((option) => option.key === target)?.date ?? date
+  const carryoverPreview = useCarryoverPreview(step === 'confirm' && pushing && target ? { date, target } : null)
 
   const unfinishedTitle = unfinishedJobs.title.replace('{count}', String(unfinishedCount))
   const unfinishedAlert = alerts.unfinished.replace('{count}', String(unfinishedCount))
   const issuesAlert = alerts.issues.replace('{count}', String(issuesCount))
   const closingDateLabel = closeOperationalDayModal.closingDateLabel.replace('{date}', dateLabel)
-  const pushConfirmation = unfinishedJobs.pushConfirmation
-    .replace('{count}', String(unfinishedCount))
-    .replace('{schedule}', 'the next working day')
-    .replace('{technician}', 'assigned technicians')
 
   function handleClose() {
     if (closeToday.isPending) return
@@ -119,6 +138,7 @@ export function CloseOperationalDayModal({
 
   function handleReviewPrimary() {
     if (unfinishedCount > 0 && !unfinishedOption) return
+    setSubmitError(null)
     setStep('confirm')
   }
 
@@ -127,8 +147,23 @@ export function CloseOperationalDayModal({
     const action =
       unfinishedOption === 'push-to-tomorrow' ? 'push_to_tomorrow' : 'mark_as_skipped'
 
+    setSubmitError(null)
     try {
-      await closeToday.mutateAsync({ unfinishedAction: action })
+      // One call: the server carries the visits over and, with notifyCustomers, tells the customers.
+      const closed = await closeToday.mutateAsync({
+        unfinishedAction: action,
+        ...(pushing && target ? { target, ...(notifyCustomers ? { notifyCustomers: true } : {}) } : {}),
+      })
+      if (pushing) {
+        setOutcome({
+          moved: closed.outstanding,
+          date: closed.carriedToDate ?? targetDate,
+          notifiedCustomers: closed.notifiedCustomers,
+          customerError: closed.customerNotificationError,
+        })
+        setStep('done')
+        return
+      }
       onClose()
       showToast(closeOperationalDayModal.successToast)
     } catch (error) {
@@ -137,7 +172,10 @@ export function CloseOperationalDayModal({
         onClose()
         return
       }
-      if (error instanceof ApiError && error.status === 400) return
+      if (error instanceof ApiError && error.status === 400) {
+        setSubmitError(carryoverContent.errors[error.code ?? ''] ?? error.message)
+        return
+      }
       showToast(error instanceof Error ? error.message : 'Could not close the day')
     }
   }
@@ -163,7 +201,13 @@ export function CloseOperationalDayModal({
       headerClassName="pl-16"
       bodyClassName="space-y-4"
       footer={
-        step === 'review' ? (
+        step === 'done' ? (
+          <ModalFooter compact>
+            <ModalButton compact variant="primary" onClick={onClose}>
+              {carryoverContent.result.done}
+            </ModalButton>
+          </ModalFooter>
+        ) : step === 'review' ? (
           <ModalFooter compact>
             <ModalButton compact variant="secondary" onClick={handleClose}>
               {closeOperationalDayModal.actions.cancel}
@@ -171,7 +215,7 @@ export function CloseOperationalDayModal({
             <ModalButton
               compact
               variant="primary"
-              disabled={(unfinishedCount > 0 && !unfinishedOption) || !canMutate}
+              disabled={(unfinishedCount > 0 && !unfinishedOption) || (pushing && !target) || !canMutate}
               onClick={handleReviewPrimary}
             >
               {reviewPrimaryLabel}
@@ -203,7 +247,14 @@ export function CloseOperationalDayModal({
         <DashboardIcon name="clock" className="h-5 w-5" />
       </span>
 
-      {step === 'review' ? (
+      {step === 'done' && outcome ? (
+        <CarryoverResultPanel
+          moved={outcome.moved}
+          date={outcome.date}
+          notifiedCustomers={outcome.notifiedCustomers}
+          customerError={outcome.customerError}
+        />
+      ) : step === 'review' ? (
         <ReviewStep
           summaryTitle={closeOperationalDayModal.summaryTitle}
           summaryCards={summaryCards}
@@ -211,7 +262,20 @@ export function CloseOperationalDayModal({
           unfinishedOptions={unfinishedJobs.options}
           unfinishedOption={unfinishedOption}
           onSelectUnfinished={setUnfinishedOption}
-          pushConfirmation={pushConfirmation}
+          carryoverChoice={
+            pushing ? (
+              <CarryoverChoice
+                options={carryoverOptions.data?.options}
+                loading={carryoverOptions.isPending}
+                failed={carryoverOptions.isError}
+                value={target}
+                onChange={setChosenTarget}
+                notify={notifyCustomers}
+                onNotify={setNotifyCustomers}
+                onRetry={() => void carryoverOptions.refetch()}
+              />
+            ) : null
+          }
           unfinishedAlert={unfinishedAlert}
           issuesAlert={issuesAlert}
           reviewInfo={closeOperationalDayModal.reviewInfo}
@@ -227,6 +291,8 @@ export function CloseOperationalDayModal({
           issuesLabel={`${issuesCount} — require follow-up`}
           confirmInfoOpen={confirmInfoOpen}
           onToggleConfirmInfo={() => setConfirmInfoOpen((current) => !current)}
+          carryoverPreview={pushing ? <CarryoverPreview preview={carryoverPreview} /> : null}
+          error={submitError}
         />
       )}
     </Modal>
@@ -240,7 +306,7 @@ function ReviewStep({
   unfinishedOptions,
   unfinishedOption,
   onSelectUnfinished,
-  pushConfirmation,
+  carryoverChoice,
   unfinishedAlert,
   issuesAlert,
   reviewInfo,
@@ -252,7 +318,7 @@ function ReviewStep({
   unfinishedOptions: readonly CloseDayUnfinishedOption[]
   unfinishedOption: CloseDayUnfinishedOptionId | null
   onSelectUnfinished: (id: CloseDayUnfinishedOptionId) => void
-  pushConfirmation: string
+  carryoverChoice: ReactNode
   unfinishedAlert: string
   issuesAlert: string
   reviewInfo: { title: string; items: readonly string[] }
@@ -283,10 +349,10 @@ function ReviewStep({
             ))}
           </section>
 
-          {unfinishedOption === 'push-to-tomorrow' ? (
+          {carryoverChoice ? (
             <div className="animate-fade-in flex gap-3 rounded-none border border-primary/25 bg-accent-surface px-4 py-3">
               <DashboardIcon name="calendar" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <p className="text-sm font-medium text-primary">{pushConfirmation}</p>
+              <div className="min-w-0 flex-1">{carryoverChoice}</div>
             </div>
           ) : null}
 
@@ -327,6 +393,8 @@ function ConfirmStep({
   issuesLabel,
   confirmInfoOpen,
   onToggleConfirmInfo,
+  carryoverPreview,
+  error,
 }: {
   closingDateLabel: string
   unfinishedOption: CloseDayUnfinishedOptionId | null
@@ -336,6 +404,8 @@ function ConfirmStep({
   issuesLabel: string
   confirmInfoOpen: boolean
   onToggleConfirmInfo: () => void
+  carryoverPreview: ReactNode
+  error: string | null
 }) {
   const unfinishedLabel = unfinishedOption
     ? confirm.unfinishedLabels[unfinishedOption]
@@ -377,6 +447,8 @@ function ConfirmStep({
         />
       </div>
 
+      {carryoverPreview}
+
       <section>
         <button
           type="button"
@@ -404,6 +476,12 @@ function ConfirmStep({
           <p>{confirm.warning}</p>
         </div>
       </div>
+
+      {error ? (
+        <p role="alert" className="text-sm font-semibold text-danger">
+          {error}
+        </p>
+      ) : null}
     </>
   )
 }

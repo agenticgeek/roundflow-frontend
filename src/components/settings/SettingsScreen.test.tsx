@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { HttpResponse } from 'msw'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { server } from '@/test/msw/server'
@@ -42,9 +42,10 @@ describe('SettingsScreen', { timeout: 30_000 }, () => {
   it('GAP-017: Integrations holds the GoHighLevel messaging card', async () => {
     paymentSettings()
     const { user } = renderWithProviders(<SettingsScreen />, { route: '/settings/integrations' })
-    await user.click(screen.getByRole('button', { name: 'Integrations' }))
-    expect(screen.getByRole('heading', { name: 'Integrations' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Messaging (GoHighLevel)' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'SMS and calling (optional)' }))
+    expect(screen.getByRole('heading', { name: 'SMS and calling (optional)' })).toBeInTheDocument()
+    expect(screen.getByText(/Email is sent by RoundFlow itself/)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'SMS and WhatsApp (GoHighLevel)' })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Connect GoHighLevel' })).toBeInTheDocument()
   })
 })
@@ -106,6 +107,49 @@ describe('SettingsScreen sections (GAP-001 / GAP-003 / GAP-008 / GAP-017)', () =
     expect(body).toMatchObject({ defaultPaymentMethod: 'CHEQUE', acceptedPaymentMethods: expect.arrayContaining(['CHEQUE']), invoiceDueDays: 30, noDirectDebitAction: 'SEND_PAYMENT_LINK' })
   })
 
+  it('Payment Setup edits the invoice footer and payment terms, validates them, and clears a blank one (GHL-10)', async () => {
+    let body: Record<string, unknown> | undefined
+    server.use(
+      on('get', '/settings/payment', () =>
+        HttpResponse.json({ stripeConnected: true, gocardlessConnected: false, ghlConnected: false, invoiceDueDays: 14, invoiceFooter: 'Thank you', paymentTerms: null }),
+      ),
+      on('patch', '/settings/payment', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ stripeConnected: true })
+      }),
+    )
+    const { user } = renderWithProviders(<SettingsScreen />, { route: '/settings' })
+    await user.click(screen.getByRole('button', { name: 'Payment Setup' }))
+    const footer = await screen.findByLabelText('Invoice footer')
+    expect(footer).toHaveValue('Thank you')
+    expect(footer).toHaveAttribute('readonly')
+    expect(footer).toHaveAccessibleDescription(/Shown at the bottom of every invoice/)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    fireEvent.change(footer, { target: { value: 'x'.repeat(501) } })
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(screen.getByText('Keep the footer under 500 characters.')).toBeInTheDocument()
+    expect(footer).toBeInvalid()
+    expect(footer).toHaveAccessibleDescription(/Keep the footer under 500 characters/)
+    expect(body).toBeUndefined()
+
+    fireEvent.change(footer, { target: { value: '  See you soon  ' } })
+    const terms = screen.getByLabelText('Payment terms')
+    await user.type(terms, 'Payment due on receipt')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(body).toBeDefined())
+    expect(body).toMatchObject({ invoiceFooter: 'See you soon', paymentTerms: 'Payment due on receipt' })
+    expect(screen.queryByText('Keep the footer under 500 characters.')).not.toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+    await user.clear(screen.getByLabelText('Invoice footer'))
+    fireEvent.change(screen.getByLabelText('Payment terms'), { target: { value: 'y'.repeat(201) } })
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(screen.getByText('Keep the payment terms under 200 characters.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('Keep the payment terms under 200 characters.')).not.toBeInTheDocument()
+  })
+
   it('Round Settings saves the clean method, reminder and auto-generate', async () => {
     let body: Record<string, unknown> | undefined
     server.use(
@@ -137,7 +181,7 @@ describe('SettingsScreen sections (GAP-001 / GAP-003 / GAP-008 / GAP-017)', () =
     })
   })
 
-  it('SMS Templates point at Integrations while GoHighLevel is not connected', async () => {
+  it('SMS Templates point at SMS setup while GoHighLevel is not connected', async () => {
     server.use(
       on('get', '/settings/message-templates', () => HttpResponse.json([])),
       on('get', '/settings/ghl/status', () =>
@@ -146,7 +190,7 @@ describe('SettingsScreen sections (GAP-001 / GAP-003 / GAP-008 / GAP-017)', () =
     )
     const { user } = renderWithProviders(<SettingsScreen />, { route: '/settings' })
     await user.click(screen.getByRole('button', { name: 'SMS Templates' }))
-    await user.click(await screen.findByRole('button', { name: 'Connect messaging' }))
-    expect(screen.getByRole('heading', { name: 'Integrations' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Set up SMS' }))
+    expect(screen.getByRole('heading', { name: 'SMS and calling (optional)' })).toBeInTheDocument()
   })
 })

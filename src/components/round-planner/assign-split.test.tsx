@@ -76,6 +76,9 @@ function useSplitHandlers({ savedMode = 'MANUAL' as 'SINGLE' | 'AUTO' | 'MANUAL'
           { technicianId: 't3', name: null, propertyIds: ['p2'], stops: 1, value: '15.00' },
         ],
         visitsUpdated: 6,
+        visitsGenerated: 0,
+        overriddenVisits: 0,
+        nextVisitDate: null,
       })
     }),
   )
@@ -97,7 +100,7 @@ async function openSplitStep() {
 describe('Assign wizard split (GAP-012)', () => {
   it('prefills MANUAL from the saved allocation, balances, previews AUTO and saves SINGLE', async () => {
     useSplitHandlers()
-    mocks.setTechnicians.mockResolvedValue({ roundId: 'r1', allocation: [], visitsUpdated: 2 })
+    mocks.setTechnicians.mockResolvedValue({ roundId: 'r1', allocation: [], visitsUpdated: 2, visitsGenerated: 0, overriddenVisits: 0, nextVisitDate: null })
     const { user } = await openSplitStep()
 
     expect(await screen.findByRole('radio', { name: /Choose per property/ })).toHaveAttribute('aria-checked', 'true')
@@ -137,7 +140,7 @@ describe('Assign wizard split (GAP-012)', () => {
 
   it('saves a MANUAL split with per-property allocations', async () => {
     useSplitHandlers()
-    mocks.setTechnicians.mockResolvedValue({ roundId: 'r1', allocation: [], visitsUpdated: 2 })
+    mocks.setTechnicians.mockResolvedValue({ roundId: 'r1', allocation: [], visitsUpdated: 2, visitsGenerated: 0, overriddenVisits: 0, nextVisitDate: null })
     const { user } = await openSplitStep()
     await user.click(await screen.findByRole('button', { name: 'Technician: 9 Bondgate' }))
     await user.click(screen.getByRole('option', { name: 'Alex' }))

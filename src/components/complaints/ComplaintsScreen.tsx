@@ -1,3 +1,4 @@
+import { DeliveryStatusChip } from '@/components/messages/DeliveryStatusChip'
 import { useEffect, useMemo, useState } from 'react'
 import type {
   Complaint,
@@ -696,6 +697,9 @@ function ComplaintDetail({
                     <span className="mx-2">·</span>
                     {formatDateTime(message.createdAt)}
                   </p>
+                  <div className="mt-1.5">
+                    <DeliveryStatusChip status={message.deliveryStatus} error={message.deliveryError} />
+                  </div>
                 </article>
               ))}
               {resolutionNote ? (

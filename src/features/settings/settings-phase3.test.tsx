@@ -114,6 +114,11 @@ describe('business rules (GAP-001 / GAP-003 / GAP-008)', () => {
       morningReminderEnabled: true,
       morningReminderTime: '06:30',
     })
+    // A legacy mode without a time keeps the default time for that reminder.
+    expect(reminderToForm({ reminderMode: 'EVENING_BEFORE' }, defaults)).toMatchObject({
+      eveningReminderEnabled: true,
+      eveningReminderTime: defaults.eveningReminderTime,
+    })
     expect(reminderToForm({ reminderMode: 'NONE' }, defaults).eveningReminderEnabled).toBe(false)
     expect(reminderToForm(null, defaults)).toEqual(defaults)
     expect(reminderToForm({}, defaults)).toEqual(defaults)

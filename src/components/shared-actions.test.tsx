@@ -152,6 +152,32 @@ describe('messaging errors (GAP-034)', () => {
     expect(describeMessagingError(new Error('boom')).code).toBeNull()
   })
 
+  it('CHANNEL_UNAVAILABLE: plain copy per reason, with the right place to fix it', () => {
+    const unavailable = (reason?: string) =>
+      describeMessagingError(new ApiError(409, 'Server words', 'CHANNEL_UNAVAILABLE', undefined, { error: 'Server words', code: 'CHANNEL_UNAVAILABLE', reason }))
+    expect(unavailable('GHL_NOT_CONNECTED')).toEqual({
+      message: 'SMS needs GoHighLevel, which is not connected',
+      code: 'CHANNEL_UNAVAILABLE',
+      hint: 'Email still works. Connect GoHighLevel only if you want to send texts.',
+      cta: { label: 'Set up SMS', to: '/settings/integrations' },
+    })
+    expect(unavailable('EMAIL_PAUSED').cta).toEqual({ label: 'Open email settings', to: '/settings/email' })
+    expect(unavailable('EMAIL_NOT_CONFIGURED').message).toBe('Email is not set up for this account yet')
+    expect(unavailable('EMAIL_TURNED_OFF').message).toBe('Email sending is switched off')
+    expect(unavailable('EMAIL_DAILY_LIMIT').cta).toBeNull()
+    expect(unavailable('EMAIL_ADDRESS_INVALID').message).toBe('This customer’s email address bounced')
+    expect(unavailable('NO_AVAILABLE_CHANNEL').message).toBe('There is no way to reach this customer: no email address, and no mobile number or SMS is not set up')
+    expect(unavailable('SOMETHING_NEW')).toMatchObject({ message: 'Server words', code: 'CHANNEL_UNAVAILABLE', cta: null })
+    expect(unavailable(undefined).message).toBe('Server words')
+    expect(describeMessagingError(new ApiError(409, 'Server words', 'CHANNEL_UNAVAILABLE')).message).toBe('Server words')
+    expect(describeMessagingError(new ApiError(409, 'Opted out', 'CUSTOMER_OPTED_OUT'))).toMatchObject({
+      message: 'This customer has opted out of messages', code: 'CUSTOMER_OPTED_OUT',
+    })
+    expect(describeMessagingError(new ApiError(400, 'x', 'NO_CONTACT_FOR_CHANNEL')).hint).toBe(
+      'Pick another channel, or add the email address or mobile number to the customer.',
+    )
+  })
+
   it('ChannelPicker switches channel and shows the Auto hint', async () => {
     function Harness() {
       const [channel, setChannel] = useState<SendChannel>('AUTO')
@@ -159,10 +185,40 @@ describe('messaging errors (GAP-034)', () => {
     }
     const { user } = renderWithProviders(<Harness />)
     expect(screen.getByRole('radio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByText(/Auto sends an SMS/)).toBeInTheDocument()
+    expect(screen.getByText(/Auto picks the best channel/)).toBeInTheDocument()
     await user.click(screen.getByRole('radio', { name: 'WhatsApp' }))
     expect(screen.getByRole('radio', { name: 'WhatsApp' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.queryByText(/Auto sends an SMS/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Auto picks the best channel/)).not.toBeInTheDocument()
+  })
+
+  it('ChannelPicker disables SMS and WhatsApp without GoHighLevel, says why, and keeps Email and Auto', async () => {
+    server.use(
+      on('get', '/settings/business-profile', () =>
+        HttpResponse.json({ businessName: 'X', channels: { email: true, sms: false, whatsapp: false, calls: true } }),
+      ),
+    )
+    const { user } = renderWithProviders(<ChannelPicker value="EMAIL" onChange={() => undefined} />)
+    const note = await screen.findByText('SMS and WhatsApp need GoHighLevel, which is not connected. Email works without it.')
+    for (const name of ['SMS', 'WhatsApp']) {
+      const radio = screen.getByRole('radio', { name })
+      expect(radio).toBeDisabled()
+      expect(radio).toHaveAccessibleDescription(note.textContent!)
+    }
+    expect(screen.getByRole('radio', { name: 'Email' })).toBeEnabled()
+    expect(screen.getByRole('radio', { name: 'Auto' })).toBeEnabled()
+    await user.click(screen.getByRole('radio', { name: 'SMS' }))
+    expect(screen.getByRole('radio', { name: 'Email' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('ChannelPicker disables Email when email is paused or off', async () => {
+    server.use(
+      on('get', '/settings/business-profile', () =>
+        HttpResponse.json({ businessName: 'X', channels: { email: false, sms: true, whatsapp: true, calls: true } }),
+      ),
+    )
+    renderWithProviders(<ChannelPicker value="SMS" onChange={() => undefined} />)
+    expect(await screen.findByText(/Email is not available right now/)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Email' })).toBeDisabled()
   })
 
   it('MessagingErrorNotice renders nothing, a hint, or a CTA link', () => {

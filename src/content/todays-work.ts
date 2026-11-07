@@ -42,6 +42,11 @@ export interface TodaysWorkJob {
   status: TodaysWorkJobStatus
   paymentHold?: boolean
   issueNote?: string
+  /** Set when the visit was carried over from an earlier day (ACT-02..04). */
+  carriedOver?: boolean
+  carriedOverFromDate?: string | null
+  /** The pin is only approximate (postcode centre or similar). */
+  locationApproximate?: boolean
 }
 
 export interface TechnicianWorkloadItem {
@@ -304,7 +309,6 @@ export const todaysWorkContent = {
           description: 'Record unfinished jobs as skipped for today',
         },
       ] satisfies CloseDayUnfinishedOption[],
-      pushConfirmation: '→ {count} jobs added to {schedule} for {technician}',
     },
     alerts: {
       unfinished:

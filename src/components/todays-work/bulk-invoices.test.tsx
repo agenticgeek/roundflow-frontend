@@ -58,7 +58,7 @@ function aggregate(overrides: Partial<TodayAggregate> = {}): TodayAggregate {
     date: '2026-10-30',
     generatedAt: '2026-10-30T09:41:00',
     dayClosed: false,
-    kpi: { totalStops: 4, inProgress: 1, completed: 2, skipped: 0, issues: 0, paymentHolds: 1, valueCompleted: 40 },
+    kpi: { totalStops: 4, inProgress: 1, completed: 2, skipped: 0, issues: 0, paymentHolds: 1, carriedOver: 0, valueCompleted: 40 },
     rounds: [round],
     technicians: [{ technicianId: 't1', technicianName: null, completed: 2, remaining: 2, issueCount: 0, onTrack: true }],
     ...overrides,

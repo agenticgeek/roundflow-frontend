@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   upheld: true as boolean | null,
   resolve: vi.fn(),
   schedule: vi.fn(),
+  messages: [] as unknown[],
 }))
 
 const record = () => ({
@@ -43,7 +44,7 @@ vi.mock('@/features/complaints/hooks/useComplaints', () => ({
         }
       : undefined,
   }),
-  useComplaintMessages: () => ({ data: [], isPending: false, isError: false }),
+  useComplaintMessages: () => ({ data: state.messages, isPending: false, isError: false }),
   useCreateComplaint: mutation,
   useMarkComplaintInReview: mutation,
   useScheduleComplaintRevisit: () => ({ mutateAsync: state.schedule, isPending: false }),
@@ -67,6 +68,7 @@ beforeEach(() => {
   state.upheld = true
   state.resolve.mockReset()
   state.schedule.mockReset()
+  state.messages = []
 })
 
 describe('ComplaintsScreen (GAP-029 / GAP-025)', () => {
@@ -77,6 +79,18 @@ describe('ComplaintsScreen (GAP-029 / GAP-025)', () => {
     await user.click(screen.getByRole('button', { name: 'Details' }))
     expect(screen.getByText('Jo Admin')).toBeInTheDocument()
     expect(screen.getByText('Yes — counts as a strike')).toBeInTheDocument()
+  })
+
+  it('shows the delivery status of an emailed message as text, with the error', async () => {
+    state.messages = [
+      { id: 'm1', direction: 'OUTBOUND', channel: 'EMAIL', body: 'We are sorry', complaintId: 'cp1', createdAt: '2026-10-20T10:00:00Z', deliveryStatus: 'BOUNCED', deliveryError: 'Mailbox does not exist' },
+      { id: 'm2', direction: 'OUTBOUND', channel: 'SMS', body: 'Sorry by text', complaintId: 'cp1', createdAt: '2026-10-20T11:00:00Z', deliveryStatus: null },
+    ]
+    const { user } = renderWithProviders(<ComplaintsScreen />)
+    await user.click(screen.getByText('Streaky back windows'))
+    expect(await screen.findByText('Bounced')).toBeInTheDocument()
+    expect(screen.getByText('Mailbox does not exist')).toBeInTheDocument()
+    expect(screen.getByText('Sorry by text')).toBeInTheDocument()
   })
 
   it('resolves with the upheld flag', async () => {

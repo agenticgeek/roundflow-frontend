@@ -1,4 +1,5 @@
 import { api } from '@/api/client'
+import { idempotencyKeyFor } from '@/lib/idempotency'
 
 /** CONTRACT-DIFF: `/chat/*` and `/messages/inbox` are not in the generated OpenAPI yet. */
 
@@ -85,5 +86,5 @@ export const chatApi = {
   },
 
   markInboxRead: (input: { ids?: string[]; customerId?: string }) =>
-    api<{ updated: number }>('/messages/inbox/read', post(input)),
+    api<{ updated: number }>('/messages/inbox/read', { ...post(input), idempotencyKey: idempotencyKeyFor(input) }),
 }

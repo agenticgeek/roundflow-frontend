@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { Modal, ModalButton, modalWarningPanelClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { recordModalsContent } from '@/content/record-modals'
 import { useDeleteCustomer } from '@/features/customers/hooks/useCustomers'
 import { useDeleteProperty } from '@/features/properties/hooks/useProperties'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
-import { errorMessage } from '@/lib/errors'
+import { formatListMoney } from '@/features/invoices/lib/list'
+import { ApiError, errorMessage } from '@/lib/errors'
 
 export type RemoveKind = 'property' | 'customer'
 
@@ -38,10 +40,12 @@ export function RemoveRecordModal({
   const removeProperty = useDeleteProperty()
   const removeCustomer = useDeleteCustomer()
   const pending = removeProperty.isPending || removeCustomer.isPending
+  const [unpaid, setUnpaid] = useState<{ count?: number; total?: number } | null>(null)
   const owed = Number(outstandingBalance.replace(/[^0-9.]/g, '')) > 0
 
   async function handleConfirm() {
     if (!kind || !canMutate || pending) return
+    setUnpaid(null)
     try {
       if (kind === 'property') await removeProperty.mutateAsync(propertyId)
       else await removeCustomer.mutateAsync(customerId)
@@ -49,7 +53,10 @@ export function RemoveRecordModal({
       showToast(kind === 'property' ? copy.propertyToast : copy.customerToast)
       onRemoved()
     } catch (caught) {
-      showToast(errorMessage(caught))
+      // 409 UNPAID_INVOICES carries `count` and `total`: explain it here, next to the button that was pressed.
+      const detail = caught instanceof ApiError && caught.code === 'UNPAID_INVOICES' ? (caught.body as { count?: number; total?: number }) : null
+      if (detail?.count) setUnpaid(detail)
+      else showToast(errorMessage(caught))
     }
   }
 
@@ -84,7 +91,14 @@ export function RemoveRecordModal({
       }
     >
       <p className="text-sm text-foreground">{body}</p>
-      {owed ? (
+      {unpaid ? (
+        <p role="alert" className={modalWarningPanelClass}>
+          {(unpaid.count === 1 ? copy.unpaidInvoicesOne : copy.unpaidInvoices)
+            .replace('{count}', String(unpaid.count))
+            .replace('{total}', formatListMoney(unpaid.total ?? 0))}
+        </p>
+      ) : null}
+      {owed && !unpaid ? (
         <p role="alert" className={modalWarningPanelClass}>
           {copy.unpaidWarning.replace('{amount}', outstandingBalance)}
         </p>

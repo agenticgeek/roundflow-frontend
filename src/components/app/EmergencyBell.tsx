@@ -31,11 +31,12 @@ export function EmergencyBell({ className }: EmergencyBellProps) {
       title={bell.tooltip(count)}
       className={cn(
         'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface hover:text-foreground',
-        count > 0 && 'text-danger hover:text-danger',
+        // High priority: an active emergency is a filled red control, listed before the notification bell.
+        count > 0 && 'bg-danger/10 text-danger hover:bg-danger/15 hover:text-danger',
         className,
       )}
     >
-      <DashboardIcon name="bell" className="h-4 w-4" />
+      <DashboardIcon name="alert" className="h-4 w-4" />
       {count > 0 ? (
         <span
           className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold leading-none text-white"

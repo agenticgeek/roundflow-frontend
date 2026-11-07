@@ -6,7 +6,9 @@ import { Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { useSendMessage } from '@/features/messages/hooks/useMessages'
-import { ApiError } from '@/lib/errors'
+import { useChannels } from '@/features/messaging/hooks/useChannels'
+import { channelNotes, defaultMessageChannel } from '@/features/messaging/lib/channels'
+import { describeMessagingError } from '@/features/messaging/lib/messaging-errors'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { cn } from '@/lib/utils'
 
@@ -37,7 +39,9 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
   const { showToast } = useToast()
   const { canMutate } = useAppBootstrap()
   const sendMessage = useSendMessage()
-  const [channel, setChannel] = useState<MessageChannel>('sms')
+  const channels = useChannels()
+  const defaultChannel = defaultMessageChannel(channels)
+  const [channel, setChannel] = useState<MessageChannel>(defaultChannel)
   const [templateId, setTemplateId] = useState<string>(sendMessageModal.templates[0]?.value ?? '')
   const [message, setMessage] = useState('')
 
@@ -51,7 +55,7 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
   useEffect(() => {
     if (!open || !property) return
     const initialTemplate = sendMessageModal.templates[0]
-    setChannel('sms')
+    setChannel(defaultChannel)
     setTemplateId(initialTemplate?.value ?? '')
     setMessage(
       applyTemplate(
@@ -59,7 +63,7 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
         property,
       ),
     )
-  }, [open, property, sendMessageModal.templates])
+  }, [open, property, sendMessageModal.templates, defaultChannel])
 
   useEffect(() => {
     if (!property || !selectedTemplate) return
@@ -72,6 +76,7 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
   const meta = sendMessageModal.meta.replace('{count}', String(message.length))
   const sendLabel =
     channel === 'sms' ? sendMessageModal.actions.sendSms : sendMessageModal.actions.sendEmail
+  const notes = channelNotes(channels)
   const contactLine = `${property.phone} · ${property.email}`
 
   async function handleSend() {
@@ -91,13 +96,7 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
         channel === 'sms' ? sendMessageModal.successSmsToast : sendMessageModal.successEmailToast,
       )
     } catch (error) {
-      showToast(
-        error instanceof ApiError && error.status === 409
-          ? 'Messaging isn’t connected yet (GoHighLevel). Connect it in Settings first.'
-          : error instanceof Error
-            ? error.message
-            : 'Could not send the message.',
-      )
+      showToast(describeMessagingError(error).message)
     }
   }
 
@@ -152,14 +151,18 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
             const active = channel === item
             const label = item === 'sms' ? sendMessageModal.channels.sms : sendMessageModal.channels.email
             const icon = item === 'sms' ? 'phone' : 'mail'
+            const unavailable = !(item === 'sms' ? channels.sms : channels.email)
 
             return (
               <button
                 key={item}
                 type="button"
+                aria-pressed={active}
+                disabled={unavailable}
+                aria-describedby={unavailable ? 'property-message-channel-notes' : undefined}
                 onClick={() => setChannel(item)}
                 className={cn(
-                  'inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors',
+                  'inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                   active
                     ? 'bg-primary text-primary-foreground'
                     : 'border border-border bg-card text-muted hover:text-foreground',
@@ -171,6 +174,13 @@ export function SendPropertyMessageModal({ open, property, onClose }: SendProper
             )
           })}
         </div>
+        {notes.length > 0 ? (
+          <div id="property-message-channel-notes" className="mt-1.5 space-y-0.5 text-xs text-muted">
+            {notes.map((note) => (
+              <p key={note}>{note}</p>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section>

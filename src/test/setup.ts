@@ -1,9 +1,13 @@
 import '@testing-library/jest-dom/vitest'
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { server } from '@/test/msw/server'
 import { useUiStore } from '@/stores/ui.store'
 import { resetBootstrap } from '@/test/bootstrap'
+
+// Async queries (findBy, waitFor) wait up to 5 s: coverage runs make the whole suite slow enough that the
+// 1 s default produced one-off failures in unrelated, correct tests.
+configure({ asyncUtilTimeout: 5000 })
 
 // No real Supabase in tests: a fixed bearer token, and an inert auth client.
 vi.mock('@/lib/supabase', () => ({

@@ -32,6 +32,7 @@ function invoiceRow(overrides: Partial<InvoiceListRow> = {}): InvoiceListRow {
     customer: { id: 'c1', name: 'Jo Coates' },
     total: 20,
     status: 'SENT',
+    overdue: false,
     issuedAt: '2026-10-01T00:00:00Z',
     dueDate: '2026-10-15T00:00:00Z',
     paidAt: null,
@@ -287,8 +288,32 @@ describe('SendInvoiceModal (GAP-034)', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     hold.release()
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
-    expect(bodies).toEqual([{ channel: 'AUTO' }, { channel: 'AUTO', resend: true }])
+    expect(bodies).toEqual([{ channel: 'EMAIL' }, { channel: 'EMAIL', resend: true }])
     expect(screen.getByText('Invoice INV-001 sent by SMS')).toBeInTheDocument()
+  })
+
+  it('starts on Email, says the PDF is attached, and warns when it went without the PDF', async () => {
+    const result = { id: 'inv1', invoiceNumber: 'INV-001', status: 'SENT', sentToCustomer: true, sentAt: null, messageId: 'm1', channel: 'EMAIL', pdfAttached: false }
+    server.use(on('post', '/invoices/{id}/send', () => HttpResponse.json(result)))
+    const { user } = renderWithProviders(<SendInvoiceModal invoice={invoice} onClose={vi.fn()} />)
+    expect(screen.getByRole('radio', { name: 'Email' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('The invoice PDF is attached to the email.')).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'SMS' }))
+    expect(screen.queryByText('The invoice PDF is attached to the email.')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'Email' }))
+    await user.click(screen.getByRole('button', { name: 'Send invoice' }))
+    expect(await screen.findByText('Invoice INV-001 sent by Email, but without the PDF attached.')).toBeInTheDocument()
+  })
+
+  it('a normal email send keeps the plain confirmation', async () => {
+    server.use(
+      on('post', '/invoices/{id}/send', () =>
+        HttpResponse.json({ id: 'inv1', invoiceNumber: 'INV-001', status: 'SENT', sentToCustomer: true, sentAt: null, messageId: 'm1', channel: 'EMAIL', pdfAttached: true }),
+      ),
+    )
+    const { user } = renderWithProviders(<SendInvoiceModal invoice={invoice} onClose={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: 'Send invoice' }))
+    expect(await screen.findByText('Invoice INV-001 sent by Email')).toBeInTheDocument()
   })
 
   it('shows the messaging CTA when GHL is not connected', async () => {
