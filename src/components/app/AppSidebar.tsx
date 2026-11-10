@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { NavLink } from 'react-router-dom'
 import type { AppNavItem, AppQuickAction, AppQuickActionId } from '@/content/app-shell'
@@ -16,6 +16,8 @@ import { cn } from '@/lib/utils'
 import { useChatUnread } from '@/features/chat/hooks/useChat'
 import { useRoutePrefetch } from '@/hooks/use-route-prefetch'
 import { useDialogA11y } from '@/hooks/use-dialog-a11y'
+import { dismissNavBadge, isNavBadgeDismissed } from '@/lib/nav-badge'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 
 interface AppSidebarNavProps {
   navItems: readonly AppNavItem[]
@@ -46,6 +48,11 @@ export function AppSidebarNav({
   const { signOut, signingOut: signingOutLabel, collapse, expand } = appShellContent.sidebar
   const prefetchRoute = useRoutePrefetch()
   const unreadChats = useChatUnread().data?.total ?? 0
+  const userId = useAppBootstrap().me?.id
+  // Opening an item with a NEW badge dismisses it (remembered per user in this browser).
+  const [dismissedBadges, setDismissedBadges] = useState<readonly string[]>([])
+  const showBadge = (item: AppNavItem) =>
+    item.newBadge === true && !dismissedBadges.includes(item.id) && !isNavBadgeDismissed(item.id, userId)
 
   return (
     <>
@@ -86,7 +93,13 @@ export function AppSidebarNav({
             key={item.id}
             to={item.route}
             title={collapsed ? item.label : undefined}
-            onClick={onNavigate}
+            onClick={() => {
+              if (item.newBadge) {
+                dismissNavBadge(item.id, userId)
+                setDismissedBadges((ids) => [...ids, item.id])
+              }
+              onNavigate?.()
+            }}
             onMouseEnter={() => prefetchRoute(item.route)}
             onFocus={() => prefetchRoute(item.route)}
             onTouchStart={() => prefetchRoute(item.route)}
@@ -94,6 +107,11 @@ export function AppSidebarNav({
           >
             <DashboardIcon name={item.icon} className="h-4 w-4 shrink-0" />
             <span className={cn('truncate', collapsed && 'sr-only')}>{item.label}</span>
+            {showBadge(item) ? (
+              <span className={cn('ml-auto rounded-full bg-accent-surface px-1.5 text-[10px] font-semibold text-accent', collapsed && 'sr-only')}>
+                {appShellContent.sidebar.newBadge}
+              </span>
+            ) : null}
             {item.id === 'technicians' && unreadChats > 0 ? (
               <span
                 aria-label={`${unreadChats} unread chat messages`}

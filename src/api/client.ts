@@ -21,7 +21,8 @@ type ApiInit = RequestInit & {
   idempotencyKey?: string
 }
 
-async function requestWithAuth(path: string, init: ApiInit = {}): Promise<Response> {
+/** Auth, 401 refresh-and-retry and network-error handling shared by `api()`, `apiBlob()` and `apiStream()`. */
+export async function requestWithAuth(path: string, init: ApiInit = {}): Promise<Response> {
   const baseUrl = apiBaseUrl()
 
   const { accessToken, headers, public: isPublic = false, idempotencyKey, ...requestInit } = init

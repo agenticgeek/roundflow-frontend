@@ -36,6 +36,8 @@ export const ROUTES = {
   settingsFailedMessages: '/settings/failed-messages',
   /** Stripe Connect redirect URI — register it in Stripe → Connect → Settings. */
   stripeCallback: '/settings/stripe/callback',
+  /** Flo AI (admin only): ask questions about your own RoundFlow data. */
+  floAi: '/flo',
   technicians: '/technicians',
   technicianNew: '/technicians/new',
   technicianDetail: '/technicians/:technicianId',
