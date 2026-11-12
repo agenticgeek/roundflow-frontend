@@ -1,11 +1,20 @@
 /** Copy for Flo AI (admin only): the page, streaming status, notices and every error code. */
 export const floContent = {
   title: 'Flo AI',
+  /** The wordmark: the name, then "AI" in the accent colour. */
+  wordmark: { name: 'Flo', suffix: 'AI' },
   subtitle: 'Ask about your own rounds, jobs, payments, complaints and technicians. Flo only looks things up; it never changes anything.',
   adminOnly: 'Flo AI is only available to administrators.',
   newBadge: 'NEW',
+  readOnly: 'Read-only access',
   mode: {
     legend: 'Answer style',
+    /** The line under the toggle, per mode. Falls back to the server's description for any other mode. */
+    helper: {
+      THOROUGH: 'Deepest analysis. Slowest.',
+      BALANCED: 'Good depth, moderate speed.',
+      QUICK: 'Fast answers, lighter analysis.',
+    } as Record<string, string>,
     /** Shown when GET /flo/status has not answered yet. */
     fallbackModes: [
       { key: 'THOROUGH', label: 'Thorough', description: 'Deepest analysis. Slowest.' },
@@ -28,21 +37,47 @@ export const floContent = {
   loadingConversation: 'Loading conversation',
   conversationError: 'Could not open that conversation.',
   disabled: 'Flo is not switched on for this account.',
-  statusError: 'Could not check whether Flo is available.',
+  statusError: 'Couldn’t check Flo’s status.',
+  statusRetry: 'Retry',
+  statusRetryLabel: 'Check Flo’s status again',
   remaining: '{count} questions left today',
   remainingOne: '1 question left today',
   empty: {
-    title: 'What would you like to know?',
-    hint: 'Pick a question, or type your own.',
+    eyebrow: 'Your operations assistant',
+    greeting: { morning: 'Good morning.', afternoon: 'Good afternoon.', evening: 'Good evening.' },
+    title: 'What would you like to look into today?',
+    hint: 'Try asking about a job, payment, technician or complaint.',
     loading: 'Loading suggestions',
+    /** Area tags under the question box: tapping one starts a question for the admin to finish or send. */
+    areasTitle: 'Explore your data',
+    areas: [
+      { label: 'Rounds', icon: 'calendar', starter: 'How are my rounds looking this week?' },
+      { label: 'Jobs', icon: 'briefcase', starter: 'Which jobs are still outstanding today?' },
+      { label: 'Payments', icon: 'card', starter: 'Who owes me money right now?' },
+      { label: 'Complaints', icon: 'message', starter: 'Which complaints are still open?' },
+      { label: 'Technicians', icon: 'users', starter: 'How is each technician doing this month?' },
+    ],
   },
   composer: {
     label: 'Ask Flo',
     placeholder: 'Ask about your rounds, payments, complaints or technicians',
+    /** Examples the empty box cycles through, a few seconds each. */
+    examples: [
+      'Ask about your rounds, payments, complaints or technicians',
+      'Who owes me money right now?',
+      'Which jobs are still outstanding today?',
+      'How is each technician doing this month?',
+      'Which complaints are still open?',
+      'How are my rounds looking this week?',
+    ],
     send: 'Send',
     stop: 'Stop',
     maxLength: 2000,
     hint: 'Enter to send, Shift+Enter for a new line.',
+    hintKeys: { send: 'Enter', newLine: 'Shift + Enter' },
+    hintSend: 'to send',
+    hintNewLine: 'for a new line',
+    count: '{count} / {max}',
   },
   working: {
     thinking: 'Flo is working on it',

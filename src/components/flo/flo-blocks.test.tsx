@@ -171,8 +171,7 @@ describe('FollowUps, DeclinedNotice, SuggestionGrid, notices', () => {
     const onAsk = vi.fn()
     const groups = [{ area: 'Payments', questions: ['Who owes more than £50?'] }]
     const { user, rerender } = renderWithProviders(<SuggestionGrid groups={groups} loading={false} disabled={false} onAsk={onAsk} />)
-    expect(screen.getByRole('heading', { name: 'What would you like to know?' })).toBeInTheDocument()
-    expect(screen.getByText('Pick a question, or type your own.')).toBeInTheDocument()
+    expect(screen.getByText('Try asking about a job, payment, technician or complaint.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Who owes more than £50?' }))
     expect(onAsk).toHaveBeenCalled()
     rerender(<SuggestionGrid groups={[]} loading disabled onAsk={onAsk} />)

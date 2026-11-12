@@ -14,7 +14,7 @@ beforeEach(() => {
   window.matchMedia = ((query: string) => ({ matches: true, media: query })) as unknown as typeof window.matchMedia
 })
 
-const liveRegion = () => screen.getByRole('status')
+const liveRegion = () => document.getElementById('flo-announcer') as HTMLElement
 const conversation = () => within(screen.getByRole('region', { name: 'Conversation' }))
 
 function controlledStream() {
@@ -43,7 +43,7 @@ describe('FloScreen', () => {
     expect(screen.getByText('Checked 2 data sources')).toBeInTheDocument()
     expect(liveRegion()).toHaveTextContent(exampleFinalMessage.answer!.intro)
     // Suggestions are gone once the conversation starts.
-    expect(screen.queryByRole('heading', { name: 'What would you like to know?' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'What would you like to look into today?' })).not.toBeInTheDocument()
   })
 
   it('announces status changes, never the typed sentences, then the finished answer once', async () => {
@@ -105,7 +105,7 @@ describe('FloScreen', () => {
     await user.click(await screen.findByRole('button', { name: 'Compare my technicians for October' }))
     await screen.findByRole('table')
     await user.click(screen.getByRole('button', { name: 'New chat' }))
-    expect(await screen.findByRole('heading', { name: 'What would you like to know?' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'What would you like to look into today?' })).toBeInTheDocument()
     expect(liveRegion()).toBeEmptyDOMElement()
   })
 
@@ -114,6 +114,15 @@ describe('FloScreen', () => {
     renderWithProviders(<FloScreen />)
     expect(screen.getAllByRole('radio').map((radio) => (radio as HTMLInputElement).value)).toEqual(['THOROUGH', 'BALANCED', 'QUICK'])
     expect(await screen.findByText('1 question left today')).toBeInTheDocument()
+  })
+
+  it('puts an area tag’s starter question in the box without sending it', async () => {
+    const { user } = renderWithProviders(<FloScreen />)
+    await user.click(await screen.findByRole('button', { name: 'Payments' }))
+    const box = screen.getByRole('textbox', { name: 'Ask Flo' })
+    expect(box).toHaveValue('Who owes me money right now?')
+    await waitFor(() => expect(box).toHaveFocus())
+    expect(screen.queryByRole('region', { name: 'Conversation' })).not.toBeInTheDocument()
   })
 
   it('says so when Flo is switched off, and stops suggestions and the box', async () => {
@@ -126,7 +135,8 @@ describe('FloScreen', () => {
   it('still works when the status call fails', async () => {
     server.use(http.get(`${API}/flo/status`, () => HttpResponse.json({ error: 'x' }, { status: 500 })))
     renderWithProviders(<FloScreen />)
-    expect(await screen.findByText('Could not check whether Flo is available.')).toBeInTheDocument()
+    expect(await screen.findByText('Couldn’t check Flo’s status.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check Flo’s status again' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Ask Flo' })).toBeEnabled()
   })
 
@@ -160,7 +170,7 @@ describe('FloScreen', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Delete October review' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
-    expect(await screen.findByRole('heading', { name: 'What would you like to know?' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'What would you like to look into today?' })).toBeInTheDocument()
   })
 
   it('reports a conversation that cannot be opened', async () => {

@@ -14,8 +14,12 @@ export function CardsBlock({ block }: { block: FloCardsBlock }) {
   return (
     <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {block.items.map((item, index) => (
-        <div key={`${item.label}-${index}`} className="rounded-xl border border-border bg-background p-3">
-          <dt className="text-xs text-muted">{item.label}</dt>
+        <div
+          key={`${item.label}-${index}`}
+          style={{ animationDelay: `${index * 50}ms` }}
+          className="animate-fade-in rounded-xl border border-border bg-background px-4 py-3.5"
+        >
+          <dt className="text-[11px] font-medium tracking-wide text-muted uppercase">{item.label}</dt>
           <dd className={`mt-1 text-xl font-semibold tabular-nums ${TONE[item.tone ?? ''] ?? 'text-foreground'}`}>
             {formatFloValue(item.value, item.format)}
           </dd>

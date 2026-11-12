@@ -55,7 +55,7 @@ export function ConversationDrawer({ open, onClose, activeId, onOpen, onDeleted 
         {list.isSuccess && conversations.length === 0 ? <p className="text-sm text-muted">{floContent.historyEmpty}</p> : null}
         <ul className="space-y-1">
           {conversations.map((conversation) => (
-            <li key={conversation.id} className="flex items-center gap-1">
+            <li key={conversation.id} className="group flex items-center gap-1">
               <button
                 type="button"
                 aria-current={conversation.id === activeId ? 'true' : undefined}
@@ -64,15 +64,16 @@ export function ConversationDrawer({ open, onClose, activeId, onOpen, onDeleted 
                   onOpen(conversation.id)
                   onClose()
                 }}
-                className="min-h-8 min-w-0 flex-1 truncate rounded-lg px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent-surface aria-[current=true]:bg-accent-surface"
+                className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-accent-surface aria-[current=true]:bg-accent-surface aria-[current=true]:font-medium aria-[current=true]:text-accent"
               >
-                {titleOf(conversation)}
+                <DashboardIcon name="message" className="h-4 w-4 shrink-0 text-muted" />
+                <span className="truncate">{titleOf(conversation)}</span>
               </button>
               <button
                 type="button"
                 aria-label={fillCopy(floContent.deleteConversation, { title: titleOf(conversation) })}
                 onClick={() => setTarget(conversation)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface hover:text-danger"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface hover:text-danger"
               >
                 <DashboardIcon name="trash" className="h-4 w-4" />
               </button>

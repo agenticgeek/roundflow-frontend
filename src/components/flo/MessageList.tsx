@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { floContent } from '@/content/flo'
 import { AssistantMessage } from '@/components/flo/AssistantMessage'
+import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { UserBubble } from '@/components/flo/UserBubble'
 import type { ChatItem } from '@/features/flo/hooks/useFloChat'
 
@@ -53,29 +54,32 @@ export function MessageList({ items, elapsed, busy, onAsk, onRetry }: MessageLis
         aria-label={floContent.messages.label}
         tabIndex={0}
         onScroll={handleScroll}
-        className="h-full space-y-4 overflow-y-auto pr-1"
+        className="scrollbar-card h-full overflow-y-auto py-4 focus-visible:outline-none"
       >
-        {items.map((item) =>
-          item.kind === 'user' ? (
-            <UserBubble key={item.id} text={item.text} />
-          ) : (
-            <AssistantMessage
-              key={item.id}
-              view={item.stream.view}
-              elapsed={elapsed}
-              busy={busy}
-              onAsk={onAsk}
-              onRetry={() => onRetry(item.id)}
-            />
-          ),
-        )}
+        <div className="mx-auto max-w-[720px] space-y-6 px-1">
+          {items.map((item) =>
+            item.kind === 'user' ? (
+              <UserBubble key={item.id} text={item.text} />
+            ) : (
+              <AssistantMessage
+                key={item.id}
+                view={item.stream.view}
+                elapsed={elapsed}
+                busy={busy}
+                onAsk={onAsk}
+                onRetry={() => onRetry(item.id)}
+              />
+            ),
+          )}
+        </div>
       </div>
       {atBottom ? null : (
         <button
           type="button"
           onClick={jumpToLatest}
-          className="absolute bottom-2 left-1/2 min-h-8 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1 text-sm font-medium text-foreground shadow-md hover:bg-accent-surface"
+          className="absolute bottom-3 left-1/2 inline-flex min-h-8 -translate-x-1/2 animate-fade-in items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent-surface"
         >
+          <DashboardIcon name="chevron-down" className="h-4 w-4" />
           {floContent.scrollToLatest}
         </button>
       )}
