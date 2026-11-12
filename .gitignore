@@ -28,3 +28,4 @@ openapi.json
 *.sw?
 
 coverage
+coverage-*

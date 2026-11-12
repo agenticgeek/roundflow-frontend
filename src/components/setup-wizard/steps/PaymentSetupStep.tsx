@@ -26,8 +26,8 @@ interface PaymentSetupStepProps {
   /** What the server says is connected — connecting and disconnecting go through the real APIs. */
   connections: Record<Provider, boolean>
   /**
-   * The connect/disconnect endpoints only work once setup is complete (they 403 before). While
-   * setup is in progress the cards show status and point to Settings → Payment instead.
+   * Whether the signed-in user may connect/disconnect providers (admins and managers). The
+   * endpoints are exempt from the backend's setup-complete lock, so this is role-only.
    */
   canConnect: boolean
   vat: { registered: boolean; rate: string }

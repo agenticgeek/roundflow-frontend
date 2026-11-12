@@ -6,6 +6,9 @@ export const roundsHandlers = [
       roundId: String(params.id),
       allocation: [],
       visitsUpdated: 0,
+      visitsGenerated: 0,
+      overriddenVisits: 0,
+      nextVisitDate: null,
     }),
   ),
 ]

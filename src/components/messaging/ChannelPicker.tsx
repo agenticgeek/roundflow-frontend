@@ -1,7 +1,10 @@
+import { useId } from 'react'
 import { Link } from 'react-router-dom'
 import type { SendChannel } from '@/api/invoices.api'
 import { sharedActionsContent } from '@/content/shared-actions'
 import { describeMessagingError } from '@/features/messaging/lib/messaging-errors'
+import { useChannels } from '@/features/messaging/hooks/useChannels'
+import { channelNotes, isChannelAvailable } from '@/features/messaging/lib/channels'
 import { cn } from '@/lib/utils'
 
 /** Auto / SMS / Email / WhatsApp segmented picker for send, remind and payment-link actions (GAP-034). */
@@ -19,19 +22,24 @@ export function ChannelPicker({
   className?: string
 }) {
   const copy = sharedActionsContent.channel
+  const channels = useChannels()
+  const notes = channelNotes(channels)
+  const noteId = useId()
   return (
     <section className={className}>
       <p className="text-sm font-medium text-foreground">{label}</p>
       <div role="radiogroup" aria-label={label} className="mt-2 grid grid-cols-4 gap-2">
         {copy.options.map((option) => {
           const selected = option.value === value
+          const unavailable = !isChannelAvailable(option.value, channels)
           return (
             <button
               key={option.value}
               type="button"
               role="radio"
               aria-checked={selected}
-              disabled={disabled}
+              disabled={disabled || unavailable}
+              aria-describedby={unavailable ? noteId : undefined}
               onClick={() => onChange(option.value)}
               className={cn(
                 'rounded-lg px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-50',
@@ -45,6 +53,13 @@ export function ChannelPicker({
           )
         })}
       </div>
+      {notes.length > 0 ? (
+        <div id={noteId} className="mt-1.5 space-y-0.5 text-xs text-muted">
+          {notes.map((note) => (
+            <p key={note}>{note}</p>
+          ))}
+        </div>
+      ) : null}
       {value === 'AUTO' ? <p className="mt-1.5 text-xs text-muted">{copy.autoHint}</p> : null}
     </section>
   )

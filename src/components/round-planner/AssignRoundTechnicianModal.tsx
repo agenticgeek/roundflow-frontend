@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/toast'
 import { PendingInviteResend } from '@/components/round-planner/PendingInviteResend'
 import { useSetRoundTechnicians } from '@/features/rounds/hooks/useRounds'
 import { isPendingInvite } from '@/features/rounds/lib/assign'
+import { outcomesToastDescription, toAssignmentOutcome } from '@/features/rounds/lib/assignment-result'
 import { errorMessage } from '@/lib/errors'
 import { formatShortDate } from '@/features/rounds/lib/planner'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
@@ -72,13 +73,15 @@ export function AssignRoundTechnicianModal({
     if (!target || selected.length === 0) return
     setError(null)
     try {
-      await setTechnicians.mutateAsync({ id: target.round.id, input: { technicianIds: selected } })
+      const result = await setTechnicians.mutateAsync({ id: target.round.id, input: { technicianIds: selected } })
       const firstName =
         technicians.find(({ technician }) => technician.id === selected[0])?.technician.name ?? ''
       showToast(
         selected.length === 1
           ? fillCopy(copy.toast, { name: firstName, round: target.round.name })
           : fillCopy(copy.toastMany, { count: selected.length, round: target.round.name }),
+        // FLOW-02: say what happened to the visits — and warn when there are none yet.
+        { description: outcomesToastDescription([toAssignmentOutcome(target.round, result)]) },
       )
       onClose()
     } catch (caught) {

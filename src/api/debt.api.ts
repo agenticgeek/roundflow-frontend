@@ -32,7 +32,12 @@ export type DebtBulkResult = {
   total: number
   succeeded: number
   failed: number
-  results: ({ id: string; ok: true } | { id: string; ok: false; error: string; code?: string })[]
+  results: (
+    | { id: string; ok: true }
+    | { id: string; ok: false; error: string; code?: string; skipped?: undefined }
+    /** A reminder that was not sent on purpose (opted out, nothing to reach them with): not an error. */
+    | { id: string; ok: false; skipped: true; reason?: string }
+  )[]
 }
 
 export type DebtKpis = components['schemas']['DebtKpis']

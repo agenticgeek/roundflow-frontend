@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { Toggle } from '@/components/ui'
 import { Spinner } from '@/components/ui/spinner'
 import { dashboardCtaShadowClass } from '@/components/dashboard/dashboard-styles'
+import { useDialogA11y } from '@/hooks/use-dialog-a11y'
 import { site } from '@/content/site'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +41,10 @@ export interface ModalProps {
   stacked?: boolean
   headerClassName?: string
   footerClassName?: string
+  /** `alertdialog` for confirmations that interrupt the user. */
+  role?: 'dialog' | 'alertdialog'
+  /** Id of the element that describes the dialog (read after the title). */
+  descriptionId?: string
 }
 
 /**
@@ -63,43 +68,44 @@ export function Modal({
   stacked = false,
   headerClassName,
   footerClassName,
+  role = 'dialog',
+  descriptionId,
 }: ModalProps) {
   const isCompact = size === 'compact'
   const titleId = useId()
 
+  // Focus trap, initial focus, focus return, inert background and a stack-aware Escape (WEB-13).
+  const { rootRef, dialogRef } = useDialogA11y(open, onClose)
+
   useEffect(() => {
     if (!open) return
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
     document.body.style.overflow = 'hidden'
-
     return () => {
-      document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = ''
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center sm:p-5">
+    <div ref={rootRef} className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center sm:p-5">
       <button
         type="button"
+        tabIndex={-1}
         aria-label={closeLabel}
         onClick={onClose}
         className="absolute inset-0 animate-fade-in bg-foreground/50"
       />
 
       <div
-        role="dialog"
+        ref={dialogRef}
+        tabIndex={-1}
+        role={role}
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={descriptionId}
         className={cn(
-          'relative w-full animate-fade-in-up rounded-none bg-card shadow-xl',
+          'relative w-full animate-fade-in-up rounded-none bg-card shadow-xl focus:outline-none',
           stacked
             ? 'flex max-h-[min(92dvh,36rem)] flex-col overflow-hidden'
             : 'max-h-[min(100dvh-1.5rem,900px)] overflow-y-auto',

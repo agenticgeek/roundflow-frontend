@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, data, RouterProvider } from 'react-router-dom'
 import { RouteError } from '@/components/RouteError'
+import { ApiError } from '@/lib/errors'
 import { routeErrorDetail } from '@/lib/route-error'
 
 function Boom(): never {
@@ -30,6 +31,16 @@ describe('RouteError (GAP-024)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('rows.map is not a function')
     await userEvent.click(screen.getByRole('button', { name: 'Go to dashboard' }))
     expect(await screen.findByText('Dashboard home')).toBeInTheDocument()
+  })
+
+  it('shows the support reference of a server error, and none otherwise', () => {
+    function Server(): never {
+      throw new ApiError(500, 'Database down', undefined, undefined, undefined, { requestId: 'req_123' })
+    }
+    const router = createMemoryRouter([{ path: '/', element: <Server />, errorElement: <RouteError /> }])
+    render(<RouterProvider router={router} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Database down')
+    expect(screen.getByText('Reference: req_123')).toBeInTheDocument()
   })
 
   it('still renders for something that isn’t an Error', () => {

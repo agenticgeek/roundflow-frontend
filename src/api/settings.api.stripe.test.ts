@@ -43,6 +43,7 @@ describe('Stripe Connect API calls', () => {
         type: 'cors',
         status: 400,
         ok: false,
+        headers: new Headers(),
         json: async () => ({ error: 'Missing code or state from Stripe' }),
       }),
     )

@@ -1,10 +1,12 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '@/components/AuthLayout'
 import { setRememberSession, supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
+import { appErrorsContent } from '@/content/app-errors'
+import { clearSessionExpired, hasSessionExpired } from '@/lib/session-expiry'
 // === DEV AUTH BACKDOOR START — comment out this import + the block in handleSubmit to disable ===
 import {
   createDevAuthBypassSession,
@@ -39,6 +41,11 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [googleError, setGoogleError] = useState<string | null>(null)
   const [googleLoading, setGoogleLoading] = useState(false)
+  // Set by the API client when a refreshed token was still rejected (WEB-01).
+  const [sessionExpired] = useState(hasSessionExpired)
+  useEffect(() => {
+    clearSessionExpired()
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -90,6 +97,12 @@ export default function Login() {
     <AuthLayout>
       <h2 className="text-[32px] font-semibold tracking-tight text-foreground">{authContent.login.title}</h2>
       <p className="mt-2 text-[15px] text-muted">{authContent.login.subtitle}</p>
+
+      {sessionExpired ? (
+        <p role="status" className="mt-6 rounded-xl border border-warning-border bg-warning-surface px-4 py-3 text-sm text-warning-foreground">
+          {appErrorsContent.session.expired}
+        </p>
+      ) : null}
 
       <div className="mt-8">
         <AuthTabs active="login" />

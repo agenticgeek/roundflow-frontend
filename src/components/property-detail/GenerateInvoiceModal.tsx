@@ -90,10 +90,13 @@ export function GenerateInvoiceModal({ open, property, visit, onClose }: Generat
         sendEmail: sendEmail && canEmail,
       })
       onClose()
+      // The invoice exists either way; `emailSent: false` says the email did not go and why.
       showToast(
-        result.status === 'SENT'
-          ? generateInvoiceModal.successToast
-          : generateInvoiceModal.draftToast,
+        result.emailSent === false && result.emailError
+          ? generateInvoiceModal.emailFailedToast.replace('{reason}', result.emailError.message)
+          : result.status === 'SENT'
+            ? generateInvoiceModal.successToast
+            : generateInvoiceModal.draftToast,
       )
     } catch (error) {
       if (error instanceof ApiError && (error.status === 400 || error.status === 404 || error.status === 409)) {

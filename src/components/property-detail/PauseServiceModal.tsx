@@ -16,6 +16,8 @@ import { usePauseServicePlan } from '@/features/service-plans/hooks/useServicePl
 import { useSendMessage } from '@/features/messages/hooks/useMessages'
 import { addDays, todayIsoDate } from '@/features/rounds/lib/planner'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { useChannels } from '@/features/messaging/hooks/useChannels'
+import { defaultMessageChannel } from '@/features/messaging/lib/channels'
 import { ApiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
@@ -50,6 +52,7 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
   const pausePlan = usePauseServicePlan()
   const pauseProperty = planId ? pausePlan : pausePropertyMutation
   const sendMessage = useSendMessage()
+  const messageChannel = defaultMessageChannel(useChannels())
   const [reason, setReason] = useState<string>(pauseServiceModal.reasons[0]?.value ?? '')
   const [duration, setDuration] = useState<PauseDuration>('range')
   const [startDate, setStartDate] = useState<string>(() => todayIsoDate())
@@ -126,7 +129,7 @@ export function PauseServiceModal({ open, property, planId, planName, onClose }:
       try {
         await sendMessage.mutateAsync({
           propertyId: property.id,
-          channel: 'sms',
+          channel: messageChannel,
           body: smsMessage.trim(),
         })
       } catch (error) {

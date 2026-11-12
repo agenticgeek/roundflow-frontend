@@ -52,7 +52,15 @@ import {
   type SettingsTechnicianRow,
 } from '@/features/settings/lib/mappers'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
+import { EmailBrandingPanel } from '@/features/email/components/EmailBrandingPanel'
+import { FailedMessagesPanel } from '@/features/integrations/components/FailedMessagesPanel'
+import { AdminOnlyNote } from '@/components/settings/AdminOnlyNote'
+import { apiErrorsContent } from '@/content/api-errors'
+import { useIsAdmin } from '@/hooks/use-is-admin'
+import { profilePatchForRole } from '@/features/settings/lib/admin-only'
 import { ApiError, errorMessage } from '@/lib/errors'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { confirmDialogContent } from '@/content/confirm-dialog'
 import { GoCardlessTokenForm, GoCardlessWebhookSetup } from '@/components/payments/GoCardlessConnect'
 import { GhlConnectionCard } from '@/features/settings/components/GhlConnectionCard'
 import { useGhlStatus } from '@/features/settings/hooks/useGhl'
@@ -66,6 +74,7 @@ import { Modal, ModalButton } from '@/components/ui/modal'
 import { PaymentMethodsField } from '@/components/setup-wizard/PaymentMethodsField'
 import { ReminderChecklist } from '@/components/setup-wizard/ReminderChecklist'
 import { Field, FieldError, Input, PhoneInput, Select, Textarea, Toggle } from '@/components/ui'
+import { validateInvoiceDetails, type InvoiceDetailsForm } from '@/features/settings/lib/invoice-details'
 import { DaySelector } from '@/components/setup-wizard/DaySelector'
 import { AddServiceModal } from '@/components/setup-wizard/AddServiceModal'
 import { useToast } from '@/components/ui/toast'
@@ -77,10 +86,12 @@ import {
   SettingsSmsSkeleton,
   SettingsTechniciansSkeleton,
 } from '@/components/settings/SettingsSkeletons'
-import { cn, formatCurrency } from '@/lib/utils'
+import { cn, fillCopy, formatCurrency } from '@/lib/utils'
 
 const cardClass = 'rounded-lg border border-border bg-card shadow-sm'
 const noop = () => {}
+const ADMIN_PROFILE_NOTE_ID = 'profile-admin-only'
+const ADMIN_TECHNICIAN_NOTE_ID = 'technician-admin-only'
 const settingsSelectClass = 'rounded-lg border-accent/25 bg-accent-surface'
 
 function SectionError({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -110,7 +121,9 @@ function MutationGate({
   if (canMutate) return <>{children}</>
   return (
     <div className={className} title="You don't have permission to edit settings">
-      <div className="pointer-events-none opacity-60">{children}</div>
+      <div inert className="pointer-events-none opacity-60">
+        {children}
+      </div>
     </div>
   )
 }
@@ -120,12 +133,16 @@ export function SettingsScreen() {
   const location = useLocation()
   // OAuth returns land on /settings/integrations: `?ghl=` opens Integrations (the GHL card),
   // Stripe's `?stripe=` (and the bare path) opens Payment Setup.
+  const isAdmin = useIsAdmin()
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => {
+    if (location.pathname === ROUTES.settingsFailedMessages && isAdmin) return 'failed-messages'
+    if (location.pathname === ROUTES.settingsEmail) return 'email'
     const returned = readIntegrationReturn(location.search)
     if (returned?.provider === 'ghl') return 'integrations'
     return returned || location.pathname === ROUTES.settingsIntegrations ? 'payment-setup' : 'business-profile'
   })
   const { canMutate } = useAppBootstrap()
+  const adminNotes = apiErrorsContent.adminOnlyNotes
   // Toasts the ?stripe= / ?ghl= result, refreshes the connection status and cleans the URL.
   useIntegrationReturn()
 
@@ -147,13 +164,17 @@ export function SettingsScreen() {
         <SettingsSidebar
           activeSection={activeSection}
           onSelect={setActiveSection}
+          isAdmin={isAdmin}
         />
 
         <div key={activeSection} className="animate-wizard-step">
           {activeSection === 'business-profile' ? (
             <BusinessProfilePanel canMutate={canMutate} />
           ) : activeSection === 'payment-setup' ? (
-            <PaymentSetupPanel canMutate={canMutate} />
+            <div className="space-y-4">
+              {canMutate && !isAdmin ? <AdminOnlyNote id="payment-admin-only">{adminNotes.paymentSetup}</AdminOnlyNote> : null}
+              <PaymentSetupPanel canMutate={canMutate && isAdmin} />
+            </div>
           ) : activeSection === 'round-settings' ? (
             <RoundSettingsPanel canMutate={canMutate} />
           ) : activeSection === 'sms-templates' ? (
@@ -162,6 +183,8 @@ export function SettingsScreen() {
             <TechnicianManagementPanel canMutate={canMutate} />
           ) : activeSection === 'service-area' ? (
             <ServiceAreasPanel canMutate={canMutate} />
+          ) : activeSection === 'email' ? (
+            <EmailBrandingPanel />
           ) : activeSection === 'integrations' ? (
             <article className={cn(cardClass, 'space-y-5 p-6')}>
               <PanelHeader
@@ -172,10 +195,13 @@ export function SettingsScreen() {
                 canMutate={false}
                 onEdit={noop}
               />
-              <GhlConnectionCard canMutate={canMutate} />
+              {canMutate && !isAdmin ? <AdminOnlyNote id="integrations-admin-only">{adminNotes.integrations}</AdminOnlyNote> : null}
+              <GhlConnectionCard canMutate={canMutate && isAdmin} />
             </article>
           ) : activeSection === 'kpi-thresholds' ? (
             <KpiThresholdsPanel canMutate={canMutate} />
+          ) : activeSection === 'failed-messages' && isAdmin ? (
+            <FailedMessagesPanel />
           ) : (
             <ServiceCataloguePanel canMutate={canMutate} />
           )}
@@ -188,9 +214,11 @@ export function SettingsScreen() {
 function SettingsSidebar({
   activeSection,
   onSelect,
+  isAdmin,
 }: {
   activeSection: SettingsSectionId
   onSelect: (section: SettingsSectionId) => void
+  isAdmin: boolean
 }) {
   return (
     <nav className={cn(cardClass, 'h-fit p-4')}>
@@ -198,7 +226,7 @@ function SettingsSidebar({
         {settingsContent.sidebarTitle}
       </p>
       <ul className="mt-3 space-y-1">
-        {settingsContent.sections.map((section) => {
+        {settingsContent.sections.filter((section) => isAdmin || !('adminOnly' in section)).map((section) => {
           const active = activeSection === section.id
           return (
             <li key={section.id}>
@@ -296,6 +324,7 @@ function SaveBar({
 }
 
 function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
+  const isAdmin = useIsAdmin()
   const query = useBusinessProfile()
   const update = useUpdateBusinessProfile()
   const { showToast } = useToast()
@@ -343,7 +372,7 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
       return
     }
     try {
-      await update.mutateAsync(settingsBusinessFromForm(values))
+      await update.mutateAsync(profilePatchForRole(settingsBusinessFromForm(values), isAdmin))
       setDraft(null)
       setEditing(false)
       showToast(settingsContent.toasts.saved)
@@ -378,6 +407,9 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
       />
 
       <div className="mt-6 space-y-5">
+        {canMutate && !isAdmin ? (
+          <AdminOnlyNote id={ADMIN_PROFILE_NOTE_ID}>{apiErrorsContent.adminOnlyNotes.businessProfile}</AdminOnlyNote>
+        ) : null}
         <Field label={fields.businessName.label} required labelWeight="medium">
           <Input
             value={values.businessName}
@@ -425,7 +457,8 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
               value={values.vatNumber}
               onChange={(e) => updateField('vatNumber', e.target.value)}
               placeholder={fields.vatNumber.placeholder}
-              readOnly={!editing}
+              readOnly={!editing || !isAdmin}
+              aria-describedby={isAdmin ? undefined : ADMIN_PROFILE_NOTE_ID}
               className={cn(!editing && 'bg-surface')}
             />
           </Field>
@@ -451,7 +484,8 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
               value={values.vatRate}
               onChange={(e) => updateField('vatRate', e.target.value)}
               options={vatRates}
-              disabled={!editing}
+              disabled={!editing || !isAdmin}
+              aria-describedby={isAdmin ? undefined : ADMIN_PROFILE_NOTE_ID}
               className={settingsSelectClass}
             />
           </Field>
@@ -487,7 +521,7 @@ function BusinessProfilePanel({ canMutate }: { canMutate: boolean }) {
               updateField('bankDetails', bankDetails)
               if (formError) setFormError(null)
             }}
-            disabled={!editing}
+            disabled={!editing || !isAdmin}
             labelWeight="semibold"
           />
         </div>
@@ -514,6 +548,7 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<SettingsPaymentForm | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [detailErrors, setDetailErrors] = useState<Partial<Record<keyof InvoiceDetailsForm, string>>>({})
   // GoCardless is token-based, so Connect opens an inline token form.
   const [gcFormOpen, setGcFormOpen] = useState(false)
   const [disconnectError, setDisconnectError] = useState<{ provider: string; message: string } | null>(null)
@@ -554,6 +589,7 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
     setDraft(null)
     setEditing(false)
     setFormError(null)
+    setDetailErrors({})
   }
 
   async function save() {
@@ -563,6 +599,9 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
       setFormError(settingsContent.paymentSetup.defaults.dueDaysInvalid)
       return
     }
+    const problems = validateInvoiceDetails(values)
+    setDetailErrors(problems)
+    if (Object.keys(problems).length > 0) return
     try {
       await update.mutateAsync(settingsPaymentFromForm(values))
       setDraft(null)
@@ -768,6 +807,13 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
           />
         </div>
 
+        <InvoiceDetailsFields
+          values={values}
+          errors={detailErrors}
+          editing={editing}
+          onChange={(field, value) => updateField(field, value)}
+        />
+
         {formError ? <FieldError message={formError} /> : null}
       </div>
 
@@ -775,6 +821,53 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
         <SaveBar onSave={save} onCancel={cancelEdit} pending={update.isPending} />
       ) : null}
     </article>
+  )
+}
+
+/** GHL-10: optional invoice footer and payment terms, with help text and length errors tied to the field. */
+function InvoiceDetailsFields({
+  values,
+  errors,
+  editing,
+  onChange,
+}: {
+  values: InvoiceDetailsForm
+  errors: Partial<Record<keyof InvoiceDetailsForm, string>>
+  editing: boolean
+  onChange: (field: keyof InvoiceDetailsForm, value: string) => void
+}) {
+  const copy = settingsContent.paymentSetup.invoiceDetails
+  const fields = [
+    { key: 'invoiceFooter', label: copy.footerLabel, help: copy.footerHelp },
+    { key: 'paymentTerms', label: copy.termsLabel, help: copy.termsHelp },
+  ] as const
+  return (
+    <>
+      {fields.map(({ key, label, help }) => (
+        <div key={key}>
+          <label htmlFor={`invoice-details-${key}`} className="mb-2 block text-sm font-medium text-foreground">
+            {label}
+          </label>
+          <Textarea
+            id={`invoice-details-${key}`}
+            value={values[key]}
+            onChange={(event) => onChange(key, event.target.value)}
+            readOnly={!editing}
+            aria-invalid={errors[key] ? true : undefined}
+            aria-describedby={`invoice-details-${key}-help${errors[key] ? ` invoice-details-${key}-error` : ''}`}
+            className={cn('min-h-[4.5rem]', !editing && 'bg-surface')}
+          />
+          <p id={`invoice-details-${key}-help`} className="mt-1 text-xs text-muted">
+            {help}
+          </p>
+          {errors[key] ? (
+            <p id={`invoice-details-${key}-error`} role="alert" className="mt-1 text-sm text-danger">
+              {errors[key]}
+            </p>
+          ) : null}
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -1195,6 +1288,7 @@ function SmsTemplatesPanel({
 }
 
 function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
+  const isAdmin = useIsAdmin()
   const query = useTechnicians()
   const create = useCreateTechnician()
   const update = useUpdateTechnician()
@@ -1207,6 +1301,9 @@ function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
   const [form, setForm] = useState({ fullName: '', mobile: '', role: '' })
   const [formError, setFormError] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  /** WEB-02: deactivate / delete asks first. */
+  const [pendingRemoval, setPendingRemoval] = useState<SettingsTechnicianRow | null>(null)
+  const [removalError, setRemovalError] = useState<string | null>(null)
 
   const technicians = useMemo(
     () => settingsTechniciansToRows(query.data),
@@ -1247,16 +1344,32 @@ function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
     showToast(settingsContent.toasts.technicianAdded)
   }
 
-  async function handleRemoveOrDeactivate(technician: SettingsTechnicianRow) {
-    if (!canMutate) return
-    if (technician.profileId) {
-      await update.mutateAsync({ id: technician.id, input: { active: false } })
-    } else {
-      await remove.mutateAsync(technician.id)
+  async function confirmRemoveOrDeactivate() {
+    const technician = pendingRemoval
+    if (!canMutate || !technician) return
+    const copy = technician.profileId ? confirmDialogContent.technicianDeactivate : confirmDialogContent.technicianDelete
+    setRemovalError(null)
+    try {
+      if (technician.profileId) {
+        await update.mutateAsync({ id: technician.id, input: { active: false } })
+      } else {
+        await remove.mutateAsync(technician.id)
+      }
+      setPendingRemoval(null)
+      showToast(copy.done)
+    } catch (error) {
+      setRemovalError(error instanceof ApiError ? error.message : copy.failed)
     }
-    setOpenMenuId(null)
   }
 
+  function closeRemoval() {
+    setPendingRemoval(null)
+    setRemovalError(null)
+  }
+
+  const removalCopy = pendingRemoval?.profileId
+    ? confirmDialogContent.technicianDeactivate
+    : confirmDialogContent.technicianDelete
   const pending =
     create.isPending || update.isPending || remove.isPending
 
@@ -1290,6 +1403,9 @@ function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
       </div>
 
       <div className="mt-6 space-y-5">
+        {canMutate && !isAdmin ? (
+          <AdminOnlyNote id={ADMIN_TECHNICIAN_NOTE_ID}>{apiErrorsContent.adminOnlyNotes.technicians}</AdminOnlyNote>
+        ) : null}
         {showAddForm && canMutate ? (
           <div className="rounded-xl border border-primary/20 bg-accent-surface p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-foreground">{addForm.title}</h3>
@@ -1391,8 +1507,13 @@ function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
                         <div className="absolute right-0 z-10 mt-1 min-w-[9rem] rounded-lg border border-border bg-card p-1 shadow-md">
                           <button
                             type="button"
-                            onClick={() => handleRemoveOrDeactivate(technician)}
-                            className="w-full rounded-md px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
+                            onClick={() => {
+                              setOpenMenuId(null)
+                              setPendingRemoval(technician)
+                            }}
+                            disabled={!technician.profileId && !isAdmin}
+                            aria-describedby={!technician.profileId && !isAdmin ? ADMIN_TECHNICIAN_NOTE_ID : undefined}
+                            className="w-full rounded-md px-3 py-2 text-left text-sm text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {technician.profileId ? 'Deactivate' : actions.delete}
                           </button>
@@ -1406,6 +1527,16 @@ function TechnicianManagementPanel({ canMutate }: { canMutate: boolean }) {
           </ul>
         </div>
       </div>
+      <ConfirmDialog
+        open={pendingRemoval !== null}
+        title={removalCopy.title}
+        description={fillCopy(removalCopy.description, { name: pendingRemoval?.displayName ?? '' })}
+        confirmLabel={removalCopy.confirm}
+        pending={update.isPending || remove.isPending}
+        error={removalError}
+        onConfirm={() => void confirmRemoveOrDeactivate()}
+        onClose={closeRemoval}
+      />
     </article>
   )
 }
@@ -1427,6 +1558,9 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [form, setForm] = useState({ name: '', postcodeSectors: '' })
   const [formError, setFormError] = useState<string | null>(null)
+  /** WEB-02: deleting an area asks first. */
+  const [pendingDelete, setPendingDelete] = useState<SettingsServiceAreaRow | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const areas = useMemo(() => settingsServiceAreasToRows(query.data), [query.data])
 
@@ -1467,18 +1601,29 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
     showToast(settingsContent.toasts.areaAdded)
   }
 
-  async function deleteArea(area: SettingsServiceAreaRow) {
-    if (!canMutate || (area.linkedRounds.count ?? 0) > 0) return
+  async function confirmDeleteArea() {
+    const area = pendingDelete
+    if (!canMutate || !area || (area.linkedRounds.count ?? 0) > 0) return
+    const copy = confirmDialogContent.serviceArea
+    setDeleteError(null)
     try {
       await remove.mutateAsync(area.id)
+      setPendingDelete(null)
+      showToast(copy.deleted)
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
-        showToast('This service area no longer exists.')
-        query.refetch()
+        setPendingDelete(null)
+        showToast(copy.gone)
+        void query.refetch()
         return
       }
-      throw error
+      setDeleteError(errorMessage(error))
     }
+  }
+
+  function closeDeleteArea() {
+    setPendingDelete(null)
+    setDeleteError(null)
   }
 
   return (
@@ -1566,7 +1711,7 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
                   {canMutate ? (
                     <button
                       type="button"
-                      onClick={() => deleteArea(area)}
+                      onClick={() => setPendingDelete(area)}
                       disabled={linked || remove.isPending}
                       title={
                         linked
@@ -1604,6 +1749,16 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
           })}
         </ul>
       </div>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={confirmDialogContent.serviceArea.title}
+        description={fillCopy(confirmDialogContent.serviceArea.description, { name: pendingDelete?.name ?? '' })}
+        confirmLabel={confirmDialogContent.serviceArea.confirm}
+        pending={remove.isPending}
+        error={deleteError}
+        onConfirm={() => void confirmDeleteArea()}
+        onClose={closeDeleteArea}
+      />
     </article>
   )
 }

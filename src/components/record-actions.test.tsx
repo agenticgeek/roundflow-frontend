@@ -69,6 +69,26 @@ describe('RemoveRecordModal', () => {
     expect(onRemoved).not.toHaveBeenCalled()
   })
 
+  it('UNPAID_INVOICES: explains inside the dialog how many invoices and how much, and keeps it open', async () => {
+    server.use(
+      on('delete', '/customers/{id}', () =>
+        HttpResponse.json({ error: 'Customer has unpaid invoices', code: 'UNPAID_INVOICES', count: 2, total: 150 }, { status: 409 }),
+      ),
+      on('delete', '/properties/{id}', () =>
+        HttpResponse.json({ error: 'Property has unpaid invoices', code: 'UNPAID_INVOICES', count: 1, total: 20.5 }, { status: 409 }),
+      ),
+    )
+    const onRemoved = vi.fn()
+    const customer = renderWithProviders(<RemoveRecordModal {...base} kind="customer" onRemoved={onRemoved} />)
+    await customer.user.click(screen.getByRole('button', { name: 'Yes, cancel' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('2 invoices are still unpaid, £150.00 in total. Mark them paid or void them first.')
+    customer.unmount()
+    const property = renderWithProviders(<RemoveRecordModal {...base} kind="property" onRemoved={onRemoved} />)
+    await property.user.click(screen.getByRole('button', { name: 'Yes, cancel' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('1 invoice is still unpaid, £20.50 in total. Mark them paid or void them first.')
+    expect(onRemoved).not.toHaveBeenCalled()
+  })
+
   it('renders nothing when no kind is chosen', () => {
     renderWithProviders(<RemoveRecordModal {...base} kind={null} onRemoved={vi.fn()} />)
     expect(screen.queryByText('Cancel this property?')).not.toBeInTheDocument()

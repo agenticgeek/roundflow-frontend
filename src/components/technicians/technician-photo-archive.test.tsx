@@ -217,7 +217,8 @@ describe('single approve / reject', () => {
 
     await user.click(screen.getByRole('button', { name: 'Approve' }))
     expect(await screen.findByText('Visit photos approved.')).toBeInTheDocument()
-    expect(calls).toEqual([
+    // Both reviews are sent at once, so they can arrive in either order.
+    expect([...calls].sort((a, b) => a.id.localeCompare(b.id))).toEqual([
       { id: 'ph1', status: 'APPROVED' },
       { id: 'ph2', status: 'APPROVED' },
     ])

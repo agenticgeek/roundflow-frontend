@@ -140,6 +140,9 @@ export function roundTodayStopsToJobs(stops: RoundTodayStop[] | undefined): Toda
     status: mapJobStatus(stop.status),
     paymentHold: stop.paymentHold || undefined,
     issueNote: stop.issueFlag ?? undefined,
+    carriedOver: stop.carriedOver || undefined,
+    carriedOverFromDate: stop.carriedOverFromDate,
+    locationApproximate: stop.locationApproximate || undefined,
   }))
 }
 

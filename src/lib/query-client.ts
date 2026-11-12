@@ -1,7 +1,9 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 import { appErrorsContent } from '@/content/app-errors'
+import { friendlyApiMessage, isAdminOnly } from '@/lib/api-error-copy'
 import { ApiError, errorMessage } from '@/lib/errors'
 import { isNetworkError } from '@/lib/network-error'
+import { handleSessionExpired } from '@/lib/session-expiry'
 import { useUiStore } from '@/stores/ui.store'
 
 /** Queries are GETs: retry twice on a network failure or a 5xx, never on a 4xx. */
@@ -62,8 +64,27 @@ export function createAppQueryClient(): QueryClient {
           return
         }
         if (mutation.meta?.silenceGlobalError) return
-        // 400s are shown inline by the form that sent them; 401/403 are handled by the guards.
-        if (error instanceof ApiError && [400, 401, 403].includes(error.status)) return
+        if (error instanceof ApiError) {
+          // The API client already refreshed and retried; a 401 here means the session is gone (WEB-01).
+          if (error.status === 401) {
+            void handleSessionExpired()
+            return
+          }
+          // 400s are shown inline by the form that sent them.
+          if (error.status === 400) return
+          if (error.status === 403) {
+            const copy = appErrorsContent.session
+            // ADMIN_ONLY: a manager reached an administrator-only action. Say so plainly (no retry helps).
+            const adminOnly = isAdminOnly(error) ? friendlyApiMessage(error) : null
+            useUiStore.getState().pushToast({
+              key: 'forbidden',
+              message: adminOnly ?? copy.forbidden,
+              description: !adminOnly && error.message !== copy.forbidden ? error.message : undefined,
+              tone: 'error',
+            })
+            return
+          }
+        }
         useUiStore.getState().pushToast({ message: errorMessage(error), tone: 'error' })
       },
     }),

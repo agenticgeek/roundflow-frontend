@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { InvoiceListFilters, InvoiceListRow } from '@/api/invoices.api'
 import type { PaymentListFilters } from '@/api/payments.api'
+import { BulkSendInvoicesModal } from '@/components/invoices/BulkSendInvoicesModal'
 import { MarkInvoicePaidModal } from '@/components/invoices/MarkInvoicePaidModal'
 import { SendInvoiceModal } from '@/components/invoices/SendInvoiceModal'
 import { SavedInvoiceModal } from '@/components/property-detail/SavedInvoiceModal'
@@ -17,9 +18,11 @@ import {
   formatListMoney,
   isOpenInvoice,
   optionLabel,
+  statusLabel,
   statusTone,
   type ChipTone,
 } from '@/features/invoices/lib/list'
+import { selectableIds, selectionState, toggleId } from '@/features/invoices/lib/bulk-send'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { downloadBlob } from '@/lib/download'
 import { errorMessage } from '@/lib/errors'
@@ -40,7 +43,7 @@ const chipClass: Record<ChipTone, string> = {
 function StatusChip({ status, options }: { status: string; options: readonly { value: string; label: string }[] }) {
   return (
     <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-semibold', chipClass[statusTone(status)])}>
-      {optionLabel(options, status)}
+      {statusLabel(options, status)}
     </span>
   )
 }
@@ -88,7 +91,28 @@ function useCsvExport() {
   return { run, pending: exportCsv.isPending }
 }
 
-type InvoiceModal = { kind: 'preview' | 'send' | 'mark-paid'; row: InvoiceListRow } | null
+type InvoiceModal =
+  | { kind: 'preview' | 'send' | 'mark-paid'; row: InvoiceListRow }
+  | { kind: 'bulk'; ids?: string[] }
+  | null
+
+const checkboxClass = 'h-6 w-6 cursor-pointer accent-primary'
+
+/** Select-all for the draft rows on the page, with the mixed state shown as indeterminate. */
+function SelectAllCheckbox({ state, onToggle }: { state: 'none' | 'some' | 'all'; onToggle: () => void }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={copy.bulkSend.selectAll}
+      className={checkboxClass}
+      checked={state === 'all'}
+      ref={(node) => {
+        if (node) node.indeterminate = state === 'some'
+      }}
+      onChange={onToggle}
+    />
+  )
+}
 
 function InvoicesPanel() {
   const { canMutate } = useAppBootstrap()
@@ -104,9 +128,15 @@ function InvoicesPanel() {
   const list = useInvoiceList({ ...filters, page })
   const csv = useCsvExport()
   const [modal, setModal] = useState<InvoiceModal>(null)
+  const [selection, setSelection] = useState({ key: `${filterKey}|${page}`, ids: new Set<string>() })
+  const selected = selection.key === `${filterKey}|${page}` ? selection.ids : new Set<string>()
 
   const rows = list.data?.rows ?? []
   const customerName = (row: InvoiceListRow) => row.customer.name ?? copy.noValue
+  const selectable = selectableIds(rows)
+  const draftTotal = list.data?.pagination.total ?? 0
+  const viewFilters = compactFilters({ q, from, to })
+  const select = (ids: Set<string>) => setSelection({ key: `${filterKey}|${page}`, ids })
 
   return (
     <section className="space-y-4">
@@ -137,6 +167,39 @@ function InvoicesPanel() {
         </button>
       </div>
 
+      {canMutate && (selected.size > 0 || status === 'DRAFT') ? (
+        <div className="flex flex-wrap items-center gap-3">
+          {selected.size > 0 ? (
+            <>
+              <span className="text-sm text-muted">{copy.bulkSend.selectedCount.replace('{count}', String(selected.size))}</span>
+              <button
+                type="button"
+                className="min-h-6 rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground"
+                onClick={() => setModal({ kind: 'bulk', ids: [...selected] })}
+              >
+                {copy.bulkSend.sendSelected.replace('{count}', String(selected.size))}
+              </button>
+            </>
+          ) : null}
+          {status === 'DRAFT' && draftTotal > 0 ? (
+            <>
+              <button
+                type="button"
+                className="min-h-6 rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-surface"
+                onClick={() => setModal({ kind: 'bulk' })}
+              >
+                {copy.bulkSend.sendAll.replace('{count}', String(draftTotal))}
+              </button>
+              {draftTotal > copy.bulkSend.maxPerBatch ? (
+                <span className="text-sm text-muted">
+                  {copy.bulkSend.tooMany.replace('{max}', String(copy.bulkSend.maxPerBatch))}
+                </span>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
         {list.isPending ? (
           <SkeletonTableRows rows={5} />
@@ -146,6 +209,14 @@ function InvoicesPanel() {
           <table className="w-full min-w-[56rem]">
             <thead className="border-b border-border">
               <tr>
+                {canMutate ? (
+                  <th className={cn(thClass, 'w-10')}>
+                    <SelectAllCheckbox
+                      state={selectionState(selectable, selected)}
+                      onToggle={() => select(selectionState(selectable, selected) === 'all' ? new Set() : new Set(selectable))}
+                    />
+                  </th>
+                ) : null}
                 {Object.values(copy.invoiceTable).map((label) => (
                   <th key={label} className={thClass}>
                     {label}
@@ -156,11 +227,29 @@ function InvoicesPanel() {
             <tbody className="divide-y divide-border">
               {rows.map((row) => (
                 <tr key={row.id}>
+                  {canMutate ? (
+                    <td className={tdClass}>
+                      {row.status === 'DRAFT' ? (
+                        <input
+                          type="checkbox"
+                          aria-label={copy.bulkSend.selectRow.replace('{invoice}', row.invoiceNumber)}
+                          className={checkboxClass}
+                          checked={selected.has(row.id)}
+                          onChange={() => select(toggleId(selected, row.id))}
+                        />
+                      ) : null}
+                    </td>
+                  ) : null}
                   <td className={cn(tdClass, 'font-semibold')}>{row.invoiceNumber}</td>
                   <td className={tdClass}>{customerName(row)}</td>
                   <td className={tdClass}>{formatListMoney(row.total)}</td>
                   <td className={tdClass}>
                     <StatusChip status={row.status} options={copy.invoiceStatuses} />
+                    {row.overdue && row.status === 'SENT' ? (
+                      <span className="ml-1.5">
+                        <StatusChip status="OVERDUE" options={copy.invoiceStatuses} />
+                      </span>
+                    ) : null}
                   </td>
                   <td className={tdClass}>{formatListDate(row.issuedAt)}</td>
                   <td className={tdClass}>{formatListDate(row.dueDate)}</td>
@@ -195,10 +284,20 @@ function InvoicesPanel() {
         <Pager pagination={list.data.pagination} loading={list.isFetching} onPage={(next) => setPageState({ key: filterKey, page: next })} />
       ) : null}
 
+      {modal?.kind === 'bulk' ? (
+        <BulkSendInvoicesModal
+          ids={modal.ids}
+          filters={viewFilters}
+          onClose={() => {
+            setModal(null)
+            select(new Set())
+          }}
+        />
+      ) : null}
       <SavedInvoiceModal
         open={modal?.kind === 'preview'}
         invoiceId={modal?.kind === 'preview' ? modal.row.id : null}
-        customerName={modal ? customerName(modal.row) : ''}
+        customerName={modal && modal.kind !== 'bulk' ? customerName(modal.row) : ''}
         onClose={() => setModal(null)}
       />
       {modal?.kind === 'send' ? (

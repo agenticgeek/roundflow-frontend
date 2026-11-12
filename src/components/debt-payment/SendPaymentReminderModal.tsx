@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { SendChannel } from '@/api/invoices.api'
 import type { DebtCustomerRecord } from '@/content/debt-payment'
 import { debtPaymentContent } from '@/content/debt-payment'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { ChannelPicker, MessagingErrorNotice } from '@/components/messaging/ChannelPicker'
+import { useChannelChoice } from '@/features/messaging/hooks/useChannels'
 import { Field, Select, Textarea } from '@/components/ui'
 import { Modal, ModalButton, modalInputClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
@@ -39,17 +39,17 @@ export function SendPaymentReminderModal({ open, record, onClose }: SendPaymentR
   const remind = useDebtRemind()
   const { reset } = remind
   const templates = reminderModal.templates
-  const [channel, setChannel] = useState<SendChannel>('AUTO')
+  const [channel, setChannel, resetChannel] = useChannelChoice()
   const [templateId, setTemplateId] = useState<string>(templates[0].value)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
     if (!open || !record) return
-    setChannel('AUTO')
+    resetChannel()
     setTemplateId(templates[0].value)
     setMessage(applyTemplate(templates[0].body, record))
     reset()
-  }, [open, record, templates, reset])
+  }, [open, record, templates, reset, resetChannel])
 
   if (!record?.invoiceId) return null
   const invoiceId = record.invoiceId

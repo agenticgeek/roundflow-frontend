@@ -1506,7 +1506,7 @@ export const setupWizardContent = {
       channelRequired: 'Choose at least one channel.',
     },
     footerInfo:
-      'Messages are sent through your GHL account. Until it’s connected, they’re saved and shown to you instead of being sent.',
+      'Email is sent by RoundFlow. SMS and WhatsApp are optional and need a GoHighLevel account, which you can connect later in Settings.',
     variables: [
       'customerName',
       'firstName',

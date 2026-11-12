@@ -1,3 +1,4 @@
+import { telHref } from '@/lib/tel'
 import { useState } from 'react'
 import type { CustomerPropertyRecord } from '@/content/customers'
 import type {
@@ -7,6 +8,7 @@ import type {
   PropertyServicePlan,
 } from '@/content/property-detail'
 import { propertyDetailContent } from '@/content/property-detail'
+import { LocationNote } from '@/components/maps/LocationNote'
 import { AssignToRoundModal } from '@/components/customers/AssignToRoundModal'
 import { ChangeFrequencyModal } from '@/components/property-detail/ChangeFrequencyModal'
 import { EditCustomerRecordModal } from '@/components/property-detail/EditCustomerRecordModal'
@@ -477,6 +479,7 @@ function OverviewTab({
             label={overview.propertyDetails.fullAddress}
             value={property.fullAddress}
           />
+          <LocationNote latitude={property.latitude} locationApproximate={property.locationApproximate} />
           <OverviewField
             className="mt-6"
             label={overview.propertyDetails.accessNotes}
@@ -499,7 +502,7 @@ function OverviewTab({
   )
 }
 
-function ContactInformationCard({ property }: { property: PropertyDetailRecord }) {
+export function ContactInformationCard({ property }: { property: PropertyDetailRecord }) {
   const { overview } = propertyDetailContent
 
   return (
@@ -509,8 +512,8 @@ function ContactInformationCard({ property }: { property: PropertyDetailRecord }
       </h2>
       <ul className="space-y-3.5 px-5 py-5">
         <ContactRow icon="user" value={property.customerName} />
-        <ContactRow icon="phone" value={property.phone.trim() || '—'} />
-        <ContactRow icon="phone" label={overview.contact.landline} value={property.landline.trim() || '—'} />
+        <ContactRow icon="phone" value={property.phone.trim() || '—'} callName={property.customerName} />
+        <ContactRow icon="phone" label={overview.contact.landline} value={property.landline.trim() || '—'} callName={property.customerName} landline />
         <ContactRow icon="mail" value={property.email.trim() || '—'} />
       </ul>
     </article>
@@ -534,13 +537,25 @@ function OverviewField({
   )
 }
 
-function ContactRow({ icon, label, value }: { icon: string; label?: string; value: string }) {
+/** `callName` turns the value into a `tel:` link (always offered: calling needs no integration). */
+function ContactRow({ icon, label, value, callName, landline = false }: { icon: string; label?: string; value: string; callName?: string; landline?: boolean }) {
+  const href = callName ? telHref(value) : null
   return (
     <li className="flex items-center gap-3 text-sm text-foreground">
       <DashboardIcon name={icon} className="h-4 w-4 shrink-0 text-muted" />
       <span>
         {label ? <span className="text-muted">{label}: </span> : null}
-        {value}
+        {href ? (
+          <a
+            href={href}
+            aria-label={`Call ${callName} on ${value}${landline ? ' (landline)' : ''}`}
+            className="font-medium text-primary underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            {value}
+          </a>
+        ) : (
+          value
+        )}
       </span>
     </li>
   )

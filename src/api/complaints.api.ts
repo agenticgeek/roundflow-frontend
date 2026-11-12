@@ -65,6 +65,9 @@ export type ComplaintMessage = {
   body: string
   complaintId: string
   createdAt: string
+  /** Email only (SENT, DELIVERED, BOUNCED, COMPLAINED, FAILED); `null` for SMS. Not in the spec yet. */
+  deliveryStatus?: string | null
+  deliveryError?: string | null
 }
 
 function jsonRequest(method: 'POST', body?: unknown): RequestInit {

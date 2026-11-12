@@ -1,6 +1,5 @@
-import { useState } from 'react'
-import type { SendChannel } from '@/api/invoices.api'
 import { ChannelPicker, MessagingErrorNotice } from '@/components/messaging/ChannelPicker'
+import { useChannelChoice } from '@/features/messaging/hooks/useChannels'
 import { Modal, ModalButton, ModalFooter, modalWarningPanelClass } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { invoicesContent } from '@/content/invoices'
@@ -22,7 +21,7 @@ export function SendInvoiceModal({ invoice, onClose }: { invoice: SendableInvoic
   const copy = invoicesContent.sendModal
   const { showToast } = useToast()
   const send = useSendInvoiceVia()
-  const [channel, setChannel] = useState<SendChannel>('AUTO')
+  const [channel, setChannel] = useChannelChoice()
 
   const alreadySent =
     send.error instanceof ApiError && send.error.code === 'INVOICE_ALREADY_SENT' ? send.error : null
@@ -33,7 +32,8 @@ export function SendInvoiceModal({ invoice, onClose }: { invoice: SendableInvoic
         invoiceId: invoice.id,
         input: alreadySent ? { channel, resend: true } : { channel },
       })
-      showToast(copy.done.replace('{invoice}', result.invoiceNumber).replace('{channel}', CHANNEL_LABELS[result.channel]))
+      const template = result.pdfAttached === false ? copy.doneNoPdf : copy.done
+      showToast(template.replace('{invoice}', result.invoiceNumber).replace('{channel}', CHANNEL_LABELS[result.channel]))
       onClose()
     } catch {
       // Shown inline below.
@@ -60,6 +60,7 @@ export function SendInvoiceModal({ invoice, onClose }: { invoice: SendableInvoic
       }
     >
       <ChannelPicker value={channel} onChange={setChannel} disabled={send.isPending} />
+      {channel === 'EMAIL' ? <p className="text-xs text-muted">{copy.pdfAttachedNote}</p> : null}
       {alreadySent ? (
         <p role="alert" className={modalWarningPanelClass}>
           {alreadySent.message} {copy.alreadySent}

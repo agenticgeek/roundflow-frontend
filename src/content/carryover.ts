@@ -1,0 +1,47 @@
+/** Copy for carrying unfinished visits to the next working day (ACT-02..04). */
+export const carryoverContent = {
+  legend: 'Move unfinished jobs to',
+  loading: 'Finding the next working day…',
+  loadError: 'The available days could not be loaded.',
+  retry: 'Try again',
+  nextWorkingDay: 'Unfinished jobs move to {label} ({date}).',
+  optionLabel: '{label} ({date})',
+  notify: {
+    label: 'Also tell affected customers',
+    help: 'Sends each customer a message through your messaging connection. Off unless you tick it.',
+  },
+  preview: {
+    heading: 'What will happen',
+    loading: 'Checking the move…',
+    error: 'The move could not be checked. You can still close the day.',
+    moved: '{count} jobs will move to {date}.',
+    movedOne: '1 job will move to {date}.',
+    none: 'No jobs need to move.',
+    conflictsHeading: 'Technicians who cannot work that day',
+    conflict: '{technician} {reason}',
+    unknownTechnician: 'A technician',
+    reasons: {
+      TECHNICIAN_UNAVAILABLE: 'is not available',
+      TECHNICIAN_INACTIVE: 'has been deactivated',
+    } as Record<string, string>,
+    reasonFallback: 'cannot work ({reason})',
+    reassign: 'Reassign these jobs in the Round Planner',
+    skipped: '{count} jobs will stay where they are.',
+  },
+  result: {
+    heading: 'Day closed',
+    moved: '{count} jobs carried over to {date}.',
+    movedOne: '1 job carried over to {date}.',
+    nothingMoved: 'No jobs needed to move.',
+    customers: '{count} customers told.',
+    customerError: 'Customers could not be told: {error}',
+    done: 'Done',
+  },
+  errors: {
+    INVALID_CARRYOVER_TARGET: 'That day is not available. Pick one of the offered days.',
+    CARRYOVER_TARGET_IN_PAST: 'The chosen day has already passed.',
+    CARRYOVER_TARGET_CLOSED: 'That day has already been closed.',
+  } as Record<string, string>,
+  badge: 'Carried over from {date}',
+  badgeNoDate: 'Carried over',
+} as const

@@ -79,7 +79,7 @@ export function InvoicePreviewModal({
   const amount = formatInvoiceMoney(preview.total)
   const paymentMethod = paymentMethodLabel(preview.paymentMethod)
   const subtitle = invoicePreviewModal.subtitle
-    .replace('{customer}', preview.customer.name)
+    .replace('{customer}', preview.customer.name ?? '')
     .replace('{visitDate}', formatInvoiceDate(preview.visitDate))
 
   return (

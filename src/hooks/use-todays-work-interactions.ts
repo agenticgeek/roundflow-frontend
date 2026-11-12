@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import type { DeepLink } from '@/lib/deep-link'
 import type { TodaysWorkRound } from '@/content/todays-work'
 import { todaysWorkContent } from '@/content/todays-work'
 import { useToday } from '@/features/today/hooks/useToday'
@@ -15,13 +16,13 @@ function roundHasProblems(round: TodaysWorkRound) {
 }
 
 /** Today's Work UI state — search, problem filter, live refresh over API data. */
-export function useTodaysWorkInteractions() {
+export function useTodaysWorkInteractions(deepLink: DeepLink = {}) {
   const { defaults } = todaysWorkContent
   const todayQuery = useToday()
 
   const [search, setSearch] = useState<string>(defaults.search)
   const [showOnlyProblems, setShowOnlyProblems] = useState<boolean>(defaults.showOnlyProblems)
-  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null)
+  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(deepLink.round ?? null)
   const [reassignRoundId, setReassignRoundId] = useState<string | null>(null)
   const [pushMissedJobsRoundId, setPushMissedJobsRoundId] = useState<string | null>(null)
   const [closeDayOpen, setCloseDayOpen] = useState(false)
@@ -118,6 +119,7 @@ export function useTodaysWorkInteractions() {
   }, [])
 
   return {
+    deepLink,
     search,
     setSearch,
     showOnlyProblems,

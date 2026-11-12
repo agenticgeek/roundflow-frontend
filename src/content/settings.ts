@@ -17,12 +17,16 @@ export type SettingsSectionId =
   | 'service-area'
   | 'service-catalogue'
   | 'integrations'
+  | 'email'
   | 'kpi-thresholds'
+  | 'failed-messages'
 
 export interface SettingsSectionDefinition {
   id: SettingsSectionId
   label: string
   icon: string
+  /** Hidden from a MANAGER (the API answers 403 ADMIN_ONLY). */
+  adminOnly?: true
 }
 
 export const settingsContent = {
@@ -37,8 +41,10 @@ export const settingsContent = {
     { id: 'technician-management', label: 'Technician Mgmt', icon: 'technicians' },
     { id: 'service-area', label: 'Service Areas', icon: 'map-pin' },
     { id: 'service-catalogue', label: 'Service Catalogue', icon: 'briefcase' },
-    { id: 'integrations', label: 'Integrations', icon: 'message' },
+    { id: 'email', label: 'Email and branding', icon: 'message' },
+    { id: 'integrations', label: 'SMS and calling (optional)', icon: 'message' },
     { id: 'kpi-thresholds', label: 'KPI Thresholds', icon: 'alert' },
+    { id: 'failed-messages', label: 'Failed integration messages', icon: 'alert', adminOnly: true },
   ] satisfies SettingsSectionDefinition[],
   businessProfile: {
     heading: 'Business Profile',
@@ -64,6 +70,15 @@ export const settingsContent = {
       dueDays: 'Invoice due after (days)',
       dueDaysInvalid: 'Enter a number of days (0–90).',
       noDirectDebit: 'Customers without a Direct Debit',
+    },
+    /** GHL-10: printed on every invoice. */
+    invoiceDetails: {
+      footerLabel: 'Invoice footer',
+      footerHelp: 'Optional. Shown at the bottom of every invoice, for example a thank-you or your complaints contact. Up to 500 characters.',
+      footerTooLong: 'Keep the footer under 500 characters.',
+      termsLabel: 'Payment terms',
+      termsHelp: 'Optional. Replaces "Payment due within N days" on invoices, for example "Payment due on receipt". Up to 200 characters.',
+      termsTooLong: 'Keep the payment terms under 200 characters.',
     },
     stripeCallbackFailed: 'Couldn\'t connect Stripe',
     stripeCallbackBack: 'Back to settings',
@@ -139,10 +154,10 @@ export const settingsContent = {
     saved: 'Template saved',
     bodyRequired: 'The message can’t be empty.',
     sendingNote:
-      'Messages are sent through your GoHighLevel account (Settings › Integrations). Until it’s connected, they’re saved and shown to you instead of being sent.',
+      'Email templates are sent by RoundFlow. SMS and WhatsApp templates are sent through your GoHighLevel account (Settings › SMS and calling).',
     /** GAP-017: shown when GoHighLevel isn't connected. */
-    notConnectedNote: 'GoHighLevel isn’t connected yet, so these messages aren’t being sent.',
-    connectMessaging: 'Connect messaging',
+    notConnectedNote: 'GoHighLevel isn’t connected, so SMS and WhatsApp messages aren’t being sent. Email still works.',
+    connectMessaging: 'Set up SMS',
     new: 'New template',
     create: 'Create template',
     creating: 'Creating…',
@@ -160,14 +175,15 @@ export const settingsContent = {
     confirmDeleteYes: 'Yes, delete',
   },
   integrations: {
-    heading: 'Integrations',
-    subheading: 'Connect the services RoundFlow sends messages through',
+    heading: 'SMS and calling (optional)',
+    subheading:
+      'Email is sent by RoundFlow itself, with nothing to set up here. Connect GoHighLevel only if you also want to send SMS and WhatsApp. Calling a customer uses the phone link on their page and needs no setup.',
   },
   /** Settings › Integrations › Messaging (GoHighLevel) — private-integration connect (GAP-017). */
   ghl: {
-    title: 'Messaging (GoHighLevel)',
+    title: 'SMS and WhatsApp (GoHighLevel)',
     description:
-      'SMS, WhatsApp and email reminders go out through your GoHighLevel sub-account. Connect it with GoHighLevel sign-in, or with a Private Integration token.',
+      'SMS and WhatsApp messages go out through your GoHighLevel sub-account. Email does not need it. Connect it with GoHighLevel sign-in, or with a Private Integration token.',
     connected: 'Connected',
     notConnected: 'Not connected',
     loading: 'Checking connection…',
@@ -206,7 +222,7 @@ export const settingsContent = {
     copied: 'Copied',
     disconnect: 'Disconnect',
     disconnecting: 'Disconnecting…',
-    disconnectConfirm: 'Messages will stop sending until you reconnect. Disconnect GoHighLevel?',
+    disconnectConfirm: 'SMS and WhatsApp will stop sending until you reconnect. Email is not affected. Disconnect GoHighLevel?',
     disconnectYes: 'Yes, disconnect',
     cancel: 'Cancel',
     disconnectedToast: 'GoHighLevel disconnected',

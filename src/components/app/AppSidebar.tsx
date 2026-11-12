@@ -1,10 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { NavLink } from 'react-router-dom'
 import type { AppNavItem, AppQuickAction, AppQuickActionId } from '@/content/app-shell'
 import { appShellContent } from '@/content/app-shell'
 import { Brand } from '@/components/layout/Brand'
 import { EmergencyBell } from '@/components/app/EmergencyBell'
+import { NotificationCentre } from '@/components/app/NotificationCentre'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import {
   dashboardNavItemClass,
@@ -14,6 +15,9 @@ import {
 import { cn } from '@/lib/utils'
 import { useChatUnread } from '@/features/chat/hooks/useChat'
 import { useRoutePrefetch } from '@/hooks/use-route-prefetch'
+import { useDialogA11y } from '@/hooks/use-dialog-a11y'
+import { dismissNavBadge, isNavBadgeDismissed } from '@/lib/nav-badge'
+import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 
 interface AppSidebarNavProps {
   navItems: readonly AppNavItem[]
@@ -44,6 +48,11 @@ export function AppSidebarNav({
   const { signOut, signingOut: signingOutLabel, collapse, expand } = appShellContent.sidebar
   const prefetchRoute = useRoutePrefetch()
   const unreadChats = useChatUnread().data?.total ?? 0
+  const userId = useAppBootstrap().me?.id
+  // Opening an item with a NEW badge dismisses it (remembered per user in this browser).
+  const [dismissedBadges, setDismissedBadges] = useState<readonly string[]>([])
+  const showBadge = (item: AppNavItem) =>
+    item.newBadge === true && !dismissedBadges.includes(item.id) && !isNavBadgeDismissed(item.id, userId)
 
   return (
     <>
@@ -61,6 +70,7 @@ export function AppSidebarNav({
 
         <div className={cn('flex shrink-0 items-center gap-1', collapsed && 'flex-col')}>
           <EmergencyBell />
+          <NotificationCentre />
           {showCollapseToggle && onToggleCollapse ? (
             <button
               type="button"
@@ -83,7 +93,13 @@ export function AppSidebarNav({
             key={item.id}
             to={item.route}
             title={collapsed ? item.label : undefined}
-            onClick={onNavigate}
+            onClick={() => {
+              if (item.newBadge) {
+                dismissNavBadge(item.id, userId)
+                setDismissedBadges((ids) => [...ids, item.id])
+              }
+              onNavigate?.()
+            }}
             onMouseEnter={() => prefetchRoute(item.route)}
             onFocus={() => prefetchRoute(item.route)}
             onTouchStart={() => prefetchRoute(item.route)}
@@ -91,6 +107,11 @@ export function AppSidebarNav({
           >
             <DashboardIcon name={item.icon} className="h-4 w-4 shrink-0" />
             <span className={cn('truncate', collapsed && 'sr-only')}>{item.label}</span>
+            {showBadge(item) ? (
+              <span className={cn('ml-auto rounded-full bg-accent-surface px-1.5 text-[10px] font-semibold text-accent', collapsed && 'sr-only')}>
+                {appShellContent.sidebar.newBadge}
+              </span>
+            ) : null}
             {item.id === 'technicians' && unreadChats > 0 ? (
               <span
                 aria-label={`${unreadChats} unread chat messages`}
@@ -175,7 +196,9 @@ interface AppMobileNavProps extends AppSidebarNavProps {
 
 /** Mobile navigation drawer — full sidebar on small screens. */
 export function AppMobileNav({ open, onClose, ...navProps }: AppMobileNavProps) {
-  const { closeMenu } = appShellContent.sidebar
+  const { closeMenu, mobileNavLabel } = appShellContent.sidebar
+  // Dialog behaviour shared with Modal / SidePanel: focus trap, Escape, inert page, focus return (WEB-13).
+  const { rootRef, dialogRef } = useDialogA11y<HTMLDivElement, HTMLElement>(open, onClose)
 
   useEffect(() => {
     if (!open) return
@@ -190,15 +213,22 @@ export function AppMobileNav({ open, onClose, ...navProps }: AppMobileNavProps) 
   if (!open) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-50 lg:hidden">
+    <div ref={rootRef} className="fixed inset-0 z-50 lg:hidden">
       <button
         type="button"
+        tabIndex={-1}
         aria-label={closeMenu}
         onClick={onClose}
         className="absolute inset-0 bg-foreground/25 backdrop-blur-[1px]"
       />
 
-      <aside className="absolute inset-y-0 left-0 flex w-[min(18rem,88vw)] flex-col border-r border-border bg-background shadow-2xl">
+      <aside
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={mobileNavLabel}
+        tabIndex={-1}
+        className="absolute inset-y-0 left-0 flex w-[min(18rem,88vw)] flex-col border-r border-border bg-background shadow-2xl">
         <button
           type="button"
           onClick={onClose}
@@ -230,6 +260,7 @@ export function AppMobileHeader({ onOpenMenu }: AppMobileHeaderProps) {
       <Brand asLink={false} className="h-10" />
       <div className="flex items-center gap-1">
         <EmergencyBell className="h-9 w-9" />
+        <NotificationCentre className="h-9 w-9" />
         <button
           type="button"
           onClick={onOpenMenu}

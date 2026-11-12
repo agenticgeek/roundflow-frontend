@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import type { RoundListItem, SetRoundTechniciansInput } from '@/api/rounds.api'
 import type { TechnicianListItem } from '@/api/technicians.api'
 import { ROUTES } from '@/config/routes'
+import { AssignmentResultSummary } from '@/components/round-planner/AssignmentResultSummary'
+import {
+  outcomesToastDescription,
+  toAssignmentOutcome,
+  type AssignmentOutcome,
+} from '@/features/rounds/lib/assignment-result'
 import { assignTechniciansContent as content } from '@/content/round-planner'
 import { PendingInviteResend } from '@/components/round-planner/PendingInviteResend'
 import { Select } from '@/components/ui'
@@ -224,7 +230,12 @@ export function AssignTechniciansScreen() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [step, setStep] = useState<AssignStep>(0)
   /** What was saved, kept for the completed screen (the rounds refetch right after). */
-  const [savedSummary, setSavedSummary] = useState<{ rounds: number; visits: number } | null>(null)
+  const [savedSummary, setSavedSummary] = useState<{
+    rounds: number
+    visits: number
+    /** FLOW-02: what each save did to its round's visits. */
+    outcomes: AssignmentOutcome[]
+  } | null>(null)
 
   const from = todayIso()
   const to = addDays(from, Number(rangeDays) - 1)
@@ -345,8 +356,15 @@ export function AssignTechniciansScreen() {
       details.refetch()
       return
     }
-    showToast(content.toasts.saved)
+    const outcomes = results.flatMap((result, index) => {
+      const round = changedRounds[index]
+      return round && result.status === 'fulfilled' && (selection[round.id] ?? []).length > 0
+        ? [toAssignmentOutcome(round, result.value)]
+        : []
+    })
+    showToast(content.toasts.saved, { description: outcomesToastDescription(outcomes) })
     setSavedSummary({
+      outcomes,
       rounds: changedRounds.filter((round) => (selection[round.id] ?? []).length > 0).length,
       visits: changedRounds
         .filter((round) => (selection[round.id] ?? []).length > 0)
@@ -403,6 +421,9 @@ export function AssignTechniciansScreen() {
                 ? fillCopy(content.done.bodyOne, { visits: savedSummary.visits })
                 : fillCopy(content.done.body, { rounds: savedSummary.rounds, visits: savedSummary.visits })}
             </p>
+            <div className="mt-6 flex w-full justify-center">
+              <AssignmentResultSummary outcomes={savedSummary.outcomes} />
+            </div>
             <div className="mt-8 flex animate-reveal-item flex-wrap justify-center gap-3 [animation-delay:620ms]">
               <button type="button" onClick={() => navigate(ROUTES.roundPlanner)} className={secondaryButtonClass}>
                 {content.done.planner}

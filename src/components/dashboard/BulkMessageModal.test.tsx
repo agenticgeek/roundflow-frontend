@@ -12,7 +12,7 @@ const template = (id: string, name: string, body: string) => ({
 })
 
 const result = (over: Partial<MessageBulkResult> = {}): MessageBulkResult => ({
-  queued: 5, sent: 5, scheduled: 0, skippedOptedOut: 0, skippedNoContact: 0, failed: 0, scheduledFor: null, recipients: [], ...over,
+  queued: 5, sent: 5, scheduled: 0, skippedOptedOut: 0, skippedNoContact: 0, skippedNoChannel: 0, failed: 0, scheduledFor: null, recipients: [], ...over,
 })
 
 function mockApi(reply: () => Response | Promise<Response>, sent: MessageBulkInput[] = [], templates = [template('t1', 'Weather Delay', 'Hi {{firstName}}, delayed.')]) {
@@ -63,7 +63,7 @@ describe('BulkMessageModal', () => {
     expect(await screen.findByText('Sent to 5 customers · 1 opted out · 1 with no contact details')).toBeInTheDocument()
     expect(screen.getByText('Opted Out Ltd')).toBeInTheDocument()
     expect(sent).toEqual([
-      { roundId: 'r1', channel: 'sms', body: 'Hi {{firstName}}, delayed.', excludePaymentHold: true, templateId: 't1' },
+      { roundId: 'r1', channel: 'email', body: 'Hi {{firstName}}, delayed.', excludePaymentHold: true, templateId: 't1' },
     ])
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(onClose).toHaveBeenCalled()
@@ -101,5 +101,17 @@ describe('BulkMessageModal', () => {
     renderModal()
     await waitFor(() => expect(screen.getByText('No message templates yet — add one in Settings.')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Send Message' })).toBeDisabled()
+  })
+
+  it('sends by SMS when email is not available', async () => {
+    const sent = mockApi(() => HttpResponse.json(result()))
+    server.use(
+      on('get', '/settings/business-profile', () => HttpResponse.json({ businessName: 'X', channels: { email: false, sms: true, whatsapp: true, calls: true } })),
+    )
+    const { user } = renderModal()
+    await screen.findByText('Recipients: 5 customers')
+    await user.click(screen.getByRole('button', { name: 'Send Message' }))
+    await screen.findByText(/Sent to/)
+    expect(sent[0]?.channel).toBe('sms')
   })
 })

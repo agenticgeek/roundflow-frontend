@@ -7,7 +7,8 @@ import type { components, paths } from '@/api/types.gen'
  * list): the full visit history and the bad-debt flag.
  */
 export type CustomerVisitsPage = components['schemas']['CustomerVisitsPage']
-export type CustomerVisitRow = components['schemas']['VisitHistoryRow']
+/** `collectedVia`: how a technician said payment would be collected on site (BACS, GOCARDLESS, STRIPE, CASH, CHEQUE). Not in the spec yet. */
+export type CustomerVisitRow = components['schemas']['VisitHistoryRow'] & { collectedVia?: string | null }
 export type BadDebtInput = paths['/customers/{id}/bad-debt']['patch']['requestBody']['content']['application/json']
 export type BadDebtResult =
   paths['/customers/{id}/bad-debt']['patch']['responses'][200]['content']['application/json']

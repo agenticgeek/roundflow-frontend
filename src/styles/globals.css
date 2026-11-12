@@ -23,6 +23,15 @@
   --accent: #029BB6;
   --accent-surface: #E8F6F9;
 
+  /* Secondary text that passes AA on the mint background, placeholder text, hairlines and disabled controls. */
+  --muted-strong: #4B5563;
+  --placeholder: #6B7280;
+  --line: rgb(0 0 0 / 0.1);
+  --hairline: rgb(0 0 0 / 0.06);
+  --disabled: #E5E7EB;
+  --disabled-foreground: #9CA3AF;
+  --primary-hover: color-mix(in srgb, var(--primary), black 8%);
+
   /* Fixed dark brand panel used by the auth split-screen. */
   --sidebar: #0a0a0a;
   --sidebar-foreground: #ffffff;
@@ -47,12 +56,22 @@
   --color-warning-border: var(--warning-border);
   --color-accent: var(--accent);
   --color-accent-surface: var(--accent-surface);
+  --color-muted-strong: var(--muted-strong);
+  --color-placeholder: var(--placeholder);
+  --color-line: var(--line);
+  --color-hairline: var(--hairline);
+  --color-disabled: var(--disabled);
+  --color-disabled-foreground: var(--disabled-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --shadow-float: 0 4px 24px rgb(0 0 0 / 0.05);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
 
   --font-sans: "Montserrat", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Display face for the Flo AI wordmark. */
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
 
   --animate-fade-in-up: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-fade-in: fade-in 0.35s ease-out both;
@@ -72,6 +91,9 @@
   --animate-card-in: card-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-float: float 4s ease-in-out infinite;
   --animate-twinkle: twinkle 2.4s ease-in-out infinite both;
+  --animate-dot-bounce: dot-bounce 1.1s ease-in-out infinite both;
+  --animate-text-flow: text-flow 6s linear infinite;
+  --animate-caret: caret 1s steps(1) infinite;
 
   @keyframes fade-in-up {
     from {
@@ -241,6 +263,38 @@
     50% {
       opacity: 1;
       transform: scale(1) rotate(45deg);
+    }
+  }
+
+  @keyframes dot-bounce {
+    0%,
+    70%,
+    100% {
+      opacity: 0.35;
+      transform: translateY(0);
+    }
+    35% {
+      opacity: 1;
+      transform: translateY(-4px);
+    }
+  }
+
+  @keyframes text-flow {
+    from {
+      background-position: 0% 50%;
+    }
+    to {
+      background-position: -200% 50%;
+    }
+  }
+
+  @keyframes caret {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
     }
   }
 

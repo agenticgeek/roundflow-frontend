@@ -1,4 +1,5 @@
 import { api } from '@/api/client'
+import { idempotencyKeyFor } from '@/lib/idempotency'
 import type {
   CustomerCreateInput,
   CustomerDetail,
@@ -36,7 +37,7 @@ export const customersApi = {
 
   // CONTRACT-DIFF: POST /customers is in the handoff but may lag OpenAPI.
   create: (input: CustomerCreateInput) =>
-    api<CustomerCreateResult>('/customers', jsonRequest('POST', input)),
+    api<CustomerCreateResult>('/customers', { ...jsonRequest('POST', input), idempotencyKey: idempotencyKeyFor(input) }),
 
   get: (id: string, signal?: AbortSignal) =>
     api<CustomerDetail>(`/customers/${id}`, { signal }),

@@ -90,7 +90,7 @@ describe('rounds API (A1)', () => {
     server.use(
       on('put', '/rounds/{id}/technicians', async ({ request }) => {
         urls.push(new URL(request.url).search)
-        return specJson('/rounds/{id}/technicians', 'put', 200, { roundId: 'r1', allocation: [], visitsUpdated: 3 })
+        return specJson('/rounds/{id}/technicians', 'put', 200, { roundId: 'r1', allocation: [], visitsUpdated: 3, visitsGenerated: 0, overriddenVisits: 0, nextVisitDate: null })
       }),
       on('get', '/rounds/{id}/allocation', () => specJson('/rounds/{id}/allocation', 'get', 200, { mode: 'AUTO', allocation: [] })),
       on('get', '/customers', () => HttpResponse.json({})),

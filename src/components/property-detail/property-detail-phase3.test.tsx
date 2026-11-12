@@ -90,6 +90,26 @@ describe('VisitHistoryTab with GET /customers/:id/visits (GAP-020)', () => {
     expect(await screen.findByText('Old round')).toBeInTheDocument()
   })
 
+  it('says how a technician collected payment on site ("Collected via"), only when it is recorded', async () => {
+    server.use(
+      on('get', '/customers/{id}/invoices', () => HttpResponse.json([])),
+      on('get', '/customers/{id}/visits', () =>
+        HttpResponse.json({
+          rows: [
+            { visitId: 'v1', date: '2026-10-01T00:00:00Z', roundName: 'Alnwick Fri', status: 'COMPLETED', paymentStatus: 'PENDING', collectedVia: 'BACS' },
+            { visitId: 'v2', date: '2026-10-08T00:00:00Z', roundName: 'Alnwick Fri', status: 'COMPLETED', paymentStatus: 'PAID', collectedVia: 'NONE' },
+            { visitId: 'v3', date: '2026-10-15T00:00:00Z', roundName: 'Alnwick Fri', status: 'COMPLETED', paymentStatus: 'PAID', collectedVia: 'NEW_WAY' },
+          ],
+          pagination: { ...onePage, total: 3 },
+        }),
+      ),
+    )
+    renderWithProviders(<VisitHistoryTab property={property} customerId="c1" />)
+    expect(await screen.findByText('Collected via Bank transfer')).toBeInTheDocument()
+    expect(screen.getByText('Collected via NEW_WAY')).toBeInTheDocument()
+    expect(screen.getAllByText(/Collected via/)).toHaveLength(2)
+  })
+
   it('explains a failed load and retries', async () => {
     let fail = true
     server.use(
@@ -217,6 +237,9 @@ function invoice(overrides: Partial<InvoiceRecord> = {}): InvoiceRecord {
     customerId: 'c1',
     visitId: 'v1',
     paymentMethod: 'BACS',
+    lineItems: [],
+    subtotal: 20,
+    vatAmount: 0,
     ...overrides,
   }
 }
@@ -268,7 +291,7 @@ describe('InvoiceSendPanel (GAP-034 / GAP-027 part 2)', () => {
     expect(screen.getByRole('link', { name: 'Connect messaging' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: propertyDetailContent.generateInvoiceModal.actions.sendNow }))
     expect(await screen.findByText('Invoice sent by SMS')).toBeInTheDocument()
-    expect(bodies).toEqual([{ channel: 'AUTO' }, { channel: 'AUTO', resend: true }, { channel: 'AUTO' }])
+    expect(bodies).toEqual([{ channel: 'EMAIL' }, { channel: 'EMAIL', resend: true }, { channel: 'EMAIL' }])
   })
 
   it('offers "Send again" on a SENT invoice and opens the mark-paid dialog', async () => {
@@ -283,7 +306,7 @@ describe('InvoiceSendPanel (GAP-034 / GAP-027 part 2)', () => {
       <InvoiceSendPanel invoice={invoice({ status: 'SENT', customer: { name: '', email: null, phone: null, addressLine: null, postcode: null } })} customerName="Jo Coates" />,
     )
     await user.click(screen.getByRole('button', { name: 'Send again' }))
-    await waitFor(() => expect(body).toEqual({ channel: 'AUTO', resend: true }))
+    await waitFor(() => expect(body).toEqual({ channel: 'EMAIL', resend: true }))
     await user.click(screen.getByRole('button', { name: 'Mark as paid' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Jo Coates · £20.00')).toBeInTheDocument()

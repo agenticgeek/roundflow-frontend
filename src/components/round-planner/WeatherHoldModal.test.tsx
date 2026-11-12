@@ -23,7 +23,7 @@ const preview = (over: Partial<WeatherHoldPreview> = {}): WeatherHoldPreview => 
 })
 
 const notification = (over: Partial<MessageBulkResult> = {}): MessageBulkResult => ({
-  queued: 5, sent: 5, scheduled: 0, skippedOptedOut: 1, skippedNoContact: 0, failed: 0, scheduledFor: null, recipients: [], ...over,
+  queued: 5, sent: 5, scheduled: 0, skippedOptedOut: 1, skippedNoContact: 0, skippedNoChannel: 0, failed: 0, scheduledFor: null, recipients: [], ...over,
 })
 
 function mockPreview(data: WeatherHoldPreview | ((url: URL) => WeatherHoldPreview), seen: URL[] = []) {

@@ -12,6 +12,9 @@ const STATUS_TONES: Record<string, ChipTone> = {
   FAILED: 'danger',
   OVERDUE: 'danger',
   CANCELLED: 'neutral',
+  PROCESSING: 'warning',
+  REFUNDED: 'neutral',
+  DISPUTED: 'danger',
 }
 
 /** Chip colour for an invoice or payment status; unknown values are neutral. */
@@ -23,6 +26,15 @@ export function statusTone(status: string): ChipTone {
 export function optionLabel(options: readonly { value: string; label: string }[], value: string | null | undefined): string {
   if (!value) return invoicesContent.noValue
   return options.find((option) => option.value === value)?.label ?? value
+}
+
+/** Label for a status: the option's label, else the code in plain words ("CHARGEBACK_PENDING" -> "Chargeback pending"). */
+export function statusLabel(options: readonly { value: string; label: string }[], status: string): string {
+  if (!status) return invoicesContent.noValue
+  const known = options.find((option) => option.value === status)
+  if (known) return known.label
+  const words = status.toLowerCase().replace(/_/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 /** `2026-10-30T…` → `30 Oct 2026`; null / unparseable → "—". */

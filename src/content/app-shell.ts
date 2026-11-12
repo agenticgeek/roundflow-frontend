@@ -6,6 +6,10 @@ export interface AppNavItem {
   label: string
   icon: string
   route: RoutePath
+  /** Hidden from everyone except an ADMIN (the API answers 403 ADMIN_ONLY). */
+  adminOnly?: boolean
+  /** Shows a dismissible NEW badge until the user dismisses it (or opens the item). */
+  newBadge?: boolean
 }
 
 export type AppQuickActionId = 'add-round' | 'add-property' | 'bulk-message' | 'add-one-off-job'
@@ -33,6 +37,7 @@ export const appShellContent = {
       { id: 'complaints', label: 'Complaints', icon: 'message', route: ROUTES.complaints },
       { id: 'settings', label: 'Settings', icon: 'settings', route: ROUTES.settings },
       { id: 'technicians', label: 'Technicians', icon: 'technicians', route: ROUTES.technicians },
+      { id: 'flo-ai', label: 'Flo AI', icon: 'sparkle', route: ROUTES.floAi, adminOnly: true, newBadge: true },
     ] satisfies AppNavItem[],
     quickActionsTitle: 'Quick Actions',
     quickActions: [
@@ -41,12 +46,16 @@ export const appShellContent = {
       { id: 'bulk-message', label: 'Bulk Message', icon: 'message' },
       { id: 'add-one-off-job', label: 'Add One-off Job', icon: 'plus' },
     ] satisfies AppQuickAction[],
+    /** Text of the dismissible NEW badge on a nav item. */
+    newBadge: 'NEW',
     signOut: 'Sign out',
     signingOut: 'Signing out...',
     collapse: 'Collapse sidebar',
     expand: 'Expand sidebar',
     openMenu: 'Open navigation menu',
     closeMenu: 'Close navigation menu',
+    /** Accessible name of the mobile navigation drawer (a dialog). */
+    mobileNavLabel: 'Main menu',
   },
   modulePlaceholder: {
     backLabel: 'Back to Dashboard',

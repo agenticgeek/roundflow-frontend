@@ -229,7 +229,7 @@ export default function SetupWizard() {
     () =>
       (step3.data ?? [])
         .filter((service): service is typeof service & { id: string; name: string } =>
-          Boolean(service.id && service.name),
+          Boolean(service.id && service.name && service.active !== false),
         )
         .map((service) => ({
           value: service.id,
@@ -609,7 +609,7 @@ export default function SetupWizard() {
               gocardless: step2Initial.goCardlessConnected,
               stripe: step2Initial.stripeConnected,
             }}
-            canConnect={Boolean(setupStatus?.setupCompleted)}
+            canConnect={canMutate}
             vat={{ registered: Boolean(step1Initial.vatRegistered), rate: step1Initial.vatRate }}
             businessStepNumber={setupStepPosition(1) + 1}
             onChangeVat={() => navigateToStep(1)}

@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { useBusinessProfile } from '@/features/settings/hooks/useSettings'
 import { setTenantTimeZone } from '@/lib/timezone'
-import type { AppQuickActionId } from '@/content/app-shell'
+import type { AppNavItem, AppQuickActionId } from '@/content/app-shell'
 import { appShellContent } from '@/content/app-shell'
 import type { AppQuickActions } from '@/hooks/use-app-quick-actions'
 import { AddOneOffJobModal } from '@/components/dashboard/AddOneOffJobModal'
@@ -35,7 +35,7 @@ export function AppShell({
 }: AppShellProps) {
   const { sidebar } = appShellContent
   const sidebarState = useAppSidebar()
-  const { isTechnician } = useAppBootstrap()
+  const { isTechnician, role } = useAppBootstrap()
   const timezone = useBusinessProfile(!isTechnician).data?.timezone
   useEffect(() => setTenantTimeZone(timezone), [timezone])
 
@@ -44,9 +44,11 @@ export function AppShell({
   }
 
   // Dashboard and Emergencies endpoints are ADMIN/MANAGER only — hide their nav items for technicians.
+  // Admin-only items (Flo AI) are hidden for everyone else.
+  const visibleNav = (sidebar.nav as readonly AppNavItem[]).filter((item) => !item.adminOnly || role === 'ADMIN')
   const navItems = isTechnician
-    ? sidebar.nav.filter((item) => item.id !== 'dashboard' && item.id !== 'emergencies')
-    : sidebar.nav
+    ? visibleNav.filter((item) => item.id !== 'dashboard' && item.id !== 'emergencies')
+    : visibleNav
 
   const sidebarNavProps = {
     navItems,

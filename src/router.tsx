@@ -41,6 +41,7 @@ const Technicians = lazy(() => import('@/pages/Technicians'))
 const SetupWizard = lazy(() => import('@/pages/SetupWizard'))
 const SetupLive = lazy(() => import('@/pages/SetupLive'))
 const AssignTechnicians = lazy(() => import('@/pages/AssignTechnicians'))
+const FloAi = lazy(() => import('@/pages/FloAi'))
 const TechnicianApp = lazy(() => import('@/pages/TechnicianApp'))
 const TechnicianSetup = lazy(() => import('@/pages/TechnicianSetup'))
 
@@ -107,6 +108,14 @@ export const routes: RouteObject[] = [
     element: <ProtectedRoute>{page(<Settings />)}</ProtectedRoute>,
   },
   {
+    path: ROUTES.settingsEmail,
+    element: <ProtectedRoute>{page(<Settings />)}</ProtectedRoute>,
+  },
+  {
+    path: ROUTES.settingsFailedMessages,
+    element: <ProtectedRoute>{page(<Settings />)}</ProtectedRoute>,
+  },
+  {
     // Stripe's OAuth return lands here — Settings opens on the Payment section, or the setup
     // wizard's Payments step when setup isn't finished yet.
     path: ROUTES.settingsIntegrations,
@@ -132,6 +141,10 @@ export const routes: RouteObject[] = [
   {
     path: ROUTES.complaints,
     element: <ProtectedRoute>{page(<Complaints />)}</ProtectedRoute>,
+  },
+  {
+    path: ROUTES.floAi,
+    element: <ProtectedRoute>{page(<FloAi />)}</ProtectedRoute>,
   },
   ...technicianRoutes.map((path) => ({
     path,

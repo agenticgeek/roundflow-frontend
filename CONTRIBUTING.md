@@ -69,3 +69,46 @@ Never set this on Vercel/production.
 `router.tsx` builds `createBrowserRouter` from `ROUTES`. `/` redirects to the
 dashboard; `ProtectedRoute` bounces signed-out users to `/login`, and `GuestRoute`
 bounces signed-in users away from `/login` and `/signup` (see `src/lib/auth.tsx`).
+
+## Dialogs, confirmations and accessibility (Wave 1)
+
+Details and rationale: `docs/2026-11-06-wave1-web.md`.
+
+- **Never write your own overlay.** Use `Modal` (centred) or `SidePanel` (drawer). Both use
+  `useDialogA11y`: focus moves in on open, Tab wraps, Escape closes only the topmost dialog, the page
+  behind is `inert`, and focus returns to the opener. Give every dialog a title; put
+  `data-autofocus` on the control that should take focus first if it is not the first one.
+- **Destructive or hard-to-undo actions use `ConfirmDialog`** (`components/ui/confirm-dialog.tsx`), never
+  a bare click. It is an `alertdialog` that focuses Cancel, disables itself while `pending`, and shows
+  `error` inline. Catch the action's error and pass it back; a failed delete must never be silent.
+  Copy goes in `content/confirm-dialog.ts`.
+- **Errors**: link messages to inputs with `aria-describedby`; use `role="alert"` for failures that
+  appear after an action and `role="status"` for results (e.g. the assignment summary).
+- **Auth**: do not catch 401 in screens. `api()` refreshes and retries once, then signs out and sends the
+  user to Login with "Your session expired"; the global mutation handler toasts 403.
+- **Hand-typed API types** for endpoints missing from `types.gen.ts` are marked
+  `// TODO(types.gen): replace after backend regen`. Never edit `types.gen.ts` by hand.
+
+## Tests first and coverage
+
+1. Write the failing test before the code (typed MSW handlers via `on()` / `specJson()` where the
+   endpoint is in `types.gen.ts`).
+2. Every new or changed file targets 100% lines, branches, functions and statements. Add new files to
+   `AUDIT_REMEDIATION_FILES` in `vitest.config.ts`; `npm run test:coverage` enforces them per file.
+3. `npm run test:coverage`, then `npm run test:diff-coverage` (fails on any uncovered changed line).
+4. At most two rounds to get there. Anything still uncovered is deleted as dead code or marked with a
+   commented `/* v8 ignore */` and listed in the PR for review.
+
+## Maps, deep links and bulk actions (Wave 2A)
+
+Details: `docs/2026-11-06-wave2a-web.md`.
+
+- **Maps**: use `components/maps/StopsMapCanvas` (one pin per set of coincident stops, `AdvancedMarkerElement` with a legacy
+  fallback, zoom capped at 17); do not create `google.maps.Marker`s in a screen. The Geocoding library is not loaded.
+  `VITE_GOOGLE_MAPS_MAP_ID` sets the Cloud map ID (default `DEMO_MAP_ID`). Tests install a fake with
+  `installFakeGoogle()` from `src/test/fake-google-maps.ts`. Anything that shows a pin should also show
+  `LocationNote` / "Approximate location" when `locationApproximate` is true.
+- **Deep links**: pages accept `?visitId=`, `?round=`, `?date=`. Read them with `useDeepLink()`, build them with
+  `buildDeepLink()` (both in `lib/deep-link.ts`), and mark the target with `useHighlightFocus()` (`tabIndex={-1}`, `aria-current`).
+- **Polling queries that also invalidate a family** (bulk send batches): keep their key out of the family they invalidate.
+- **Hand-typed API shapes** still go in new `api/*.api.ts` files marked `// TODO(types.gen)` until the types are regenerated.
