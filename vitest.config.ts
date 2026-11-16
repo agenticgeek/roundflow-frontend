@@ -220,6 +220,15 @@ const AUDIT_REMEDIATION_FILES = [
   'src/components/flo/UnverifiedNotice.tsx',
   'src/components/flo/DeclinedNotice.tsx',
   'src/components/flo/WorkingIndicator.tsx',
+  // Business closures (2026-11-16): new whole files gated at 100% per file. Plan: roundflow-backend/docs/handoff/frontend/2026-11-16-business-closures-frontend-contract.md
+  'src/api/closures.api.ts',
+  'src/features/closures/hooks/useClosures.ts',
+  'src/features/closures/lib/closure-days.ts',
+  'src/features/closures/components/ClosuresPanel.tsx',
+  'src/features/closures/components/ClosureForm.tsx',
+  'src/features/closures/components/ApplyPreviewDialog.tsx',
+  'src/features/closures/components/ClosureWarning.tsx',
+  'src/content/closures.ts',
 ]
 
 export default defineConfig({

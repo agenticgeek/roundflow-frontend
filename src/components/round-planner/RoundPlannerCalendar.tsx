@@ -2,6 +2,10 @@ import { plannerDayStatusLabels, roundPlannerContent } from '@/content/round-pla
 import type { PlannerRoundCard, PlannerWeekRow } from '@/features/rounds/lib/planner'
 import { formatShortDate } from '@/features/rounds/lib/planner'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
+import { closuresContent } from '@/content/closures' // business closures
+import { closuresForDate } from '@/features/closures/lib/closure-days'
+import type { Closure } from '@/features/closures/types'
+import { formatShortDate as formatClosureDate } from '@/lib/round-dates'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatCurrency } from '@/lib/utils'
 
@@ -19,6 +23,10 @@ interface RoundPlannerCalendarProps {
   /** Shown on cards with no technician; omit to hide the action (e.g. read-only users). */
   onAssignCard?: (card: PlannerRoundCard) => void
   assignLabel: string
+  /** Closures overlapping the window (an overlay: omit or pass none and nothing changes). */
+  closures?: readonly Closure[]
+  /** The round the planner is filtered to; omit for all rounds. */
+  closureRoundId?: string
 }
 
 /** Mon–Sun grid — one row per week in the window, cells looked up by date. */
@@ -35,6 +43,8 @@ export function RoundPlannerCalendar({
   onSelectCard,
   onAssignCard,
   assignLabel,
+  closures,
+  closureRoundId,
 }: RoundPlannerCalendarProps) {
   return (
     <PanelCard interactive={false} className="overflow-hidden p-0">
@@ -67,6 +77,8 @@ export function RoundPlannerCalendar({
                   onSelectCard={onSelectCard}
                   onAssignCard={onAssignCard}
                   assignLabel={assignLabel}
+                  closures={closuresForDate(date, closures ?? [], closureRoundId)}
+                  shadeScoped={closureRoundId !== undefined}
                 />
               ))}
             </div>
@@ -75,6 +87,17 @@ export function RoundPlannerCalendar({
       </div>
     </PanelCard>
   )
+}
+
+/** Diagonal hatching as well as colour, so a closed day is not marked by colour alone. */
+const closureShadeClass =
+  'bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgb(0_0_0/0.06)_6px_7px)]'
+
+function closureTitle(closure: Closure): string {
+  return closuresContent.planner.bannerRange
+    .replace('{label}', closure.label)
+    .replace('{start}', formatClosureDate(closure.startDate, true))
+    .replace('{end}', formatClosureDate(closure.endDate, true))
 }
 
 function CalendarCell({
@@ -89,6 +112,8 @@ function CalendarCell({
   onSelectCard,
   onAssignCard,
   assignLabel,
+  closures,
+  shadeScoped,
 }: {
   date: string
   cards: PlannerRoundCard[]
@@ -101,13 +126,20 @@ function CalendarCell({
   onSelectCard: (card: PlannerRoundCard) => void
   onAssignCard?: (card: PlannerRoundCard) => void
   assignLabel: string
+  /** Closures covering this day (already limited to the filtered round, if any). */
+  closures: readonly Closure[]
+  /** True when filtered to one round: every closure then shades the day; otherwise only all-rounds ones. */
+  shadeScoped: boolean
 }) {
+  const shaded = closures.some((closure) => shadeScoped || closure.roundIds.length === 0)
   return (
     <div
       className={cn(
         'min-h-[7rem] border-r border-border bg-background p-2.5 last:border-r-0',
         isToday && 'bg-accent-surface/40',
+        shaded && closureShadeClass,
       )}
+      data-closed={shaded ? 'true' : undefined}
     >
       <p
         className={cn(
@@ -117,6 +149,20 @@ function CalendarCell({
       >
         {formatShortDate(date)}
       </p>
+
+      {closures.map((closure) => (
+        <p
+          key={closure.id}
+          title={closureTitle(closure)}
+          className="mt-1.5 flex items-center gap-1 rounded border border-dashed border-warning-border bg-warning-surface px-1.5 py-0.5 text-[11px] font-medium text-warning-foreground"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3 shrink-0" aria-hidden="true">
+            <circle cx="8" cy="8" r="6" />
+            <path d="M4 12 12 4" strokeLinecap="round" />
+          </svg>
+          {closuresContent.planner.banner.replace('{label}', closure.label)}
+        </p>
+      ))}
 
       {loading ? (
         <div className="mt-3 space-y-2">

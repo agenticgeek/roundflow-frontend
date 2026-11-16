@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import type { PlannerStop } from '@/api/rounds.api'
 import { useRounds, useRoundsOccurrenceDays, useRoundsOccurrences } from '@/features/rounds/hooks/useRounds'
+import { useClosures } from '@/features/closures/hooks/useClosures'
+import { closuresForDate } from '@/features/closures/lib/closure-days'
 import { addDays, todayIso } from '@/lib/round-dates'
 
 /** How far ahead the planner warns about visits with no technician. */
@@ -47,6 +49,8 @@ export function useUnassignedRoundsAlert(): UnassignedRoundsAlert | null {
   const from = todayIso()
   const to = addDays(from, UNASSIGNED_ALERT_DAYS - 1)
   const occurrences = useRoundsOccurrences(ids, { from, to }, ids.length > 0)
+  // Business closures: a day the business is closed for a round is not a day anyone needs to be assigned to (contract s3 item 7).
+  const closures = useClosures({ from, to }).data?.closures
 
   // One day-stops request per date (per 50 rounds), for only the rounds with visits that day.
   const dayRequests = useMemo(() => {
@@ -54,13 +58,14 @@ export function useUnassignedRoundsAlert(): UnassignedRoundsAlert | null {
     for (const id of ids) {
       for (const occurrence of occurrences.byRoundId.get(id) ?? []) {
         if (occurrence.projected || occurrence.stopCount === 0 || occurrence.date < from || occurrence.date > to) continue
+        if (closuresForDate(occurrence.date, closures ?? [], id).length > 0) continue
         roundIdsByDate.set(occurrence.date, [...(roundIdsByDate.get(occurrence.date) ?? []), id])
       }
     }
     return [...roundIdsByDate.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, roundIds]) => ({ date, roundIds }))
-  }, [from, ids, occurrences.byRoundId, to])
+  }, [closures, from, ids, occurrences.byRoundId, to])
 
   const days = useRoundsOccurrenceDays(dayRequests, !occurrences.isLoading)
 

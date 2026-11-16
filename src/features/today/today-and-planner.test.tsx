@@ -15,6 +15,8 @@ vi.mock('@/features/today/hooks/useToday', () => ({
     refetch: mocks.refetch,
   }),
 }))
+// The unassigned-visits alert also reads the business closures; none here.
+vi.mock('@/features/closures/hooks/useClosures', () => ({ useClosures: () => ({ data: undefined }) }))
 vi.mock('@/features/rounds/hooks/useRounds', () => ({
   useRounds: () => ({ data: [{ id: 'r1', name: 'Alnwick Fri' }] }),
   useRoundsOccurrences: () => ({ isLoading: false, byRoundId: new Map([['r1', [{ date: today, stopCount: 3 }]]]) }),

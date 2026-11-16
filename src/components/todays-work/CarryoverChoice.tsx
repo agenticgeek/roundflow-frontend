@@ -2,6 +2,12 @@ import { useId } from 'react'
 import type { CarryoverOption, CarryoverTargetKey } from '@/api/carryover.api'
 import { carryoverContent } from '@/content/carryover'
 import { formatShortDate } from '@/lib/round-dates'
+import { ClosureWarning } from '@/features/closures/components/ClosureWarning' // business closures
+import { closureForDate } from '@/features/closures/lib/closure-days'
+import type { Closure } from '@/features/closures/types'
+
+/** The server marks an option that lands inside a closure (optional, not yet in the generated types). */
+type OptionClosureMarker = { closure?: { closureId: string; label: string } }
 
 const copy = carryoverContent
 
@@ -19,6 +25,7 @@ export function CarryoverChoice({
   notify,
   onNotify,
   onRetry,
+  closures,
 }: {
   options: readonly CarryoverOption[] | undefined
   loading: boolean
@@ -28,6 +35,8 @@ export function CarryoverChoice({
   notify: boolean
   onNotify: (next: boolean) => void
   onRetry: () => void
+  /** Active closures, to warn while the user picks; the server's own `closure` marker on an option also warns. */
+  closures?: readonly Closure[]
 }) {
   const helpId = useId()
   if (loading) return <p className="text-sm text-muted">{copy.loading}</p>
@@ -41,6 +50,13 @@ export function CarryoverChoice({
       </div>
     )
   }
+  const chosen = options.length > 1 ? options.find((option) => option.key === value) : options[0]
+  const marker = (chosen as (CarryoverOption & OptionClosureMarker) | undefined)?.closure
+  const closure = marker
+    ? { id: marker.closureId, label: marker.label }
+    : chosen && closures
+      ? closureForDate(chosen.date, closures)
+      : null
   return (
     <div className="space-y-3">
       {options.length > 1 ? (
@@ -64,6 +80,7 @@ export function CarryoverChoice({
           {copy.nextWorkingDay.replace('{label}', options[0].label).replace('{date}', formatShortDate(options[0].date))}
         </p>
       )}
+      <ClosureWarning closure={closure} />
       <div>
         <label className="flex min-h-6 cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
           <input

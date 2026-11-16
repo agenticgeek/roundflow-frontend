@@ -28,6 +28,7 @@ import {
   useRoundsOccurrenceDay,
   useRoundsOccurrences,
 } from '@/features/rounds/hooks/useRounds'
+import { useClosures } from '@/features/closures/hooks/useClosures' // business closures
 import { useRoundSettings } from '@/features/settings/hooks/useSettings'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
@@ -121,6 +122,8 @@ export function RoundPlannerScreen({
 
   const occurrences = useRoundsOccurrences(roundIds, { from: window.from, to: window.to })
   const details = useRoundDetails(roundIds)
+  // Closures are an overlay: if this request fails the calendar still renders, just without them.
+  const closures = useClosures({ from: window.from, to: window.to }).data?.closures
 
   const cards = useMemo<PlannerRoundCard[]>(
     () =>
@@ -233,6 +236,7 @@ export function RoundPlannerScreen({
 
   const noRounds = roundsQuery.isSuccess && rounds.length === 0
   const noVisitsInWindow =
+    !closures?.length &&
     !noRounds && !occurrences.isLoading && !occurrences.isError && roundIds.length > 0 && realCards.length === 0
 
   return (
@@ -340,6 +344,8 @@ export function RoundPlannerScreen({
             onSelectCard={(card) => interactions.openRoundDetail({ roundId: card.roundId, date: card.date })}
             onAssignCard={canMutate ? openQuickAssign : undefined}
             assignLabel={quickAssignContent.cardAction}
+            closures={closures}
+            closureRoundId={interactions.roundId === 'all' ? undefined : interactions.roundId}
           />
         </div>
       ) : null}
