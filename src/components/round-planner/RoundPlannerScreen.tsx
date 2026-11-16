@@ -134,12 +134,16 @@ export function RoundPlannerScreen({
     [details.byRoundId, occurrences.byRoundId, selectedRounds],
   )
 
+  // Forecasts feed the calendar only — never KPIs, the empty-state check or the detail panel.
+  const realCards = useMemo(() => cards.filter((card) => !card.projected), [cards])
+
   const query = interactions.search.trim().toLowerCase()
 
   const cardsByDate = useMemo(() => {
     const map = new Map<string, PlannerRoundCard[]>()
     for (const card of cards) {
-      if (interactions.statusId !== 'all' && card.status !== interactions.statusId) continue
+      // A forecast has no real status, so any status filter hides it.
+      if (interactions.statusId !== 'all' && (card.projected || card.status !== interactions.statusId)) continue
       if (query && !card.roundName.toLowerCase().includes(query)) continue
       const bucket = map.get(card.date)
       if (bucket) bucket.push(card)
@@ -149,7 +153,7 @@ export function RoundPlannerScreen({
     return map
   }, [cards, interactions.statusId, query])
 
-  const kpis = useMemo(() => sumKpis(cards), [cards])
+  const kpis = useMemo(() => sumKpis(realCards), [realCards])
   const metrics: RoundPlannerMetric[] = [
     { label: content.kpis.totalStops, value: String(kpis.stopCount) },
     { label: content.kpis.roundValue, value: formatCurrency(kpis.totalValue, currency) },
@@ -229,7 +233,7 @@ export function RoundPlannerScreen({
 
   const noRounds = roundsQuery.isSuccess && rounds.length === 0
   const noVisitsInWindow =
-    !noRounds && !occurrences.isLoading && !occurrences.isError && roundIds.length > 0 && cards.length === 0
+    !noRounds && !occurrences.isLoading && !occurrences.isError && roundIds.length > 0 && realCards.length === 0
 
   return (
     <div className="space-y-4">
@@ -382,7 +386,7 @@ export function RoundPlannerScreen({
       <RoundPlannerDetailPanel
         card={
           interactions.selectedCard
-            ? (cards.find(
+            ? (realCards.find(
                 (card) =>
                   card.roundId === interactions.selectedCard?.roundId &&
                   card.date === interactions.selectedCard?.date,

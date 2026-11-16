@@ -13,11 +13,14 @@ export function ModeSwitch({
   value,
   disabled,
   onChange,
+  compact = false,
 }: {
   modes: readonly FloModeInfo[]
   value: FloMode
   disabled: boolean
   onChange: (mode: FloMode) => void
+  /** Hide the helper line under the toggle (the conversation needs the room). */
+  compact?: boolean
 }) {
   const index = Math.max(
     0,
@@ -63,7 +66,7 @@ export function ModeSwitch({
           )
         })}
       </div>
-      {current ? (
+      {current && !compact ? (
         <p key={current.key} aria-hidden="true" className="animate-fade-in text-[13px] text-muted-strong">
           {helperFor(current)}
         </p>

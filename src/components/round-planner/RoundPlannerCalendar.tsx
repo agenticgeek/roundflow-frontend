@@ -1,4 +1,4 @@
-import { plannerDayStatusLabels } from '@/content/round-planner'
+import { plannerDayStatusLabels, roundPlannerContent } from '@/content/round-planner'
 import type { PlannerRoundCard, PlannerWeekRow } from '@/features/rounds/lib/planner'
 import { formatShortDate } from '@/features/rounds/lib/planner'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
@@ -168,6 +168,26 @@ function RoundCard({
   onAssign?: () => void
   assignLabel: string
 }) {
+  if (card.projected) {
+    const { label, aria, estimatePrefix } = roundPlannerContent.calendar.projected
+    return (
+      <li
+        aria-label={aria}
+        className="rounded-lg border border-dashed border-border bg-surface/40 px-2.5 py-2 opacity-80"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs font-semibold text-muted">{card.roundName}</p>
+          <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-muted">{label}</span>
+        </div>
+        <p className="mt-1 text-[11px] text-muted">
+          {estimatePrefix}
+          {card.stopCount} {stopsLabel} · {estimatePrefix}
+          {formatCurrency(card.totalValue, currency)}
+        </p>
+      </li>
+    )
+  }
+
   const unassigned = !card.technicianName
   // Finished days don't need anyone any more.
   const canAssign = unassigned && card.status !== 'completed' && Boolean(onAssign)

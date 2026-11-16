@@ -60,6 +60,8 @@ export type PlannerOccurrence = {
   completionPct: number
   holdCount: number
   issueCount: number
+  /** Forecast only (`true`); real entries omit it. No visits exist yet; counts/value are estimates. */
+  projected?: boolean
 }
 
 /** One round's slice of GET /rounds/planner/occurrences (CONTRACT-DIFF: not in OpenAPI). */

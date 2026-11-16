@@ -53,7 +53,7 @@ export function useUnassignedRoundsAlert(): UnassignedRoundsAlert | null {
     const roundIdsByDate = new Map<string, string[]>()
     for (const id of ids) {
       for (const occurrence of occurrences.byRoundId.get(id) ?? []) {
-        if (occurrence.stopCount === 0 || occurrence.date < from || occurrence.date > to) continue
+        if (occurrence.projected || occurrence.stopCount === 0 || occurrence.date < from || occurrence.date > to) continue
         roundIdsByDate.set(occurrence.date, [...(roundIdsByDate.get(occurrence.date) ?? []), id])
       }
     }
