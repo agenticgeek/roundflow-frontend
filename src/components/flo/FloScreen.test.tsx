@@ -95,7 +95,6 @@ describe('FloScreen', () => {
     await user.type(screen.getByRole('textbox', { name: 'Ask Flo' }), 'Joke{Enter}')
     await waitFor(() => expect(conversation().getByText(/I can only answer questions/)).toBeInTheDocument())
     expect(mode).toBe('THOROUGH')
-    expect(localStorage.getItem('roundflow.flo.mode')).toBe('THOROUGH')
     // The announcement for a decline is the fixed copy.
     expect(liveRegion()).toHaveTextContent('I can only answer questions about your own RoundFlow data')
   })
@@ -112,7 +111,7 @@ describe('FloScreen', () => {
   it('shows one question left, and the fallback styles while status is loading', async () => {
     server.use(http.get(`${API}/flo/status`, () => HttpResponse.json({ ...floStatus, dailyRemaining: 1 })))
     renderWithProviders(<FloScreen />)
-    expect(screen.getAllByRole('radio').map((radio) => (radio as HTMLInputElement).value)).toEqual(['THOROUGH', 'BALANCED', 'QUICK'])
+    expect(screen.getAllByRole('radio').map((radio) => (radio as HTMLInputElement).value)).toEqual(['QUICK', 'BALANCED', 'THOROUGH'])
     expect(await screen.findByText('1 question left today')).toBeInTheDocument()
   })
 

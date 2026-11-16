@@ -17,33 +17,58 @@ interface MessageListProps {
 }
 
 /**
- * The conversation's own scroll region. It follows the answer only while the reader is at the bottom;
- * scrolling up pauses that and shows "Jump to latest".
+ * The conversation's own scroll region. A question just sent is scrolled to the top, so the answer is read from its
+ * start as it fills in below; the view does not chase the end of a streaming answer. Once the reader scrolls
+ * themselves, it follows new content only while they are at the bottom, and "Jump to latest" appears when they are not.
  */
 export function MessageList({ items, elapsed, busy, onAsk, onRetry }: MessageListProps) {
   const region = useRef<HTMLDivElement>(null)
   const following = useRef(true)
+  /** True from sending a question until the reader scrolls by hand: the view stays on the question, not the bottom. */
+  const anchored = useRef(false)
+  /** The newest question already handled, so each one is anchored once (and an opened history is not). */
+  const handledQuestion = useRef<string | null>(null)
   const [atBottom, setAtBottom] = useState(true)
 
   function handleScroll() {
     const element = region.current as HTMLDivElement
     const near = element.scrollHeight - element.scrollTop - element.clientHeight <= BOTTOM_SLACK
-    following.current = near
+    if (!anchored.current) following.current = near
     setAtBottom(near)
+  }
+
+  /** A deliberate scroll by the reader (wheel, touch, keys, scrollbar drag) hands control back to normal following. */
+  function releaseAnchor() {
+    anchored.current = false
   }
 
   function jumpToLatest() {
     const element = region.current as HTMLDivElement
     element.scrollTop = element.scrollHeight
+    anchored.current = false
     following.current = true
     setAtBottom(true)
   }
 
   useLayoutEffect(() => {
     const element = region.current as HTMLDivElement
-    // A question just sent always brings the reader back to the bottom.
-    if (items[items.length - 1]?.kind === 'user') following.current = true
-    if (following.current) element.scrollTop = element.scrollHeight
+    const lastUser = [...items].reverse().find((item) => item.kind === 'user')
+    const last = items[items.length - 1]
+    // A question just asked: its answer is on the way (or not yet created). An opened past conversation is complete.
+    const justAsked = last?.kind === 'user' || (last?.kind === 'assistant' && last.stream.view.streaming)
+    const isNewQuestion = lastUser !== undefined && lastUser.id !== handledQuestion.current
+    if (lastUser) handledQuestion.current = lastUser.id
+    if (isNewQuestion && justAsked) {
+      // A question was just sent: put it at the top so the answer is read from its start.
+      anchored.current = true
+      const bubbles = element.querySelectorAll<HTMLElement>('[data-user-item]')
+      const latest = bubbles[bubbles.length - 1]
+      if (latest) {
+        element.scrollTop += latest.getBoundingClientRect().top - element.getBoundingClientRect().top - 16
+      }
+    } else if (following.current && !anchored.current) {
+      element.scrollTop = element.scrollHeight
+    }
   }, [items])
 
   return (
@@ -54,12 +79,18 @@ export function MessageList({ items, elapsed, busy, onAsk, onRetry }: MessageLis
         aria-label={floContent.messages.label}
         tabIndex={0}
         onScroll={handleScroll}
+        onWheel={releaseAnchor}
+        onTouchStart={releaseAnchor}
+        onPointerDown={releaseAnchor}
+        onKeyDown={releaseAnchor}
         className="scrollbar-card h-full overflow-y-auto py-4 focus-visible:outline-none"
       >
         <div className="mx-auto max-w-[720px] space-y-6 px-1">
           {items.map((item) =>
             item.kind === 'user' ? (
-              <UserBubble key={item.id} text={item.text} />
+              <div key={item.id} data-user-item>
+                <UserBubble text={item.text} />
+              </div>
             ) : (
               <AssistantMessage
                 key={item.id}

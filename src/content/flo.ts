@@ -17,9 +17,9 @@ export const floContent = {
     } as Record<string, string>,
     /** Shown when GET /flo/status has not answered yet. */
     fallbackModes: [
-      { key: 'THOROUGH', label: 'Thorough', description: 'Deepest analysis. Slowest.' },
-      { key: 'BALANCED', label: 'Balanced', description: 'Good detail at a steady pace.' },
       { key: 'QUICK', label: 'Quick', description: 'One-line answers, fast.' },
+      { key: 'BALANCED', label: 'Balanced', description: 'Good detail at a steady pace.' },
+      { key: 'THOROUGH', label: 'Thorough', description: 'Deepest analysis. Slowest.' },
     ],
   },
   newChat: 'New chat',

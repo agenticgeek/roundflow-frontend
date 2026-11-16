@@ -15,6 +15,8 @@ import { useFloStatus, useFloSuggestions } from '@/features/flo/hooks/useFloStat
 import { statusLine } from '@/features/flo/lib/format'
 import { cn, fillCopy } from '@/lib/utils'
 
+const MODE_ORDER: readonly string[] = ['QUICK', 'BALANCED', 'THOROUGH']
+
 const NEW_CHAT_BUTTON = `inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-[background-color,transform] duration-150 hover:bg-primary-hover active:scale-[0.98] ${FOCUS_RING}`
 const NOTICE = 'mt-4 flex items-center gap-2 rounded-xl border border-danger/20 bg-card px-4 py-2 text-[15px] text-danger'
 
@@ -84,7 +86,10 @@ export function FloScreen() {
   }
 
   const remaining = status.data?.dailyRemaining
-  const modes = status.data?.modes ?? floContent.mode.fallbackModes
+  // Left to right: fastest to deepest, whatever order the server lists them in.
+  const modes = [...(status.data?.modes ?? floContent.mode.fallbackModes)].sort(
+    (a, b) => MODE_ORDER.indexOf(a.key) - MODE_ORDER.indexOf(b.key),
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col">
