@@ -1,9 +1,10 @@
-import { Link } from 'react-router-dom'
 import type { FloColumn, FloTableBlock } from '@/api/flo.api'
 import { floContent } from '@/content/flo'
+import { BlockLink } from '@/components/flo/BlockLink'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
+import { FOCUS_RING } from '@/components/flo/flo-styles'
 import { formatFloValue } from '@/features/flo/lib/format'
-import { floLinkTarget } from '@/features/flo/lib/links'
+import { downloadTableCsv } from '@/features/flo/lib/csv'
 import { fillCopy } from '@/lib/utils'
 
 const alignClass = (column: FloColumn) => (column.align === 'right' ? 'text-right tabular-nums' : 'text-left')
@@ -11,7 +12,6 @@ const alignClass = (column: FloColumn) => (column.align === 'right' ? 'text-righ
 /** A real table: caption, column headers, right-aligned figures and a totals row. It scrolls inside its own box. */
 export function TableBlock({ block }: { block: FloTableBlock }) {
   const title = block.title || floContent.table.untitled
-  const target = floLinkTarget(block.link)
   const totals = block.totals
   return (
     <div>
@@ -60,15 +60,18 @@ export function TableBlock({ block }: { block: FloTableBlock }) {
           ) : null}
         </table>
       </div>
-      {target && block.link ? (
-        <Link
-          to={target}
-          className="group mt-2 inline-flex items-center gap-1 text-sm font-medium text-accent underline-offset-4 hover:underline"
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <BlockLink link={block.link} />
+        <button
+          type="button"
+          aria-label={fillCopy(floContent.table.exportLabel, { title })}
+          onClick={() => downloadTableCsv(block)}
+          className={`mt-2 ml-auto inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-muted-strong hover:text-foreground ${FOCUS_RING}`}
         >
-          {floContent.link[block.link.screen as keyof typeof floContent.link]}
-          <DashboardIcon name="arrow-right" className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-        </Link>
-      ) : null}
+          <DashboardIcon name="download" className="h-4 w-4" />
+          {floContent.table.exportCsv}
+        </button>
+      </div>
     </div>
   )
 }

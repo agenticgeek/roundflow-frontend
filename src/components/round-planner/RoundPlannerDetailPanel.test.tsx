@@ -19,6 +19,7 @@ const card: PlannerRoundCard = {
   issueCount: 0,
   status: 'not_started',
   technicianName: null,
+  projected: false,
 }
 
 const stop = (visitId: string, status: string) => ({

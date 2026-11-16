@@ -1,4 +1,5 @@
 import type { FloCardsBlock } from '@/api/flo.api'
+import { BlockLink } from '@/components/flo/BlockLink'
 import { formatFloValue } from '@/features/flo/lib/format'
 
 const TONE: Record<string, string> = {
@@ -12,6 +13,7 @@ const TONE: Record<string, string> = {
 /** Headline figures. Values and formats come from the server; this only lays them out. */
 export function CardsBlock({ block }: { block: FloCardsBlock }) {
   return (
+    <div>
     <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {block.items.map((item, index) => (
         <div
@@ -27,5 +29,7 @@ export function CardsBlock({ block }: { block: FloCardsBlock }) {
         </div>
       ))}
     </dl>
+    <BlockLink link={block.link} />
+    </div>
   )
 }

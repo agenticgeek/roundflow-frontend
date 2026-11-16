@@ -54,7 +54,7 @@ describe('useFloStatus and useFloSuggestions', () => {
     const status = renderHook(() => useFloStatus(), { wrapper })
     const suggestions = renderHook(() => useFloSuggestions(), { wrapper })
     await waitFor(() => expect(status.result.current.data?.dailyRemaining).toBe(42))
-    await waitFor(() => expect(suggestions.result.current.data?.groups).toHaveLength(2))
+    await waitFor(() => expect(suggestions.result.current.data?.groups).toHaveLength(3))
 
     const idle = renderHook(() => useFloStatus(false), { wrapper: wrapperFor() })
     expect(idle.result.current.fetchStatus).toBe('idle')
