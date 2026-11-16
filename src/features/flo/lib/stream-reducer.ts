@@ -5,6 +5,7 @@ import type {
   FloLink,
   FloMessage,
   FloMode,
+  FloRating,
   FloSource,
 } from '@/api/flo.api'
 import { describeFloError } from '@/features/flo/lib/errors'
@@ -50,6 +51,8 @@ export interface AssistantView {
   stopped: boolean
   /** A persisted message that has neither an answer nor a decline. */
   malformed: boolean
+  /** The persisted thumb on this answer (`done` message or reloaded conversation). */
+  rating: FloRating | null
 }
 
 export interface FloStreamState {
@@ -87,6 +90,7 @@ export function emptyView(streaming = true): AssistantView {
     error: null,
     stopped: false,
     malformed: false,
+    rating: null,
   }
 }
 
@@ -167,7 +171,7 @@ function placed<T>(list: T[], index: number, value: T): T[] {
 
 /** The persisted message as a view, so a reload looks exactly like the streamed answer did. */
 export function viewFromMessage(message: FloMessage): AssistantView {
-  const base: AssistantView = { ...emptyView(false), id: message.id, warnings: message.warnings ?? [] }
+  const base: AssistantView = { ...emptyView(false), id: message.id, warnings: message.warnings ?? [], rating: message.rating === 'UP' || message.rating === 'DOWN' ? message.rating : null }
   if (message.declined) return { ...base, declined: message.declined }
   if (message.status === 'ERROR' || message.status === 'ABORTED') {
     return { ...base, error: describeFloError('UNKNOWN') }

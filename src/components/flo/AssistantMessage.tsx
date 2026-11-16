@@ -1,16 +1,18 @@
 import { floContent } from '@/content/flo'
 import { CardsBlock } from '@/components/flo/CardsBlock'
+import { ChartBlock } from '@/components/flo/ChartBlock'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { DeclinedNotice } from '@/components/flo/DeclinedNotice'
 import { FloMark } from '@/components/flo/FloMark'
 import { FollowUps } from '@/components/flo/FollowUps'
 import { InsightsBlock } from '@/components/flo/InsightsBlock'
+import { MessageFeedback } from '@/components/flo/MessageFeedback'
 import { Sentence } from '@/components/flo/Sentence'
 import { SourcesPill } from '@/components/flo/SourcesPill'
 import { TableBlock } from '@/components/flo/TableBlock'
 import { UnverifiedNotice } from '@/components/flo/UnverifiedNotice'
 import { WorkingIndicator } from '@/components/flo/WorkingIndicator'
-import { isCardsBlock, isTableBlock } from '@/features/flo/lib/blocks'
+import { isCardsBlock, isChartBlock, isTableBlock } from '@/features/flo/lib/blocks'
 import type { AssistantView } from '@/features/flo/lib/stream-reducer'
 
 interface AssistantMessageProps {
@@ -48,7 +50,13 @@ export function AssistantMessage({ view, elapsed, busy, onAsk, onRetry }: Assist
         ) : null}
 
         {view.blocks.map((block, index) => {
-          const content = isCardsBlock(block) ? <CardsBlock block={block} /> : isTableBlock(block) ? <TableBlock block={block} /> : null
+          const content = isCardsBlock(block) ? (
+            <CardsBlock block={block} />
+          ) : isTableBlock(block) ? (
+            <TableBlock block={block} />
+          ) : isChartBlock(block) ? (
+            <ChartBlock block={block} />
+          ) : null
           return content ? (
             <div key={index} className="animate-fade-in motion-reduce:animate-none">
               {content}
@@ -62,6 +70,9 @@ export function AssistantMessage({ view, elapsed, busy, onAsk, onRetry }: Assist
         {view.declined ? <DeclinedNotice declined={view.declined} onAsk={onAsk} disabled={busy} /> : null}
         {!view.streaming && view.sources.length > 0 ? <SourcesPill sources={view.sources} dateRange={view.dateRange} /> : null}
         {!view.streaming && view.followUps.length > 0 ? <FollowUps items={view.followUps} disabled={busy} onAsk={onAsk} /> : null}
+        {!view.streaming && view.id && !failed && !view.declined ? (
+          <MessageFeedback key={view.id} messageId={view.id} rating={view.rating} />
+        ) : null}
         {view.stopped ? (
           <p className="inline-flex items-center gap-1.5 text-sm text-muted">
             <DashboardIcon name="pause" className="h-4 w-4" />

@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import {
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import type {
   ActivityLogItem,
   ReportsMetric,
@@ -7,24 +13,24 @@ import type {
   TechnicianPerformanceRow,
   VisitHistoryRow,
   VisitStatus,
-} from '@/content/reports'
-import { reportsContent } from '@/content/reports'
-import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
-import { PanelCard } from '@/components/dashboard/DashboardControls'
+} from "@/content/reports";
+import { reportsContent } from "@/content/reports";
+import { DashboardIcon } from "@/components/dashboard/DashboardIcon";
+import { PanelCard } from "@/components/dashboard/DashboardControls";
 import {
   dashboardCtaClass,
   dashboardPressableClass,
   dashboardRowHoverClass,
-} from '@/components/dashboard/dashboard-styles'
+} from "@/components/dashboard/dashboard-styles";
 import {
   ChartTooltip,
   emptyChartTooltip,
   getChartTooltipPosition,
   type ChartTooltipState,
-} from '@/components/dashboard/ChartTooltip'
-import { Select } from '@/components/ui'
-import { useToast } from '@/components/ui/toast'
-import { Pager } from '@/components/ui/pager'
+} from "@/components/dashboard/ChartTooltip";
+import { Select } from "@/components/ui";
+import { useToast } from "@/components/ui/toast";
+import { Pager } from "@/components/ui/pager";
 import {
   useReportsActivity,
   useReportsExport,
@@ -32,8 +38,8 @@ import {
   useReportsSummary,
   useReportsTechnicians,
   useReportsVisits,
-} from '@/features/reports/hooks/useReports'
-import { downloadBlob } from '@/lib/download'
+} from "@/features/reports/hooks/useReports";
+import { downloadBlob } from "@/lib/download";
 import {
   activityToItems,
   cycleLabelForPeriod,
@@ -44,111 +50,160 @@ import {
   UI_PERIOD_TO_API,
   uiStatusToApi,
   visitsToRows,
-} from '@/features/reports/lib/mappers'
-import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
-import { ApiError } from '@/lib/errors'
-import { cn } from '@/lib/utils'
+} from "@/features/reports/lib/mappers";
+import { useAppBootstrap } from "@/providers/AppBootstrapProvider";
+import { ApiError } from "@/lib/errors";
+import { cn } from "@/lib/utils";
 import {
   ReportsActivitySkeleton,
   ReportsChartSkeleton,
   ReportsMetricsSkeleton,
   ReportsScreenSkeleton,
   ReportsTableSkeleton,
-} from '@/components/reports/ReportsSkeletons'
+} from "@/components/reports/ReportsSkeletons";
 
 const VISIT_STATUS_CLASS: Record<VisitStatus, string> = {
-  completed: 'border-success/40 bg-success/5 text-success',
-  skipped: 'border-danger/40 bg-danger/5 text-danger',
-  'in-progress': 'border-success/40 bg-success/5 text-success',
-  pending: 'border-border bg-surface text-muted',
-  scheduled: 'border-border bg-surface text-muted',
-  cancelled: 'border-border bg-muted/15 text-muted',
-}
+  completed: "border-success/40 bg-success/5 text-success",
+  skipped: "border-danger/40 bg-danger/5 text-danger",
+  "in-progress": "border-success/40 bg-success/5 text-success",
+  pending: "border-border bg-surface text-muted",
+  scheduled: "border-border bg-surface text-muted",
+  cancelled: "border-border bg-muted/15 text-muted",
+};
 
-type FocusedReport = 'technicians' | 'visits' | 'activity'
+type FocusedReport = "technicians" | "visits" | "activity";
 
 /** Reports & History — live `/reports/*` aggregate, charts, and logs. */
 export function ReportsScreen() {
-  const { canMutate } = useAppBootstrap()
-  const { showToast } = useToast()
-  const [period, setPeriod] = useState<ReportsPeriod>('Monthly')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [focusedReport, setFocusedReport] = useState<FocusedReport | null>(null)
+  const { canMutate } = useAppBootstrap();
+  const { showToast } = useToast();
+  const [period, setPeriod] = useState<ReportsPeriod>("Monthly");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [focusedReport, setFocusedReport] = useState<FocusedReport | null>(
+    null,
+  );
 
-  const apiPeriod = UI_PERIOD_TO_API[period]
-  const visitStatus = uiStatusToApi(statusFilter)
+  const apiPeriod = UI_PERIOD_TO_API[period];
+  const visitStatus = uiStatusToApi(statusFilter);
+  const statusLabel =
+    statusFilter === "all"
+      ? undefined
+      : reportsContent.statusFilter.options.find(
+          (option) => option.value === statusFilter,
+        )?.label;
+  /** The filter only changes Visit History (and the export), which sits low on the page: bring it into view. */
+  function handleStatusFilterChange(value: string) {
+    setStatusFilter(value);
+    document
+      .getElementById("visit-history")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   // Paged lists — each resets to page 1 when its filters change.
-  const techniciansKey = apiPeriod
-  const visitsKey = `${apiPeriod}|${visitStatus ?? ''}`
-  const [technicianPageState, setTechnicianPageState] = useState({ key: techniciansKey, page: 1 })
-  const [visitPageState, setVisitPageState] = useState({ key: visitsKey, page: 1 })
-  const [activityPage, setActivityPage] = useState(1)
-  const technicianPage = technicianPageState.key === techniciansKey ? technicianPageState.page : 1
-  const visitPage = visitPageState.key === visitsKey ? visitPageState.page : 1
+  const techniciansKey = apiPeriod;
+  const visitsKey = `${apiPeriod}|${visitStatus ?? ""}`;
+  const [technicianPageState, setTechnicianPageState] = useState({
+    key: techniciansKey,
+    page: 1,
+  });
+  const [visitPageState, setVisitPageState] = useState({
+    key: visitsKey,
+    page: 1,
+  });
+  const [activityPage, setActivityPage] = useState(1);
+  const technicianPage =
+    technicianPageState.key === techniciansKey ? technicianPageState.page : 1;
+  const visitPage = visitPageState.key === visitsKey ? visitPageState.page : 1;
 
-  const summaryQuery = useReportsSummary({ period: apiPeriod })
-  const revenueQuery = useReportsRevenue({ period: apiPeriod, granularity: 'daily' })
-  const techniciansQuery = useReportsTechnicians({ period: apiPeriod, page: technicianPage })
-  const visitsQuery = useReportsVisits({ period: apiPeriod, status: visitStatus, page: visitPage })
-  const activityQuery = useReportsActivity({ page: activityPage })
-  const reportsExport = useReportsExport()
+  const summaryQuery = useReportsSummary({ period: apiPeriod });
+  const revenueQuery = useReportsRevenue({
+    period: apiPeriod,
+    granularity: "daily",
+  });
+  const techniciansQuery = useReportsTechnicians({
+    period: apiPeriod,
+    page: technicianPage,
+  });
+  const visitsQuery = useReportsVisits({
+    period: apiPeriod,
+    status: visitStatus,
+    page: visitPage,
+  });
+  const activityQuery = useReportsActivity({ page: activityPage });
+  const reportsExport = useReportsExport();
 
   async function handleExport() {
-    if (reportsExport.isPending) return
+    if (reportsExport.isPending) return;
     try {
       const blob = await reportsExport.mutateAsync({
-        type: 'visits',
+        type: "visits",
         period: apiPeriod,
         status: visitStatus,
-      })
-      downloadBlob(blob, `roundflow-visits-${apiPeriod}.csv`)
+      });
+      downloadBlob(blob, `roundflow-visits-${apiPeriod}.csv`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not export the report.')
+      showToast(
+        error instanceof Error ? error.message : "Could not export the report.",
+      );
     }
   }
 
-  const metrics = useMemo(() => summaryToMetrics(summaryQuery.data), [summaryQuery.data])
+  const metrics = useMemo(
+    () => summaryToMetrics(summaryQuery.data),
+    [summaryQuery.data],
+  );
   const revenuePoints = useMemo(
     () => revenueToPoints(revenueQuery.data, apiPeriod),
     [apiPeriod, revenueQuery.data],
-  )
+  );
   const technicians = useMemo(
     () => techniciansToRows(techniciansQuery.data?.rows),
     [techniciansQuery.data],
-  )
-  const visits = useMemo(() => visitsToRows(visitsQuery.data?.rows), [visitsQuery.data])
-  const technicianPagination = techniciansQuery.data?.pagination
-  const visitPagination = visitsQuery.data?.pagination
+  );
+  const visits = useMemo(
+    () => visitsToRows(visitsQuery.data?.rows),
+    [visitsQuery.data],
+  );
+  const technicianPagination = techniciansQuery.data?.pagination;
+  const visitPagination = visitsQuery.data?.pagination;
 
   /** Back to the overview — which shows the first rows, so start each list at page 1 again. */
   function showOverview() {
-    setFocusedReport(null)
-    setTechnicianPageState({ key: techniciansKey, page: 1 })
-    setVisitPageState({ key: visitsKey, page: 1 })
-    setActivityPage(1)
+    setFocusedReport(null);
+    setTechnicianPageState({ key: techniciansKey, page: 1 });
+    setVisitPageState({ key: visitsKey, page: 1 });
+    setActivityPage(1);
   }
-  const activityPagination = activityQuery.data?.pagination
-  const activity = useMemo(() => activityToItems(activityQuery.data), [activityQuery.data])
+  const activityPagination = activityQuery.data?.pagination;
+  const activity = useMemo(
+    () => activityToItems(activityQuery.data),
+    [activityQuery.data],
+  );
 
   if (!canMutate) {
     return (
-      <PanelCard interactive={false} className="py-12 text-center text-sm text-muted">
+      <PanelCard
+        interactive={false}
+        className="py-12 text-center text-sm text-muted"
+      >
         Reports are available to admins and managers only.
       </PanelCard>
-    )
+    );
   }
 
   const permissionBlocked =
     summaryQuery.isError &&
     summaryQuery.error instanceof ApiError &&
-    summaryQuery.error.status === 403
+    summaryQuery.error.status === 403;
 
   if (permissionBlocked) {
     return (
-      <PanelCard interactive={false} className="py-12 text-center text-sm text-muted">
+      <PanelCard
+        interactive={false}
+        className="py-12 text-center text-sm text-muted"
+      >
         You don&apos;t have permission to view reports.
       </PanelCard>
-    )
+    );
   }
 
   const initialLoading =
@@ -156,10 +211,10 @@ export function ReportsScreen() {
     revenueQuery.isPending &&
     techniciansQuery.isPending &&
     visitsQuery.isPending &&
-    activityQuery.isPending
+    activityQuery.isPending;
 
   if (initialLoading && !focusedReport) {
-    return <ReportsScreenSkeleton />
+    return <ReportsScreenSkeleton />;
   }
 
   if (focusedReport) {
@@ -168,11 +223,11 @@ export function ReportsScreen() {
         <ReportsHeader
           cycleLabel={cycleLabelForPeriod(apiPeriod)}
           statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
+          onStatusFilterChange={handleStatusFilterChange}
           onExport={() => void handleExport()}
         />
 
-        {focusedReport === 'technicians' ? (
+        {focusedReport === "technicians" ? (
           <TechnicianPerformanceCard
             rows={technicians}
             loading={techniciansQuery.isPending}
@@ -185,15 +240,18 @@ export function ReportsScreen() {
                   className="px-5 pb-4"
                   pagination={technicianPagination}
                   loading={techniciansQuery.isFetching}
-                  onPage={(page) => setTechnicianPageState({ key: techniciansKey, page })}
+                  onPage={(page) =>
+                    setTechnicianPageState({ key: techniciansKey, page })
+                  }
                 />
               ) : null
             }
           />
         ) : null}
 
-        {focusedReport === 'visits' ? (
+        {focusedReport === "visits" ? (
           <VisitHistoryCard
+            statusLabel={statusLabel}
             rows={visits}
             loading={visitsQuery.isPending}
             error={visitsQuery.isError}
@@ -212,7 +270,7 @@ export function ReportsScreen() {
           />
         ) : null}
 
-        {focusedReport === 'activity' ? (
+        {focusedReport === "activity" ? (
           <SystemActivityLogCard
             items={activity}
             loading={activityQuery.isPending}
@@ -232,7 +290,7 @@ export function ReportsScreen() {
           />
         ) : null}
       </div>
-    )
+    );
   }
 
   return (
@@ -240,7 +298,7 @@ export function ReportsScreen() {
       <ReportsHeader
         cycleLabel={cycleLabelForPeriod(apiPeriod)}
         statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
+        onStatusFilterChange={handleStatusFilterChange}
         onExport={() => void handleExport()}
       />
 
@@ -260,15 +318,16 @@ export function ReportsScreen() {
         loading={techniciansQuery.isPending}
         error={techniciansQuery.isError}
         onRetry={() => void techniciansQuery.refetch()}
-        onViewAll={() => setFocusedReport('technicians')}
+        onViewAll={() => setFocusedReport("technicians")}
       />
 
       <VisitHistoryCard
+        statusLabel={statusLabel}
         rows={visits.slice(0, 3)}
         loading={visitsQuery.isPending}
         error={visitsQuery.isError}
         onRetry={() => void visitsQuery.refetch()}
-        onViewAll={() => setFocusedReport('visits')}
+        onViewAll={() => setFocusedReport("visits")}
       />
 
       <SystemActivityLogCard
@@ -276,10 +335,10 @@ export function ReportsScreen() {
         loading={activityQuery.isPending}
         error={activityQuery.isError}
         onRetry={() => void activityQuery.refetch()}
-        onViewAll={() => setFocusedReport('activity')}
+        onViewAll={() => setFocusedReport("activity")}
       />
     </div>
-  )
+  );
 }
 
 function ReportsHeader({
@@ -288,26 +347,34 @@ function ReportsHeader({
   onStatusFilterChange,
   onExport,
 }: {
-  cycleLabel: string
-  statusFilter: string
-  onStatusFilterChange: (value: string) => void
-  onExport: () => void
+  cycleLabel: string;
+  statusFilter: string;
+  onStatusFilterChange: (value: string) => void;
+  onExport: () => void;
 }) {
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div>
+      <div className="min-w-0 lg:flex-1">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           {reportsContent.title}
         </h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted">{reportsContent.subtitle}</p>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
+          {reportsContent.subtitle}
+        </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-        <div className="flex items-center gap-1.5 text-sm text-muted">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:shrink-0 lg:flex-nowrap">
+        <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-muted">
           <DashboardIcon name="refresh" className="h-4 w-4" />
           <span>{cycleLabel}</span>
         </div>
 
+        <span
+          className="hidden text-sm text-muted sm:inline"
+          title="Filters the Visit History table and the CSV export"
+        >
+          Visit status
+        </span>
         <Select
           inputSize="sm"
           value={statusFilter}
@@ -323,17 +390,17 @@ function ReportsHeader({
         </button>
       </div>
     </header>
-  )
+  );
 }
 
 function ReportsMetricGrid({
   metrics,
   loading,
 }: {
-  metrics: ReportsMetric[]
-  loading?: boolean
+  metrics: ReportsMetric[];
+  loading?: boolean;
 }) {
-  if (loading) return <ReportsMetricsSkeleton />
+  if (loading) return <ReportsMetricsSkeleton />;
 
   return (
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -344,7 +411,10 @@ function ReportsMetricGrid({
         >
           <div className="flex items-start justify-between gap-3">
             <p className="text-sm font-medium text-muted">{metric.label}</p>
-            <DashboardIcon name={metric.icon} className="h-4 w-4 text-foreground" />
+            <DashboardIcon
+              name={metric.icon}
+              className="h-4 w-4 text-foreground"
+            />
           </div>
           <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
             {metric.value}
@@ -352,7 +422,7 @@ function ReportsMetricGrid({
         </article>
       ))}
     </section>
-  )
+  );
 }
 
 function RevenueOverviewCard({
@@ -363,14 +433,14 @@ function RevenueOverviewCard({
   error,
   onRetry,
 }: {
-  period: ReportsPeriod
-  onPeriodChange: (period: ReportsPeriod) => void
-  data: readonly RevenuePoint[]
-  loading?: boolean
-  error?: boolean
-  onRetry?: () => void
+  period: ReportsPeriod;
+  onPeriodChange: (period: ReportsPeriod) => void;
+  data: readonly RevenuePoint[];
+  loading?: boolean;
+  error?: boolean;
+  onRetry?: () => void;
 }) {
-  if (loading) return <ReportsChartSkeleton />
+  if (loading) return <ReportsChartSkeleton />;
 
   return (
     <PanelCard interactive={false} className="p-5">
@@ -379,11 +449,13 @@ function RevenueOverviewCard({
           <h2 className="text-base font-semibold text-foreground">
             {reportsContent.sections.revenueOverview}
           </h2>
-          <p className="mt-1 text-xs text-muted">{reportsContent.periodHints[period]}</p>
+          <p className="mt-1 text-xs text-muted">
+            {reportsContent.periodHints[period]}
+          </p>
         </div>
         <div className="inline-flex rounded-lg bg-surface p-1">
           {reportsContent.periods.map((option) => {
-            const active = option === period
+            const active = option === period;
             return (
               <button
                 key={option}
@@ -391,16 +463,16 @@ function RevenueOverviewCard({
                 aria-pressed={active}
                 onClick={() => onPeriodChange(option)}
                 className={cn(
-                  'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-150',
+                  "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-150",
                   dashboardPressableClass,
                   active
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted hover:text-foreground',
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted hover:text-foreground",
                 )}
               >
                 {option}
               </button>
-            )
+            );
           })}
         </div>
       </div>
@@ -412,48 +484,61 @@ function RevenueOverviewCard({
         <RevenueLineChart data={data} />
       )}
     </PanelCard>
-  )
+  );
 }
 
 function RevenueLineChart({ data }: { data: readonly RevenuePoint[] }) {
-  const rootRef = useRef<HTMLDivElement>(null)
-  const [tooltip, setTooltip] = useState<ChartTooltipState>(emptyChartTooltip())
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [tooltip, setTooltip] =
+    useState<ChartTooltipState>(emptyChartTooltip());
 
-  const width = 1000
-  const height = 238
-  const padX = 58
-  const padTop = 18
-  const padBottom = 34
-  const maxValue = niceChartMax(data.map((item) => item.value))
-  const tickCount = 4
+  const width = 1000;
+  const height = 238;
+  const padX = 58;
+  const padTop = 18;
+  const padBottom = 34;
+  const maxValue = niceChartMax(data.map((item) => item.value));
+  const tickCount = 4;
   const yTicks = Array.from({ length: tickCount }, (_, index) =>
     Math.round((maxValue / tickCount) * (index + 1)),
-  )
-  const chartBottom = height - padBottom
+  );
+  const chartBottom = height - padBottom;
 
   const points = data.map((item, index) => {
-    const x = padX + (index / Math.max(data.length - 1, 1)) * (width - padX - 18)
-    const y = padTop + (1 - item.value / maxValue) * (chartBottom - padTop)
-    return { ...item, x, y }
-  })
+    // A single point has no line to draw: centre it so it reads as a marker, not an empty chart.
+    const x =
+      data.length === 1
+        ? (padX + (width - 18)) / 2
+        : padX + (index / (data.length - 1)) * (width - padX - 18);
+    const y = padTop + (1 - item.value / maxValue) * (chartBottom - padTop);
+    return { ...item, x, y };
+  });
 
-  const path = buildSmoothPath(points)
-  const areaPath = `${path} L ${points.at(-1)?.x ?? padX} ${chartBottom} L ${points[0]?.x ?? padX} ${chartBottom} Z`
+  const path = buildSmoothPath(points);
+  const areaPath = `${path} L ${points.at(-1)?.x ?? padX} ${chartBottom} L ${points[0]?.x ?? padX} ${chartBottom} Z`;
 
-  function showTooltip(event: MouseEvent<Element>, label: string, value: number) {
-    if (!rootRef.current) return
-    const { x, y } = getChartTooltipPosition(event, rootRef.current)
+  function showTooltip(
+    event: MouseEvent<Element>,
+    label: string,
+    value: number,
+  ) {
+    if (!rootRef.current) return;
+    const { x, y } = getChartTooltipPosition(event, rootRef.current);
     setTooltip({
       visible: true,
       label,
       value: formatTooltipMoney(value),
       x,
       y,
-    })
+    });
   }
 
   return (
-    <div ref={rootRef} data-chart-root className="relative overflow-visible rounded-lg">
+    <div
+      ref={rootRef}
+      data-chart-root
+      className="relative overflow-visible rounded-lg"
+    >
       <ChartTooltip tooltip={tooltip} />
       <svg
         viewBox={`0 0 ${width} ${height}`}
@@ -474,7 +559,13 @@ function RevenueLineChart({ data }: { data: readonly RevenuePoint[] }) {
             <stop offset="65%" stopColor="currentColor" stopOpacity="0.05" />
             <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
           </linearGradient>
-          <filter id="reports-revenue-glow" x="-10%" y="-30%" width="120%" height="160%">
+          <filter
+            id="reports-revenue-glow"
+            x="-10%"
+            y="-30%"
+            width="120%"
+            height="160%"
+          >
             <feGaussianBlur stdDeviation="4" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
@@ -484,7 +575,7 @@ function RevenueLineChart({ data }: { data: readonly RevenuePoint[] }) {
         </defs>
 
         {yTicks.map((tick) => {
-          const y = padTop + (1 - tick / maxValue) * (chartBottom - padTop)
+          const y = padTop + (1 - tick / maxValue) * (chartBottom - padTop);
           return (
             <g key={tick}>
               <line
@@ -505,10 +596,14 @@ function RevenueLineChart({ data }: { data: readonly RevenuePoint[] }) {
                 {formatAxisTick(tick)}
               </text>
             </g>
-          )
+          );
         })}
 
-        <path d={areaPath} fill="url(#reports-revenue-area)" className="text-primary" />
+        <path
+          d={areaPath}
+          fill="url(#reports-revenue-area)"
+          className="text-primary"
+        />
 
         <path
           d={path}
@@ -521,15 +616,29 @@ function RevenueLineChart({ data }: { data: readonly RevenuePoint[] }) {
           className="text-primary"
         />
 
+        {points.map((point, index) => (
+          <circle
+            key={`dot-${point.label}-${index}`}
+            cx={point.x}
+            cy={point.y}
+            r={4.5}
+            fill="currentColor"
+            stroke="var(--color-background, #fff)"
+            strokeWidth="2"
+            className="text-primary"
+            data-testid="revenue-point"
+          />
+        ))}
+
         {points.map((point, index) => {
-          const previousX = points[index - 1]?.x ?? point.x
-          const nextX = points[index + 1]?.x ?? point.x
+          const previousX = points[index - 1]?.x ?? point.x;
+          const nextX = points[index + 1]?.x ?? point.x;
           const hitWidth =
             index === 0
               ? nextX - point.x
               : index === points.length - 1
                 ? point.x - previousX
-                : (nextX - previousX) / 2
+                : (nextX - previousX) / 2;
 
           return (
             <rect
@@ -540,11 +649,15 @@ function RevenueLineChart({ data }: { data: readonly RevenuePoint[] }) {
               height={chartBottom - padTop}
               fill="transparent"
               className="cursor-crosshair"
-              onMouseEnter={(event) => showTooltip(event, point.label, point.value)}
-              onMouseMove={(event) => showTooltip(event, point.label, point.value)}
+              onMouseEnter={(event) =>
+                showTooltip(event, point.label, point.value)
+              }
+              onMouseMove={(event) =>
+                showTooltip(event, point.label, point.value)
+              }
               onMouseLeave={() => setTooltip(emptyChartTooltip())}
             />
-          )
+          );
         })}
 
         {points.map((point, index) => (
@@ -560,7 +673,7 @@ function RevenueLineChart({ data }: { data: readonly RevenuePoint[] }) {
         ))}
       </svg>
     </div>
-  )
+  );
 }
 
 function TechnicianPerformanceCard({
@@ -572,17 +685,19 @@ function TechnicianPerformanceCard({
   onBack,
   footer,
 }: {
-  rows: readonly TechnicianPerformanceRow[]
-  loading?: boolean
-  error?: boolean
-  onRetry?: () => void
-  onViewAll?: () => void
-  onBack?: () => void
+  rows: readonly TechnicianPerformanceRow[];
+  loading?: boolean;
+  error?: boolean;
+  onRetry?: () => void;
+  onViewAll?: () => void;
+  onBack?: () => void;
   /** E.g. a pager under the table on the full-page view. */
-  footer?: ReactNode
+  footer?: ReactNode;
 }) {
   if (loading) {
-    return <ReportsTableSkeleton titleClassName="w-48" rows={onViewAll ? 2 : 5} />
+    return (
+      <ReportsTableSkeleton titleClassName="w-48" rows={onViewAll ? 2 : 5} />
+    );
   }
 
   return (
@@ -597,10 +712,15 @@ function TechnicianPerformanceCard({
 
       {error ? (
         <div className="px-5 pb-5">
-          <EmptyState message="Could not load technician performance." onRetry={onRetry} />
+          <EmptyState
+            message="Could not load technician performance."
+            onRetry={onRetry}
+          />
         </div>
       ) : rows.length === 0 ? (
-        <p className="px-5 py-10 text-sm text-muted">No technician performance in this period.</p>
+        <p className="px-5 py-10 text-sm text-muted">
+          No technician performance in this period.
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
@@ -617,16 +737,25 @@ function TechnicianPerformanceCard({
               {rows.map((row) => (
                 <tr
                   key={row.id}
-                  className={cn('border-b border-border last:border-b-0', dashboardRowHoverClass)}
+                  className={cn(
+                    "border-b border-border last:border-b-0",
+                    dashboardRowHoverClass,
+                  )}
                 >
                   <td className="px-5 py-3.5">
                     <p className="font-semibold text-foreground">{row.name}</p>
                     <p className="text-xs text-muted">{row.email}</p>
                   </td>
-                  <td className="px-5 py-3.5 text-foreground">{row.completed}</td>
+                  <td className="px-5 py-3.5 text-foreground">
+                    {row.completed}
+                  </td>
                   <td className="px-5 py-3.5 text-foreground">{row.skipped}</td>
-                  <td className="px-5 py-3.5 text-foreground">{row.efficiency}</td>
-                  <td className="px-5 py-3.5 text-foreground">{row.revenueImpact}</td>
+                  <td className="px-5 py-3.5 text-foreground">
+                    {row.efficiency}
+                  </td>
+                  <td className="px-5 py-3.5 text-foreground">
+                    {row.revenueImpact}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -635,10 +764,11 @@ function TechnicianPerformanceCard({
       )}
       {footer}
     </PanelCard>
-  )
+  );
 }
 
 function VisitHistoryCard({
+  statusLabel,
   rows,
   loading,
   error,
@@ -647,71 +777,102 @@ function VisitHistoryCard({
   onBack,
   footer,
 }: {
-  rows: readonly VisitHistoryRow[]
-  loading?: boolean
-  error?: boolean
-  onRetry?: () => void
-  onViewAll?: () => void
-  onBack?: () => void
+  /** Active status filter (e.g. "Skipped"); undefined when showing all statuses. */
+  statusLabel?: string;
+  rows: readonly VisitHistoryRow[];
+  loading?: boolean;
+  error?: boolean;
+  onRetry?: () => void;
+  onViewAll?: () => void;
+  onBack?: () => void;
   /** E.g. a pager under the table on the full-page view. */
-  footer?: ReactNode
+  footer?: ReactNode;
 }) {
   if (loading) {
-    return <ReportsTableSkeleton titleClassName="w-36" rows={onViewAll ? 3 : 6} cols={6} />
+    return (
+      <ReportsTableSkeleton
+        titleClassName="w-36"
+        rows={onViewAll ? 3 : 6}
+        cols={6}
+      />
+    );
   }
 
   return (
-    <PanelCard interactive={false} className="overflow-hidden p-0">
-      <div className="flex items-center justify-between gap-3 px-5 py-4">
-        <h2 className="text-base font-semibold text-foreground">
-          {reportsContent.sections.visitHistory}
-        </h2>
-        {onViewAll ? <ViewAllButton onClick={onViewAll} /> : null}
-        {onBack ? <OverviewButton onClick={onBack} /> : null}
-      </div>
+    <div id="visit-history" className="scroll-mt-4">
+      <PanelCard interactive={false} className="overflow-hidden p-0">
+        <div className="flex items-center justify-between gap-3 px-5 py-4">
+          <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold text-foreground">
+            {reportsContent.sections.visitHistory}
+            {statusLabel ? (
+              <span className="rounded-full bg-accent-surface px-2.5 py-0.5 text-xs font-semibold text-primary">
+                {statusLabel} only
+              </span>
+            ) : null}
+          </h2>
+          {onViewAll ? <ViewAllButton onClick={onViewAll} /> : null}
+          {onBack ? <OverviewButton onClick={onBack} /> : null}
+        </div>
 
-      {error ? (
-        <div className="px-5 pb-5">
-          <EmptyState message="Could not load visit history." onRetry={onRetry} />
-        </div>
-      ) : rows.length === 0 ? (
-        <p className="px-5 py-10 text-sm text-muted">No visits in this period.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead>
-              <tr className="border-y border-border text-xs font-medium text-muted">
-                <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Property</th>
-                <th className="px-5 py-3 font-medium">Round</th>
-                <th className="px-5 py-3 font-medium">Technician</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={cn('border-b border-border last:border-b-0', dashboardRowHoverClass)}
-                >
-                  <td className="px-5 py-3.5 text-foreground">{row.date}</td>
-                  <td className="px-5 py-3.5 text-foreground">{row.property}</td>
-                  <td className="px-5 py-3.5 text-foreground">{row.round}</td>
-                  <td className="px-5 py-3.5 text-foreground">{row.technician}</td>
-                  <td className="px-5 py-3.5">
-                    <VisitStatusBadge status={row.status} />
-                  </td>
-                  <td className="px-5 py-3.5 text-foreground">{row.amount}</td>
+        {error ? (
+          <div className="px-5 pb-5">
+            <EmptyState
+              message="Could not load visit history."
+              onRetry={onRetry}
+            />
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="px-5 py-10 text-sm text-muted">
+            {statusLabel
+              ? `No ${statusLabel.toLowerCase()} visits in this period. Choose "All statuses" to see everything.`
+              : "No visits in this period."}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead>
+                <tr className="border-y border-border text-xs font-medium text-muted">
+                  <th className="px-5 py-3 font-medium">Date</th>
+                  <th className="px-5 py-3 font-medium">Property</th>
+                  <th className="px-5 py-3 font-medium">Round</th>
+                  <th className="px-5 py-3 font-medium">Technician</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium">Amount</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {footer}
-    </PanelCard>
-  )
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className={cn(
+                      "border-b border-border last:border-b-0",
+                      dashboardRowHoverClass,
+                    )}
+                  >
+                    <td className="px-5 py-3.5 text-foreground">{row.date}</td>
+                    <td className="px-5 py-3.5 text-foreground">
+                      {row.property}
+                    </td>
+                    <td className="px-5 py-3.5 text-foreground">{row.round}</td>
+                    <td className="px-5 py-3.5 text-foreground">
+                      {row.technician}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <VisitStatusBadge status={row.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-foreground">
+                      {row.amount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {footer}
+      </PanelCard>
+    </div>
+  );
 }
 
 function SystemActivityLogCard({
@@ -723,16 +884,16 @@ function SystemActivityLogCard({
   onBack,
   footer,
 }: {
-  items: readonly ActivityLogItem[]
-  footer?: ReactNode
-  loading?: boolean
-  error?: boolean
-  onRetry?: () => void
-  onViewAll?: () => void
-  onBack?: () => void
+  items: readonly ActivityLogItem[];
+  footer?: ReactNode;
+  loading?: boolean;
+  error?: boolean;
+  onRetry?: () => void;
+  onViewAll?: () => void;
+  onBack?: () => void;
 }) {
   if (loading) {
-    return <ReportsActivitySkeleton rows={onViewAll ? 4 : 6} />
+    return <ReportsActivitySkeleton rows={onViewAll ? 4 : 6} />;
   }
 
   return (
@@ -758,8 +919,12 @@ function SystemActivityLogCard({
                   <DashboardIcon name={item.icon} className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-foreground">{item.title}</span>
-                  <span className="mt-0.5 block text-xs text-muted">{item.meta}</span>
+                  <span className="block text-sm font-semibold text-foreground">
+                    {item.title}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted">
+                    {item.meta}
+                  </span>
                 </span>
               </div>
             </li>
@@ -768,28 +933,32 @@ function SystemActivityLogCard({
       )}
       {footer}
     </PanelCard>
-  )
+  );
 }
 
 function VisitStatusBadge({ status }: { status: VisitStatus }) {
   return (
     <span
       className={cn(
-        'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold',
+        "inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold",
         VISIT_STATUS_CLASS[status],
       )}
     >
       {reportsContent.visitStatusLabels[status]}
     </span>
-  )
+  );
 }
 
 function ViewAllButton({ onClick }: { onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className={cn(dashboardCtaClass, 'px-3 py-2 text-xs')}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(dashboardCtaClass, "px-3 py-2 text-xs")}
+    >
       {reportsContent.viewAllLabel}
     </button>
-  )
+  );
 }
 
 function OverviewButton({ onClick }: { onClick: () => void }) {
@@ -798,61 +967,71 @@ function OverviewButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground',
+        "inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground",
         dashboardPressableClass,
-        'hover:border-primary/30 hover:text-primary',
+        "hover:border-primary/30 hover:text-primary",
       )}
     >
       <DashboardIcon name="arrow-left" className="h-3.5 w-3.5" />
       Overview
     </button>
-  )
+  );
 }
 
-function EmptyState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+function EmptyState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   return (
     <div className="py-10 text-center text-sm text-muted">
       <p>{message}</p>
       {onRetry ? (
-        <button type="button" className={cn(dashboardCtaClass, 'mt-3')} onClick={onRetry}>
+        <button
+          type="button"
+          className={cn(dashboardCtaClass, "mt-3")}
+          onClick={onRetry}
+        >
           Retry
         </button>
       ) : null}
     </div>
-  )
+  );
 }
 
 function formatTooltipMoney(value: number) {
-  return `£${value.toLocaleString('en-GB', {
+  return `£${value.toLocaleString("en-GB", {
     minimumFractionDigits: value % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
-  })}`
+  })}`;
 }
 
 function formatAxisTick(value: number) {
-  if (value >= 1000) return `${Math.round(value / 1000)}K`
-  return String(Math.round(value))
+  if (value >= 1000) return `${Math.round(value / 1000)}K`;
+  return String(Math.round(value));
 }
 
 function buildSmoothPath(points: Array<{ x: number; y: number }>) {
-  if (points.length === 0) return ''
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
 
-  let path = `M ${points[0].x} ${points[0].y}`
+  let path = `M ${points[0].x} ${points[0].y}`;
 
   for (let i = 0; i < points.length - 1; i += 1) {
-    const previous = points[Math.max(0, i - 1)]
-    const current = points[i]
-    const next = points[i + 1]
-    const afterNext = points[Math.min(points.length - 1, i + 2)]
-    const tension = 0.16
-    const control1X = current.x + (next.x - previous.x) * tension
-    const control1Y = current.y + (next.y - previous.y) * tension
-    const control2X = next.x - (afterNext.x - current.x) * tension
-    const control2Y = next.y - (afterNext.y - current.y) * tension
+    const previous = points[Math.max(0, i - 1)];
+    const current = points[i];
+    const next = points[i + 1];
+    const afterNext = points[Math.min(points.length - 1, i + 2)];
+    const tension = 0.16;
+    const control1X = current.x + (next.x - previous.x) * tension;
+    const control1Y = current.y + (next.y - previous.y) * tension;
+    const control2X = next.x - (afterNext.x - current.x) * tension;
+    const control2Y = next.y - (afterNext.y - current.y) * tension;
 
-    path += ` C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${next.x} ${next.y}`
+    path += ` C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${next.x} ${next.y}`;
   }
 
-  return path
+  return path;
 }

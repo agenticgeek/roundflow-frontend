@@ -199,6 +199,7 @@ const AUDIT_REMEDIATION_FILES = [
   'src/features/flo/lib/format.ts',
   'src/features/flo/lib/links.ts',
   'src/features/flo/lib/errors.ts',
+  'src/features/flo/lib/csv.ts',
   'src/features/flo/hooks/useFloChat.ts',
   'src/features/flo/hooks/useFloMode.ts',
   'src/features/flo/hooks/useFloStatus.ts',
@@ -210,6 +211,9 @@ const AUDIT_REMEDIATION_FILES = [
   'src/components/flo/UserBubble.tsx',
   'src/components/flo/AssistantMessage.tsx',
   'src/components/flo/CardsBlock.tsx',
+  'src/components/flo/ChartBlock.tsx',
+  'src/components/flo/BlockLink.tsx',
+  'src/components/flo/MessageFeedback.tsx',
   'src/components/flo/TableBlock.tsx',
   'src/components/flo/InsightsBlock.tsx',
   'src/components/flo/Sentence.tsx',
@@ -220,6 +224,15 @@ const AUDIT_REMEDIATION_FILES = [
   'src/components/flo/UnverifiedNotice.tsx',
   'src/components/flo/DeclinedNotice.tsx',
   'src/components/flo/WorkingIndicator.tsx',
+  // Business closures (2026-11-16): new whole files gated at 100% per file. Plan: roundflow-backend/docs/handoff/frontend/2026-11-16-business-closures-frontend-contract.md
+  'src/api/closures.api.ts',
+  'src/features/closures/hooks/useClosures.ts',
+  'src/features/closures/lib/closure-days.ts',
+  'src/features/closures/components/ClosuresPanel.tsx',
+  'src/features/closures/components/ClosureForm.tsx',
+  'src/features/closures/components/ApplyPreviewDialog.tsx',
+  'src/features/closures/components/ClosureWarning.tsx',
+  'src/content/closures.ts',
 ]
 
 export default defineConfig({

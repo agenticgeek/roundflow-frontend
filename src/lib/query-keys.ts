@@ -70,6 +70,10 @@ export const queryKeys = {
     occurrenceDay: (id: string, date: string) =>
       ['rounds', 'occurrence-day', id, date] as const,
   },
+  closures: {
+    all: ['closures'] as const,
+    list: (params?: { from?: string; to?: string }) => ['closures', 'list', params?.from ?? '', params?.to ?? ''] as const,
+  },
   today: {
     all: ['today'] as const,
     aggregate: ['today', 'aggregate'] as const,
@@ -164,6 +168,10 @@ export function invalidateCustomers(queryClient: QueryClient) {
 
 export function invalidateRounds(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all })
+}
+
+export function invalidateClosures(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: queryKeys.closures.all })
 }
 
 export function invalidateToday(queryClient: QueryClient) {

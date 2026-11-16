@@ -74,6 +74,49 @@ export const exampleStream: RecordedEvent[] = [
   ['done', { message: exampleFinalMessage }],
 ]
 
+export const chartBlock = {
+  type: 'chart',
+  kind: 'bar',
+  title: 'Revenue by technician',
+  sourceId: 'r2',
+  x: { key: 'technician', label: 'Technician', format: 'text' },
+  series: [{ key: 'revenue', label: 'Revenue', format: 'currency' }],
+  rows: [
+    { technician: 'James Carter', revenue: 5460 },
+    { technician: 'Liam Walsh', revenue: 8190 },
+  ],
+  link: { screen: 'TECHNICIANS' },
+} as const
+
+/** A chart answer the admin has already rated (`rating` is missing on messages stored before feedback). */
+export const chartFinalMessage: FloMessage = {
+  id: 'm4',
+  role: 'ASSISTANT',
+  mode: 'BALANCED',
+  status: 'OK',
+  declined: null,
+  rating: 'UP',
+  answer: {
+    intro: 'Liam Walsh leads on revenue.',
+    blocks: [chartBlock] as unknown as FloBlock[],
+    insights: [],
+    followUps: ['Show it as a table'],
+    sources: [{ id: 'r2', tool: 'compare_technicians', label: 'Technicians', rows: 2 }],
+    truncated: false,
+  },
+  warnings: [],
+}
+
+export const chartStream: RecordedEvent[] = [
+  ['start', { conversationId: 'c4', messageId: 'm4', mode: 'BALANCED' }],
+  ['status', { phase: 'checking', tool: 'compare_technicians', label: 'Technicians' }],
+  ['status', { phase: 'checked', tool: 'compare_technicians', label: 'Technicians', rows: 2 }],
+  ['block', { index: 0, block: chartBlock }],
+  ['text', { target: 'intro', index: 0, text: 'Liam Walsh leads on revenue.' }],
+  ['follow_ups', { items: ['Show it as a table'] }],
+  ['done', { message: chartFinalMessage }],
+]
+
 export const declinedMessage: FloMessage = {
   id: 'm2',
   role: 'ASSISTANT',

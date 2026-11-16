@@ -41,6 +41,7 @@ export interface FloCardItem {
 export interface FloCardsBlock {
   type: 'cards'
   items: FloCardItem[]
+  link?: FloLink
 }
 
 export interface FloTableBlock {
@@ -53,8 +54,26 @@ export interface FloTableBlock {
   link?: FloLink
 }
 
+export interface FloChartAxis {
+  key: string
+  label: string
+  format: FloFormat
+}
+
+/** Built by the server from a stored result (max 24 rows, 1 to 3 series). */
+export interface FloChartBlock {
+  type: 'chart'
+  kind: 'bar' | 'line'
+  title: string
+  sourceId?: string
+  x: FloChartAxis
+  series: FloChartAxis[]
+  rows: Record<string, FloCell>[]
+  link?: FloLink
+}
+
 /** Unknown block types must be ignored, so the union stays open. */
-export type FloBlock = FloCardsBlock | FloTableBlock | { type: string }
+export type FloBlock = FloCardsBlock | FloTableBlock | FloChartBlock | { type: string }
 
 export interface FloInsight {
   text: string
@@ -91,6 +110,8 @@ export interface FloDeclined {
   suggestions: string[]
 }
 
+export type FloRating = 'UP' | 'DOWN'
+
 export type FloMessageStatus = 'OK' | 'ERROR' | 'DECLINED' | 'ABORTED'
 
 /** `done` event data and each item of GET /flo/conversations/{id}. USER rows carry `text`. */
@@ -105,6 +126,13 @@ export interface FloMessage {
   declined?: FloDeclined | null
   answer?: FloAnswer | null
   warnings?: string[]
+  /** The admin's thumb on this answer. Missing on messages stored before feedback existed. */
+  rating?: FloRating | null
+}
+
+export interface FloFeedbackBody {
+  rating: FloRating
+  comment?: string
 }
 
 export interface FloModeInfo {
@@ -160,6 +188,10 @@ export const floApi = {
 
   conversation: (id: string, signal?: AbortSignal) =>
     api<FloConversation>(`/flo/conversations/${encodeURIComponent(id)}`, { signal }),
+
+  /** POST /flo/messages/{id}/feedback: 204 on success; re-rating overwrites. */
+  feedback: (messageId: string, body: FloFeedbackBody) =>
+    api<void>(`/flo/messages/${encodeURIComponent(messageId)}/feedback`, { method: 'POST', body: JSON.stringify(body) }),
 
   deleteConversation: (id: string) =>
     api<void>(`/flo/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' }),

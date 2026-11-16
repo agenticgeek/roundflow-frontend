@@ -30,7 +30,7 @@ describe('floApi', () => {
       }),
     )
     expect((await floApi.status()).enabled).toBe(true)
-    expect((await floApi.suggestions()).groups).toHaveLength(2)
+    expect((await floApi.suggestions()).groups).toHaveLength(3)
     expect((await floApi.conversations()).conversations).toEqual([])
     expect((await floApi.conversation('a b')).messages).toEqual([])
     await expect(floApi.deleteConversation('a b')).resolves.toBeUndefined()

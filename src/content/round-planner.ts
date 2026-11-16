@@ -102,13 +102,18 @@ export const roundPlannerContent = {
     noRoundsHint: 'Create a round to start planning visits.',
     noVisitsInWindow: 'No visits in this period',
     noVisitsHint:
-      'Visits are generated during setup or added as one-off jobs. Adding a property or round on its own does not create visits.',
+      'Visits are created when a round with properties is saved, when a technician is assigned, or by the nightly update. You can also add one-off jobs.',
   },
   calendar: {
     emptyLabel: 'No rounds',
     dayHeaders: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     stops: 'stops',
     unassigned: 'Unassigned',
+    projected: {
+      label: 'Projected',
+      aria: 'Projected visit, estimate',
+      estimatePrefix: '~',
+    },
   },
   detailPanel: {
     metrics: {

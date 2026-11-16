@@ -28,6 +28,7 @@ import {
   useRoundsOccurrenceDay,
   useRoundsOccurrences,
 } from '@/features/rounds/hooks/useRounds'
+import { useClosures } from '@/features/closures/hooks/useClosures' // business closures
 import { useRoundSettings } from '@/features/settings/hooks/useSettings'
 import { useTechniciansList } from '@/features/technicians/hooks/useTechnicians'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
@@ -121,6 +122,8 @@ export function RoundPlannerScreen({
 
   const occurrences = useRoundsOccurrences(roundIds, { from: window.from, to: window.to })
   const details = useRoundDetails(roundIds)
+  // Closures are an overlay: if this request fails the calendar still renders, just without them.
+  const closures = useClosures({ from: window.from, to: window.to }).data?.closures
 
   const cards = useMemo<PlannerRoundCard[]>(
     () =>
@@ -134,12 +137,16 @@ export function RoundPlannerScreen({
     [details.byRoundId, occurrences.byRoundId, selectedRounds],
   )
 
+  // Forecasts feed the calendar only — never KPIs, the empty-state check or the detail panel.
+  const realCards = useMemo(() => cards.filter((card) => !card.projected), [cards])
+
   const query = interactions.search.trim().toLowerCase()
 
   const cardsByDate = useMemo(() => {
     const map = new Map<string, PlannerRoundCard[]>()
     for (const card of cards) {
-      if (interactions.statusId !== 'all' && card.status !== interactions.statusId) continue
+      // A forecast has no real status, so any status filter hides it.
+      if (interactions.statusId !== 'all' && (card.projected || card.status !== interactions.statusId)) continue
       if (query && !card.roundName.toLowerCase().includes(query)) continue
       const bucket = map.get(card.date)
       if (bucket) bucket.push(card)
@@ -149,7 +156,7 @@ export function RoundPlannerScreen({
     return map
   }, [cards, interactions.statusId, query])
 
-  const kpis = useMemo(() => sumKpis(cards), [cards])
+  const kpis = useMemo(() => sumKpis(realCards), [realCards])
   const metrics: RoundPlannerMetric[] = [
     { label: content.kpis.totalStops, value: String(kpis.stopCount) },
     { label: content.kpis.roundValue, value: formatCurrency(kpis.totalValue, currency) },
@@ -229,7 +236,8 @@ export function RoundPlannerScreen({
 
   const noRounds = roundsQuery.isSuccess && rounds.length === 0
   const noVisitsInWindow =
-    !noRounds && !occurrences.isLoading && !occurrences.isError && roundIds.length > 0 && cards.length === 0
+    !closures?.length &&
+    !noRounds && !occurrences.isLoading && !occurrences.isError && roundIds.length > 0 && realCards.length === 0
 
   return (
     <div className="space-y-4">
@@ -336,6 +344,8 @@ export function RoundPlannerScreen({
             onSelectCard={(card) => interactions.openRoundDetail({ roundId: card.roundId, date: card.date })}
             onAssignCard={canMutate ? openQuickAssign : undefined}
             assignLabel={quickAssignContent.cardAction}
+            closures={closures}
+            closureRoundId={interactions.roundId === 'all' ? undefined : interactions.roundId}
           />
         </div>
       ) : null}
@@ -382,7 +392,7 @@ export function RoundPlannerScreen({
       <RoundPlannerDetailPanel
         card={
           interactions.selectedCard
-            ? (cards.find(
+            ? (realCards.find(
                 (card) =>
                   card.roundId === interactions.selectedCard?.roundId &&
                   card.date === interactions.selectedCard?.date,

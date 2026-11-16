@@ -25,6 +25,8 @@ export interface PlannerRoundCard {
   issueCount: number
   status: PlannerDayStatus
   technicianName: string | null
+  /** Forecast from the backend — no visits yet; excluded from every aggregate. */
+  projected: boolean
 }
 
 export interface PlannerDayCell {
@@ -156,12 +158,13 @@ export function buildRoundCards(
     issueCount: occurrence.issueCount,
     status: deriveDayStatus(occurrence),
     technicianName,
+    projected: occurrence.projected === true,
   }))
 }
 
-/** Sum raw counts across the window — never average per-day `completionPct`. */
-export function sumKpis(cards: readonly Pick<PlannerRoundCard, 'stopCount' | 'totalValue' | 'completedCount' | 'holdCount' | 'issueCount'>[]): PlannerKpis {
-  const totals = cards.reduce(
+/** Sum raw counts across the window — never average per-day `completionPct`. Projected (forecast) cards are excluded. */
+export function sumKpis(cards: readonly Pick<PlannerRoundCard, 'stopCount' | 'totalValue' | 'completedCount' | 'holdCount' | 'issueCount' | 'projected'>[]): PlannerKpis {
+  const totals = cards.filter((card) => !card.projected).reduce(
     (acc, card) => ({
       stopCount: acc.stopCount + card.stopCount,
       totalValue: acc.totalValue + card.totalValue,

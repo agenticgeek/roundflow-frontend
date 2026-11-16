@@ -67,6 +67,7 @@ import { useGhlStatus } from '@/features/settings/hooks/useGhl'
 import { readIntegrationReturn, useIntegrationReturn } from '@/features/settings/hooks/useIntegrationReturn'
 import { parseInvoiceDueDays } from '@/features/settings/lib/business-rules'
 import { KpiThresholdsPanel } from '@/components/settings/KpiThresholdsPanel'
+import { ClosuresPanel } from '@/features/closures/components/ClosuresPanel' // business closures
 import { isValidPostcodeSector } from '@/lib/postcode'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
@@ -200,6 +201,8 @@ export function SettingsScreen() {
             </article>
           ) : activeSection === 'kpi-thresholds' ? (
             <KpiThresholdsPanel canMutate={canMutate} />
+          ) : activeSection === 'closures' ? (
+            <ClosuresPanel />
           ) : activeSection === 'failed-messages' && isAdmin ? (
             <FailedMessagesPanel />
           ) : (

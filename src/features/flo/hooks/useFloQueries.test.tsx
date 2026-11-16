@@ -20,31 +20,18 @@ afterEach(() => {
 })
 
 describe('useFloMode', () => {
-  it('starts on Balanced and remembers the choice', () => {
+  it('starts on Balanced, lets the visit switch, and starts on Balanced again next time', () => {
     const { result, unmount } = renderHook(() => useFloMode())
     expect(result.current[0]).toBe('BALANCED')
     act(() => result.current[1]('QUICK'))
     expect(result.current[0]).toBe('QUICK')
     unmount()
-    expect(renderHook(() => useFloMode()).result.current[0]).toBe('QUICK')
-  })
-
-  it('ignores a stored value it does not know', () => {
-    localStorage.setItem('roundflow.flo.mode', 'TURBO')
     expect(renderHook(() => useFloMode()).result.current[0]).toBe('BALANCED')
   })
 
-  it('works with storage blocked', () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('blocked')
-    })
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('blocked')
-    })
-    const { result } = renderHook(() => useFloMode())
-    expect(result.current[0]).toBe('BALANCED')
-    act(() => result.current[1]('THOROUGH'))
-    expect(result.current[0]).toBe('THOROUGH')
+  it('ignores any value left in storage by an older version', () => {
+    localStorage.setItem('roundflow.flo.mode', 'THOROUGH')
+    expect(renderHook(() => useFloMode()).result.current[0]).toBe('BALANCED')
   })
 })
 
@@ -54,7 +41,7 @@ describe('useFloStatus and useFloSuggestions', () => {
     const status = renderHook(() => useFloStatus(), { wrapper })
     const suggestions = renderHook(() => useFloSuggestions(), { wrapper })
     await waitFor(() => expect(status.result.current.data?.dailyRemaining).toBe(42))
-    await waitFor(() => expect(suggestions.result.current.data?.groups).toHaveLength(2))
+    await waitFor(() => expect(suggestions.result.current.data?.groups).toHaveLength(3))
 
     const idle = renderHook(() => useFloStatus(false), { wrapper: wrapperFor() })
     expect(idle.result.current.fetchStatus).toBe('idle')

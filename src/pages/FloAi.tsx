@@ -26,7 +26,7 @@ export default function FloAi() {
   }
 
   return (
-    <AppShell quickActions={quickActions} onSignOut={handleSignOut} signingOut={signingOut} mainMaxWidthClass="max-w-5xl">
+    <AppShell quickActions={quickActions} onSignOut={handleSignOut} signingOut={signingOut} mainMaxWidthClass="max-w-5xl" fillHeight>
       {isAdmin ? <FloScreen /> : <AdminOnlyNote>{floContent.adminOnly}</AdminOnlyNote>}
     </AppShell>
   )

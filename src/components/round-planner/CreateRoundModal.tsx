@@ -831,8 +831,9 @@ export function CreateRoundModal({ open, onClose }: CreateRoundModalProps) {
             <div className="flex gap-3 rounded-2xl border border-border bg-surface/50 px-4 py-4">
               <DashboardIcon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
               <p className="text-xs text-muted">
-                Creating a round does not create visits. Generate the round&apos;s recurring schedule from Setup
-                (Activate System), or add a one-off job from the planner.
+                Visits for the selected properties are created when you save, if their service plans are due.
+                Properties added later get their visits from the nightly update, or when you assign a
+                technician to the round. You can also add a one-off job from the planner.
               </p>
             </div>
 

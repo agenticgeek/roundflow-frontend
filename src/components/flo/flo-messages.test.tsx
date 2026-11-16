@@ -143,13 +143,60 @@ describe('MessageList', () => {
     expect(screen.queryByRole('button', { name: 'Jump to latest' })).not.toBeInTheDocument()
   })
 
-  it('brings the reader back to the bottom when they send a new question', () => {
+  it('anchors the very first question of a chat, when the list mounts with it already there', () => {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { top: this.hasAttribute('data-user-item') ? 300 : 100 } as DOMRect
+    })
+    const first: ChatItem[] = [
+      { kind: 'user', id: 'u1', text: 'First' },
+      { kind: 'assistant', id: 'a1', stream: { ...initialStream, view: emptyView(true) } },
+    ]
+    // jsdom has no layout: give the region its sizes before the first effect runs.
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(900)
+    renderWithProviders(<MessageList items={first} elapsed={0} busy onAsk={vi.fn()} onRetry={vi.fn()} />)
+    const region = screen.getByRole('region', { name: 'Conversation' })
+    // 0 + (300 - 100 - 16): the question sits at the top, not the bottom (900).
+    expect(region.scrollTop).toBe(184)
+    scroll.mockRestore()
+    rect.mockRestore()
+  })
+
+  it('opens a finished past conversation at the bottom', () => {
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(900)
+    renderWithProviders(<MessageList items={items} elapsed={0} busy={false} onAsk={vi.fn()} onRetry={vi.fn()} />)
+    expect(screen.getByRole('region', { name: 'Conversation' }).scrollTop).toBe(900)
+    scroll.mockRestore()
+  })
+
+  it('puts a new question at the top and leaves the answer to fill in below, until the reader scrolls', () => {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { top: this.hasAttribute('data-user-item') ? 500 : 100 } as DOMRect
+    })
     const { rerender } = renderWithProviders(<MessageList items={items} elapsed={0} busy={false} onAsk={vi.fn()} onRetry={vi.fn()} />)
     const region = screen.getByRole('region', { name: 'Conversation' })
     scrollState(region, { scrollHeight: 1200, clientHeight: 400, scrollTop: 100 })
     fireEvent.scroll(region)
+
+    // The question lands 16px under the top edge: 100 + (500 - 100 - 16).
     scrollState(region, { scrollHeight: 1300, clientHeight: 400, scrollTop: 100 })
-    rerender(<MessageList items={[...items, { kind: 'user', id: 'u2', text: 'Next' }]} elapsed={0} busy onAsk={vi.fn()} onRetry={vi.fn()} />)
-    expect(region.scrollTop).toBe(1300)
+    const asked = [...items, { kind: 'user' as const, id: 'u2', text: 'Next' }]
+    rerender(<MessageList items={asked} elapsed={0} busy onAsk={vi.fn()} onRetry={vi.fn()} />)
+    expect(region.scrollTop).toBe(484)
+
+    // Even if that position is the bottom, the answer growing does not drag the view to its end.
+    scrollState(region, { scrollHeight: 884, clientHeight: 400, scrollTop: 484 })
+    fireEvent.scroll(region)
+    scrollState(region, { scrollHeight: 2000, clientHeight: 400, scrollTop: 484 })
+    rerender(<MessageList items={[...asked]} elapsed={3} busy onAsk={vi.fn()} onRetry={vi.fn()} />)
+    expect(region.scrollTop).toBe(484)
+
+    // Once the reader scrolls themselves, normal following of the bottom resumes.
+    fireEvent.wheel(region)
+    scrollState(region, { scrollHeight: 2000, clientHeight: 400, scrollTop: 1600 })
+    fireEvent.scroll(region)
+    scrollState(region, { scrollHeight: 2200, clientHeight: 400, scrollTop: 1600 })
+    rerender(<MessageList items={[...asked]} elapsed={4} busy onAsk={vi.fn()} onRetry={vi.fn()} />)
+    expect(region.scrollTop).toBe(2200)
+    rect.mockRestore()
   })
 })

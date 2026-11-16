@@ -32,6 +32,7 @@ export const floStatus: FloStatus = {
 
 export const floSuggestions: FloSuggestions = {
   groups: [
+    { area: 'Today', questions: ['Give me my morning briefing'] },
     { area: 'Payments', questions: ['Who owes more than £50?', 'Show failed payments this month'] },
     { area: 'Technicians', questions: ['Compare my technicians for October'] },
   ],
@@ -42,5 +43,6 @@ export const floHandlers = [
   http.get(`${API}/flo/status`, () => HttpResponse.json(floStatus)),
   http.get(`${API}/flo/suggestions`, () => HttpResponse.json(floSuggestions)),
   http.get(`${API}/flo/conversations`, () => HttpResponse.json({ conversations: [], nextCursor: null })),
+  http.post(`${API}/flo/messages/:id/feedback`, () => new HttpResponse(null, { status: 204 })),
   http.post(`${API}/flo/chat`, () => sseResponse(toSse(exampleStream))),
 ]

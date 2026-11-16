@@ -20,6 +20,8 @@ interface AppShellProps {
   signingOut?: boolean
   /** Wider main column for data-dense modules (e.g. Round Planner). */
   mainMaxWidthClass?: string
+  /** The page fits the window and manages its own scrolling (e.g. a chat): the main area itself never scrolls. */
+  fillHeight?: boolean
   /** Pre-select a round in the Add One-off Job modal (e.g. the round open in the planner). */
   oneOffJobDefaultRoundId?: string | null
 }
@@ -31,6 +33,7 @@ export function AppShell({
   onSignOut,
   signingOut,
   mainMaxWidthClass = 'max-w-6xl',
+  fillHeight = false,
   oneOffJobDefaultRoundId = null,
 }: AppShellProps) {
   const { sidebar } = appShellContent
@@ -70,10 +73,11 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <AppMobileHeader onOpenMenu={sidebarState.openMobile} />
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        <main className={cn('min-h-0 flex-1', fillHeight ? 'overflow-hidden' : 'overflow-y-auto')}>
           <div
             className={cn(
-              'mx-auto animate-fade-in px-4 py-6 sm:px-6 lg:px-8',
+              'mx-auto animate-fade-in px-4 sm:px-6 lg:px-8',
+              fillHeight ? 'h-full py-4' : 'py-6',
               mainMaxWidthClass,
             )}
           >

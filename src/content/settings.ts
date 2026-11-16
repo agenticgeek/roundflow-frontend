@@ -19,6 +19,7 @@ export type SettingsSectionId =
   | 'integrations'
   | 'email'
   | 'kpi-thresholds'
+  | 'closures'
   | 'failed-messages'
 
 export interface SettingsSectionDefinition {
@@ -44,6 +45,7 @@ export const settingsContent = {
     { id: 'email', label: 'Email and branding', icon: 'message' },
     { id: 'integrations', label: 'SMS and calling (optional)', icon: 'message' },
     { id: 'kpi-thresholds', label: 'KPI Thresholds', icon: 'alert' },
+    { id: 'closures', label: 'Closures', icon: 'calendar' },
     { id: 'failed-messages', label: 'Failed integration messages', icon: 'alert', adminOnly: true },
   ] satisfies SettingsSectionDefinition[],
   businessProfile: {

@@ -132,7 +132,8 @@ export function RoundPlannerDetailPanel({
 
       <RescheduleVisitModal
         open={rescheduleStop !== null}
-        visit={rescheduleStop}
+        // business closures: the stop carries no round id, and a round-scoped closure only warns for its own rounds
+        visit={rescheduleStop ? { ...rescheduleStop, roundId: card.roundId } : null}
         onClose={() => setRescheduleStop(null)}
       />
 

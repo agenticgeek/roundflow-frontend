@@ -15,6 +15,8 @@ import { useFloStatus, useFloSuggestions } from '@/features/flo/hooks/useFloStat
 import { statusLine } from '@/features/flo/lib/format'
 import { cn, fillCopy } from '@/lib/utils'
 
+const MODE_ORDER: readonly string[] = ['QUICK', 'BALANCED', 'THOROUGH']
+
 const NEW_CHAT_BUTTON = `inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-[background-color,transform] duration-150 hover:bg-primary-hover active:scale-[0.98] ${FOCUS_RING}`
 const NOTICE = 'mt-4 flex items-center gap-2 rounded-xl border border-danger/20 bg-card px-4 py-2 text-[15px] text-danger'
 
@@ -53,6 +55,8 @@ export function FloScreen() {
   const dockTop = useRef<number | null>(null)
   const wasStreaming = useRef(false)
   const started = chat.items.length > 0
+  // Type-ahead pool: the server's suggested questions plus the area starters.
+  const suggestionPool = [...(suggestions.data?.groups ?? []).flatMap((g) => g.questions), ...floContent.empty.areas.map((area) => area.starter)]
 
   // When an answer ends, focus goes back to the question box.
   useEffect(() => {
@@ -82,18 +86,26 @@ export function FloScreen() {
   }
 
   const remaining = status.data?.dailyRemaining
-  const modes = status.data?.modes ?? floContent.mode.fallbackModes
+  // Left to right: fastest to deepest, whatever order the server lists them in.
+  const modes = [...(status.data?.modes ?? floContent.mode.fallbackModes)].sort(
+    (a, b) => MODE_ORDER.indexOf(a.key) - MODE_ORDER.indexOf(b.key),
+  )
 
   return (
-    <div className="flex h-[calc(100svh-9rem)] min-h-[34rem] flex-col">
-      <header className="relative flex flex-col items-center gap-4 border-b border-hairline pb-4 text-center">
+    <div className="flex h-full min-h-0 flex-col">
+      <header
+        className={cn(
+          'relative flex shrink-0 border-b border-hairline text-center',
+          started ? 'flex-row items-center justify-between gap-3 pb-2' : 'flex-col items-center gap-4 pb-4',
+        )}
+      >
         <div className="flex items-center gap-3">
-          <FloMark size="lg" live={chat.streaming} />
-          <h1 className="font-display text-[32px] leading-none font-semibold tracking-[-0.02em] whitespace-nowrap text-foreground">
+          <FloMark size={started ? 'md' : 'lg'} live={chat.streaming} />
+          <h1 className={cn('font-display leading-none', started ? 'text-[22px]' : 'text-[32px]') + ' font-semibold tracking-[-0.02em] whitespace-nowrap text-foreground'}>
             {floContent.wordmark.name} <span className="text-accent">{floContent.wordmark.suffix}</span>
           </h1>
         </div>
-        <div className="order-first flex items-center gap-2 self-end sm:absolute sm:top-0 sm:right-0">
+        <div className={cn('flex items-center gap-2', started ? 'shrink-0' : 'order-first self-end sm:absolute sm:top-0 sm:right-0')}>
           <button
             type="button"
             onClick={chat.newChat}
@@ -130,14 +142,14 @@ export function FloScreen() {
             onRetry={chat.retry}
           />
         ) : (
-          <div className="pt-20 pb-6">
+          <div className="shrink-0 pt-6 pb-6 sm:pt-14">
             <FloWelcome />
           </div>
         )}
 
-        <div ref={dock} className={cn('relative z-10 mx-auto w-full max-w-[720px]', started && 'pt-2')}>
-          <div className="mb-4 flex justify-center">
-            <ModeSwitch modes={modes} value={mode} disabled={chat.streaming} onChange={setMode} />
+        <div ref={dock} className={cn('relative z-10 mx-auto w-full max-w-[720px] shrink-0', started && 'pt-1')}>
+          <div className={cn('flex justify-center', started ? 'mb-2' : 'mb-4')}>
+            <ModeSwitch modes={modes} value={mode} disabled={chat.streaming} onChange={setMode} compact={started} />
           </div>
           <Composer
             streaming={chat.streaming}
@@ -146,6 +158,8 @@ export function FloScreen() {
             onStop={chat.cancel}
             inputRef={composer}
             draft={draft}
+            suggestions={suggestionPool}
+            compact={started}
             onHistory={() => setHistoryOpen(true)}
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-2 text-[13px] text-muted-strong">

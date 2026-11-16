@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { floContent } from '@/content/flo'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { FOCUS_RING, OUTLINE_CONTROL } from '@/components/flo/flo-styles'
+import { matchSuggestions } from '@/features/flo/lib/suggest'
 import { prefersReducedMotion } from '@/lib/motion'
 import { fillCopy } from '@/lib/utils'
 
@@ -16,12 +17,17 @@ interface ComposerProps {
   draft?: { text: string; id: number }
   /** Opens past conversations; shown as an icon button beside Send. */
   onHistory?: () => void
+  /** Suggested questions to offer as the admin types (the server's list). */
+  suggestions?: readonly string[]
+  /** A conversation is under way: a one-line box, and suggestions open above it. */
+  compact?: boolean
 }
 
 /** The box is 2 lines tall when empty and grows to 6 before it scrolls (24px lines, 24px vertical padding). */
 const LINE = 24
 const PADDING = 24
 const MIN_HEIGHT = LINE * 2 + PADDING
+const MIN_HEIGHT_COMPACT = LINE + PADDING
 const MAX_HEIGHT = LINE * 6 + PADDING
 
 /** How long each example stays in the empty box. */
@@ -33,7 +39,7 @@ const KEY = 'rounded-md border border-line px-1.5 font-sans text-[13px] leading-
  * The question box. It grows with the question, and is disabled while an answer streams, when Send
  * becomes Stop. Enter sends, Shift+Enter adds a line.
  */
-export function Composer({ streaming, disabled, onSend, onStop, inputRef, draft, onHistory }: ComposerProps) {
+export function Composer({ streaming, disabled, onSend, onStop, inputRef, draft, onHistory, suggestions = [], compact = false }: ComposerProps) {
   const copy = floContent.composer
   const [text, setText] = useState('')
   const [draftId, setDraftId] = useState(draft?.id)
@@ -46,6 +52,7 @@ export function Composer({ streaming, disabled, onSend, onStop, inputRef, draft,
   const ready = !locked && text.trim().length > 0
   const [example, setExample] = useState(0)
   const showExamples = text.length === 0 && !locked
+  const typeahead = locked ? [] : matchSuggestions(suggestions, text)
 
   // While the box is empty, cycle the example questions shown in it.
   useEffect(() => {
@@ -59,9 +66,9 @@ export function Composer({ streaming, disabled, onSend, onStop, inputRef, draft,
     if (!element) return
     element.style.height = 'auto'
     const content = element.scrollHeight
-    element.style.height = `${Math.min(Math.max(content, MIN_HEIGHT), MAX_HEIGHT)}px`
+    element.style.height = `${Math.min(Math.max(content, compact ? MIN_HEIGHT_COMPACT : MIN_HEIGHT), MAX_HEIGHT)}px`
     element.style.overflowY = content > MAX_HEIGHT ? 'auto' : 'hidden'
-  }, [text])
+  }, [text, compact])
 
   function setRefs(node: HTMLTextAreaElement | null) {
     box.current = node
@@ -88,8 +95,30 @@ export function Composer({ streaming, disabled, onSend, onStop, inputRef, draft,
         event.preventDefault()
         submit()
       }}
-      className="w-full"
+      className="relative w-full"
     >
+      {typeahead.length > 0 ? (
+        <ul
+          aria-label={floContent.suggestions.title}
+          className={`absolute inset-x-0 z-20 flex max-h-56 flex-col gap-0.5 overflow-y-auto rounded-2xl border border-line bg-card p-2 shadow-float ${compact ? 'bottom-full mb-2' : 'top-full mt-2'}`}
+        >
+          {typeahead.map((question) => (
+            <li key={question}>
+              <button
+                type="button"
+                onClick={() => {
+                  onSend(question)
+                  setText('')
+                }}
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-foreground hover:bg-primary/[0.06] ${FOCUS_RING}`}
+              >
+                <DashboardIcon name="arrow-right" className="h-4 w-4 shrink-0 text-muted-strong" />
+                {question}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="rounded-[20px] border border-line bg-card shadow-float transition-[border-color,box-shadow] duration-150 focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20">
         <label htmlFor="flo-composer" className="sr-only">
           {copy.label}
@@ -107,7 +136,7 @@ export function Composer({ streaming, disabled, onSend, onStop, inputRef, draft,
           <textarea
             id="flo-composer"
             ref={setRefs}
-            rows={2}
+            rows={compact ? 1 : 2}
             value={text}
             maxLength={copy.maxLength}
             disabled={locked}
@@ -119,7 +148,7 @@ export function Composer({ streaming, disabled, onSend, onStop, inputRef, draft,
           />
         </div>
         <div className="flex items-center gap-4 pr-2 pb-2 pl-4">
-          <p id="flo-composer-hint" className="hidden items-center gap-2 text-[13px] text-muted-strong sm:flex">
+          <p id="flo-composer-hint" className={`hidden items-center gap-2 text-[13px] text-muted-strong ${compact ? '' : 'sm:flex'}`}>
             <kbd className={KEY}>{copy.hintKeys.send}</kbd> {copy.hintSend}
             <span aria-hidden="true">·</span>
             <kbd className={KEY}>{copy.hintKeys.newLine}</kbd> {copy.hintNewLine}
