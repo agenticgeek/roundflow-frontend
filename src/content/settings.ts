@@ -84,6 +84,7 @@ export const settingsContent = {
     },
     stripeCallbackFailed: 'Couldn\'t connect Stripe',
     stripeCallbackBack: 'Back to settings',
+    stripeCallbackBackSetup: 'Back to setup',
     disconnect: 'Disconnect',
     disconnecting: 'Disconnecting…',
     disconnected: '{provider} disconnected',

@@ -394,7 +394,7 @@ export default function SetupWizard() {
 
   /**
    * Stripe connects through a full-page OAuth redirect. Save this step first so nothing is
-   * lost; Stripe sends the admin back to /settings/integrations, which returns them here.
+   * lost; Stripe sends the admin straight back to this Payments step.
    */
   async function handleConnectStripe(values: WizardPaymentData) {
     if (!canMutate) return
@@ -403,10 +403,11 @@ export default function SetupWizard() {
     } catch (error) {
       throw new Error(errorMessage(error))
     }
-    window.location.assign(settingsApi.stripeAuthorizeUrl())
+    const paymentStep = SETUP_STEPS.find((definition) => definition.id === 'payment-setup')?.step ?? 2
+    window.location.assign(settingsApi.stripeAuthorizeUrl(`${ROUTES.setupWizard}?step=${paymentStep}`))
   }
 
-  // Back from Stripe (?stripe=connected, via /settings/integrations) — confirm and refresh.
+  // Back from Stripe (?stripe=connected) — confirm and refresh.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('stripe') !== 'connected') return

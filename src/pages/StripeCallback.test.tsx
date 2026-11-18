@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ApiError } from '@/lib/errors'
-import { STRIPE_STATE_KEY } from '@/lib/stripe-connect'
+import { STRIPE_RETURN_KEY, STRIPE_STATE_KEY } from '@/lib/stripe-connect'
 import StripeCallback from '@/pages/StripeCallback'
 
 const navigate = vi.fn()
@@ -38,6 +38,28 @@ afterEach(() => {
 })
 
 describe('StripeCallback', () => {
+  it('goes back to the setup wizard Payments step when Connect started there', async () => {
+    sessionStorage.setItem(STRIPE_STATE_KEY, 'st')
+    sessionStorage.setItem(STRIPE_RETURN_KEY, '/setup?step=2')
+    completeStripeConnect.mockResolvedValue(undefined)
+
+    renderAt('?code=ac_1&state=st')
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/setup?step=2&stripe=connected', { replace: true }))
+    expect(sessionStorage.getItem(STRIPE_RETURN_KEY)).toBeNull()
+  })
+
+  it('offers a way back to setup when the exchange fails there', async () => {
+    sessionStorage.setItem(STRIPE_STATE_KEY, 'st')
+    sessionStorage.setItem(STRIPE_RETURN_KEY, '/setup?step=2')
+    completeStripeConnect.mockRejectedValue(new ApiError(400, 'nope'))
+
+    renderAt('?code=ac_1&state=st')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to setup' }))
+    expect(navigate).toHaveBeenCalledWith('/setup?step=2', { replace: true })
+  })
+
   it('exchanges the code once (even under StrictMode) and returns to integrations', async () => {
     sessionStorage.setItem(STRIPE_STATE_KEY, 'st')
     completeStripeConnect.mockResolvedValue(undefined)

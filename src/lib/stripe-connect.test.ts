@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  STRIPE_RETURN_KEY,
   STRIPE_STATE_KEY,
   beginStripeConnect,
+  consumeStripeReturn,
+  isStripeReturnPath,
+  withStripeConnected,
   buildStripeConnectUrl,
   consumeStripeState,
   parseStripeCallback,
@@ -122,5 +126,39 @@ describe('parseStripeCallback', () => {
       kind: 'error',
       message: expect.stringMatching(/authorisation code/),
     })
+  })
+})
+
+describe('Stripe return page', () => {
+  it('remembers where Connect was started, and forgets it when none is given', () => {
+    vi.stubEnv('VITE_STRIPE_CONNECT_CLIENT_ID', 'ca_test')
+    beginStripeConnect('/setup?step=2')
+    expect(sessionStorage.getItem(STRIPE_RETURN_KEY)).toBe('/setup?step=2')
+    beginStripeConnect()
+    expect(sessionStorage.getItem(STRIPE_RETURN_KEY)).toBeNull()
+  })
+
+  it('only allows pages under /setup or /settings', () => {
+    expect(isStripeReturnPath('/setup?step=2')).toBe(true)
+    expect(isStripeReturnPath('/setup')).toBe(true)
+    expect(isStripeReturnPath('/settings/integrations#x')).toBe(true)
+    expect(isStripeReturnPath('/setupx')).toBe(false)
+    expect(isStripeReturnPath('/customers')).toBe(false)
+    expect(isStripeReturnPath('//evil.com/setup')).toBe(false)
+    expect(isStripeReturnPath('https://evil.com/setup')).toBe(false)
+    expect(isStripeReturnPath(null)).toBe(false)
+  })
+
+  it('returns the stored page once, falling back to payment settings', () => {
+    sessionStorage.setItem(STRIPE_RETURN_KEY, '/setup?step=2')
+    expect(consumeStripeReturn()).toEqual({ path: '/setup?step=2', fromSetup: true })
+    expect(consumeStripeReturn()).toEqual({ path: '/settings/integrations', fromSetup: false })
+    sessionStorage.setItem(STRIPE_RETURN_KEY, 'https://evil.com')
+    expect(consumeStripeReturn()).toEqual({ path: '/settings/integrations', fromSetup: false })
+  })
+
+  it('adds stripe=connected to the query', () => {
+    expect(withStripeConnected('/setup?step=2')).toBe('/setup?step=2&stripe=connected')
+    expect(withStripeConnected('/settings/integrations')).toBe('/settings/integrations?stripe=connected')
   })
 })
