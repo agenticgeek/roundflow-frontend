@@ -62,6 +62,8 @@ import { ApiError, errorMessage } from '@/lib/errors'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { confirmDialogContent } from '@/content/confirm-dialog'
 import { GoCardlessTokenForm, GoCardlessWebhookSetup } from '@/components/payments/GoCardlessConnect'
+import { MandateImportModal } from '@/components/payments/MandateImportModal'
+import { directDebitContent } from '@/content/direct-debit'
 import { GhlConnectionCard } from '@/features/settings/components/GhlConnectionCard'
 import { useGhlStatus } from '@/features/settings/hooks/useGhl'
 import { readIntegrationReturn, useIntegrationReturn } from '@/features/settings/hooks/useIntegrationReturn'
@@ -561,6 +563,7 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
    */
   const [gcWebhook, setGcWebhook] = useState<{ url: string | null } | null>(null)
   const [gcSecretSaved, setGcSecretSaved] = useState(false)
+  const [mandateImportOpen, setMandateImportOpen] = useState(false)
 
   if (query.isPending) return <SettingsPaymentSkeleton />
   if (query.isError) {
@@ -663,6 +666,7 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
 
   return (
     <article className={cn(cardClass, 'p-6')}>
+      {mandateImportOpen ? <MandateImportModal onClose={() => setMandateImportOpen(false)} /> : null}
       <PanelHeader
         icon="card"
         heading={settingsContent.paymentSetup.heading}
@@ -735,6 +739,16 @@ function PaymentSetupPanel({ canMutate }: { canMutate: boolean }) {
                         >
                           {settingsContent.paymentSetup.goCardlessWebhook.reopen}
                         </button>
+                        <div className="basis-full">
+                          <button
+                            type="button"
+                            onClick={() => setMandateImportOpen(true)}
+                            className="font-semibold text-primary hover:underline"
+                          >
+                            {directDebitContent.import.open}
+                          </button>
+                          <p className="mt-1 text-xs text-muted">{directDebitContent.import.openHint}</p>
+                        </div>
                       </>
                     ) : null}
                   </div>

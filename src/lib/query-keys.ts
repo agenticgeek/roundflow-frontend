@@ -35,6 +35,12 @@ export const queryKeys = {
     detail: (id: string) => ['customers', 'detail', id] as const,
     /** GET /customers/:id/visits — full history incl. CANCELLED (GAP-020). */
     visits: (id: string, page = 1) => ['customers', 'visits', id, page] as const,
+    /** GET /customers/:id/direct-debit — mandate status and setup link. */
+    directDebit: (id: string) => ['customers', 'direct-debit', id] as const,
+  },
+  directDebit: {
+    /** GET /integrations/gocardless/mandates/import — existing mandates to link. */
+    importCandidates: ['direct-debit', 'import-candidates'] as const,
   },
   properties: {
     all: ['properties'] as const,

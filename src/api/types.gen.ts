@@ -946,6 +946,15 @@ export interface paths {
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
+                /** @description Two technicians share an email, or a technician being replaced is still in use (code TECHNICIAN_IN_USE). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -2316,6 +2325,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/closures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List business closures
+         * @description ADMIN/MANAGER. Default: closures whose `endDate` is today or later (tenant-local today). With `from` and/or `to`: closures overlapping that window. Sorted by `startDate`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description YYYY-MM-DD; closures ending on or after this day. */
+                    from?: string;
+                    /** @description YYYY-MM-DD; closures starting on or before this day. Not before `from`. */
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Closures. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ClosureListResult"];
+                    };
+                };
+                /** @description VALIDATION_FAILED: bad date or `to` before `from`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /**
+         * Create a business closure
+         * @description ADMIN/MANAGER. Unknown body fields are rejected. Errors (400, `code`): VALIDATION_FAILED, INVALID_CLOSURE_RANGE (end before start, over 366 days, or ends in the past), UNKNOWN_ROUND. Creating a closure changes no existing visit; later visit generation and the planner honour it.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ClosureCreateInput"];
+                };
+            };
+            responses: {
+                /** @description Created. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Closure"];
+                    };
+                };
+                /** @description VALIDATION_FAILED, INVALID_CLOSURE_RANGE or UNKNOWN_ROUND. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/customers": {
         parameters: {
             query?: never;
@@ -2334,6 +2439,7 @@ export interface paths {
                     roundId?: string;
                     status?: "ACTIVE" | "PAUSED" | "CANCELLED" | "HOLD";
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -2534,6 +2640,7 @@ export interface paths {
                     /** @description Filter by specific technician ID. Ignored when `assignedTo=me`. */
                     technicianId?: string;
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -3792,6 +3899,7 @@ export interface paths {
                     /** @description Case-insensitive search on customer name or property address. */
                     search?: string;
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -3894,6 +4002,7 @@ export interface paths {
                     from?: string;
                     to?: string;
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -3938,6 +4047,7 @@ export interface paths {
                     period?: "today" | "last7" | "last30" | "last90" | "thisMonth" | "lastMonth" | "thisYear";
                     status?: components["schemas"]["VisitStatus"];
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -3981,6 +4091,7 @@ export interface paths {
                     /** @description Unknown values fall back to last30. CANCELLED visits are excluded unless filtered for explicitly. */
                     period?: "today" | "last7" | "last30" | "last90" | "thisMonth" | "lastMonth" | "thisYear";
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -4391,6 +4502,7 @@ export interface paths {
                     customerId?: string;
                     q?: string;
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -4742,6 +4854,7 @@ export interface paths {
                     from?: string;
                     to?: string;
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -5511,6 +5624,7 @@ export interface paths {
                     from?: string;
                     to?: string;
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -6101,6 +6215,7 @@ export interface paths {
                     customerId?: string;
                     unreadOnly?: boolean;
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -6270,6 +6385,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/integrations/gocardless/mandates/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Existing GoCardless mandates to link to customers
+         * @description ADMIN only. Lists the account's active / pending GoCardless mandates with their GoCardless customer's details, the RoundFlow customer each is already linked to, and a suggested match (unique email match, else unique UK-normalised phone match). Nothing is changed.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Candidates. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GcMandateImportCandidates"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description `GOCARDLESS_NOT_CONNECTED`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Link existing GoCardless mandates to customers
+         * @description ADMIN only. Links each confirmed mandate -> customer pair after re-checking it: the mandate must still be collectable in GoCardless, not linked to another customer, and the customer must not already have a different active or pending mandate. Per-pair results; one failure does not stop the rest.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GcMandateImportInput"];
+                };
+            };
+            responses: {
+                /** @description Results. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GcMandateImportResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description `GOCARDLESS_NOT_CONNECTED`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/integrations/outbox": {
         parameters: {
             query?: never;
@@ -6286,6 +6490,7 @@ export interface paths {
                 query?: {
                     status?: "dead" | "failed";
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -6321,6 +6526,311 @@ export interface paths {
                     };
                 };
                 /** @description `status` is not dead or failed (code INVALID_STATUS). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flo/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Flo AI: is it on, the modes, and questions left today
+         * @description ADMIN only (MANAGER and TECHNICIAN get 403). `enabled` is false when `ANTHROPIC_API_KEY` is unset or `FLO_ENABLED=false`.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Status. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FloStatus"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flo/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Flo AI: suggested questions by area
+         * @description ADMIN only. Static list, also the content of the "what can you do" reply.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Suggestion groups. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FloSuggestions"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flo/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Flo AI: ask a question (Server-Sent Events stream)
+         * @description ADMIN only. Answers `text/event-stream` (headers `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, `Connection: keep-alive`); a `: ping` comment is sent every 15 s. Read it with `fetch` (EventSource cannot POST or send the bearer token). Every event is `event: <name>` plus one JSON `data:` line:
+         *
+         *     - `start` `{ conversationId, messageId, mode }`: the stream opened; `messageId` is the id of the assistant message used in `done` and in GET.
+         *     - `status` `{ phase: "checking"|"checked", tool, label, rows? }`: one pair per data source looked up.
+         *     - `block` `{ index, block }`: a finished card row or table (`index` = 0-based position among blocks).
+         *     - `text` `{ target: "intro"|"insight", index, text, unverified? }`: one sentence; `index` is the 0-based position within its target. `unverified: true` = a figure could not be checked against the data.
+         *     - `follow_ups` `{ items }`: up to 3 suggested next questions.
+         *     - `declined` `{ reason, text, suggestions }`: out of scope, a write request, a capability question or no data; the text is fixed server copy. Followed by `done` with status DECLINED.
+         *     - `warning` `{ code: "UNVERIFIED_FIGURES" }`.
+         *     - `done` `{ message }`: the final persisted message (same shape as GET /flo/conversations/{id}); the client replaces its streamed state with it.
+         *     - `error` `{ code, message, retryable }`: a failure after the stream started (`FLO_PROVIDER_ERROR`, `FLO_TIMEOUT`, `FLO_NO_ANSWER`, `FLO_INTERNAL_ERROR`); no `done` follows.
+         *
+         *     Failures before the first byte are normal JSON errors: 400 `INVALID_MESSAGE`, 404 `FLO_CONVERSATION_NOT_FOUND`, 409 `FLO_REQUEST_IN_PROGRESS` (same Idempotency-Key still running), 429 `RATE_LIMITED`, 429 `FLO_DAILY_LIMIT` (body has `resetsAt`), 429 `FLO_DECLINE_LIMIT`, 503 `FLO_UNAVAILABLE`. A repeat with the same `Idempotency-Key` after the first finished replays `start` + `done` (response header `Idempotent-Replay: true`). A client disconnect cancels the work and records the message as ABORTED.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FloChatRequest"];
+                };
+            };
+            responses: {
+                /** @description The event stream described above. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                /** @description Empty, over-long or malformed message, bad mode or bad Idempotency-Key (code INVALID_MESSAGE / INVALID_IDEMPOTENCY_KEY). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description conversationId is not one of the caller's conversations (code FLO_CONVERSATION_NOT_FOUND). */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description The same Idempotency-Key is still being answered (code FLO_REQUEST_IN_PROGRESS). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Rate limited (code RATE_LIMITED, Retry-After header), the business's daily cap (code FLO_DAILY_LIMIT, body has `resetsAt`) or too many declined messages (code FLO_DECLINE_LIMIT). */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "error": "Flo has reached today's limit. It resets at midnight.",
+                         *       "code": "FLO_DAILY_LIMIT",
+                         *       "resetsAt": "2026-11-11T00:00:00.000Z"
+                         *     }
+                         */
+                        "application/json": {
+                            /** Format: date-time */
+                            resetsAt?: string;
+                        } & components["schemas"]["Error"];
+                    };
+                };
+                /** @description Flo is switched off or has no API key (code FLO_UNAVAILABLE). */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flo/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Flo AI: questions Flo could not answer (what to build next)
+         * @description ADMIN only. The questions Flo declined as `NO_DATA_USED` (no tool could answer, or it answered "I can't look that up yet"), newest first, across the whole business. `limit` defaults to 20 and is clamped to 50.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description How many to return, 20 when omitted. Values above the maximum are clamped to it (no error). */
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unanswered questions. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FloGapList"];
+                    };
+                };
+                /** @description Bad limit (code INVALID_LIMIT). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flo/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Flo AI: the caller's own conversations, newest first
+         * @description ADMIN only. Another admin's conversations are never listed.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description The previous page's `nextCursor`. */
+                    cursor?: string;
+                    /** @description Page size, 30 when omitted. Values above the maximum are clamped to it (no error). */
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description A page of conversations. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FloConversationList"];
+                    };
+                };
+                /** @description Bad cursor or limit (code INVALID_CURSOR / INVALID_LIMIT). */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -7249,7 +7759,7 @@ export interface paths {
         put?: never;
         /**
          * Amazon SNS delivery of SES events
-         * @description SES configuration set -> SNS topic -> this URL (HTTPS subscription, raw message delivery OFF). Every message is authenticated by its SNS signature (certificate must be on sns.<region>.amazonaws.com); `SES_SNS_TOPIC_ARN` optionally pins the topic. SubscriptionConfirmation is confirmed automatically. Notifications map the `tenantId` message tag to the tenant: Delivery -> DELIVERED, Bounce -> BOUNCED (Permanent flags the customer's email invalid), Complaint -> COMPLAINED (flags the email invalid); above 0.3% complaints or 5% bounces over the last 100 sends the tenant's email is paused and the admins notified. Idempotent through the WebhookEvent status machine; a failed effect answers 500 so SNS redelivers.
+         * @description SES configuration set -> SNS topic -> this URL (HTTPS subscription, raw message delivery OFF). Every message is authenticated by its SNS signature (certificate must be on sns.<region>.amazonaws.com); `SES_SNS_TOPIC_ARN` optionally pins the topic. SubscriptionConfirmation is confirmed automatically. Notifications map the `tenantId` message tag to the tenant: Delivery -> DELIVERED, Bounce -> BOUNCED (Permanent flags the customer email invalid; only hard bounces count towards pausing), Complaint -> COMPLAINED (flags the email invalid); with 100+ sends in the window, complaints above 0.3% or hard bounces above 5% (or 3 complaints / 10 hard bounces within 7 days at any volume) pause the tenant's email is paused and the admins notified. Idempotent through the WebhookEvent status machine; a failed effect answers 500 so SNS redelivers.
          */
         post: {
             parameters: {
@@ -7496,7 +8006,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Profile already existed (idempotent). */
+                /** @description Profile already existed, or a simultaneous accept of the same invite won the race (idempotent: the winner's profile is returned). */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -7530,6 +8040,15 @@ export interface paths {
                     };
                 };
                 404: components["responses"]["NotFound"];
+                /** @description The signed-in account already belongs to another organisation (code PROFILE_EXISTS). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 410: components["responses"]["Gone"];
                 429: components["responses"]["TooManyRequests"];
             };
@@ -7836,6 +8355,257 @@ export interface paths {
         };
         trace?: never;
     };
+    "/closures/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a business closure
+         * @description ADMIN/MANAGER. Never restores visits that were already moved or skipped.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description CLOSURE_NOT_FOUND. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /**
+         * Update a business closure
+         * @description ADMIN/MANAGER. Any subset of the create fields; the merged dates are re-validated. The "ends in the past" check runs only when `startDate` or `endDate` is supplied. Editing never restores visits that were already moved or skipped.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ClosureUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description Updated. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Closure"];
+                    };
+                };
+                /** @description VALIDATION_FAILED, INVALID_CLOSURE_RANGE or UNKNOWN_ROUND. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description CLOSURE_NOT_FOUND. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/closures/{id}/apply/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview applying a closure to existing visits (no writes)
+         * @description ADMIN/MANAGER. The same selection and computation as apply, without any write: SCHEDULED, non-one-off visits inside the window (today or later) of the closure's rounds, each resolved against every active closure. Returns groups per round (`from`, `to`, `count`; `to` is null for SKIP), never one row per visit, plus technician conflicts and the default customer message for the mode.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Preview. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ClosureApplyPreview"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description CLOSURE_NOT_FOUND. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description CLOSURE_ENDED: the closure's window is entirely in the past; CARRYOVER_TARGET_CLOSED: a target day has already been closed. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/closures/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply a closure to existing visits
+         * @description ADMIN/MANAGER. MOVE moves each selected visit to the first open round day (carryover rules, one transaction, `nextDueDate` untouched); SKIP marks them SKIPPED with the closure label. Technicians are told once each; customers only when `notifyCustomers` is true (default: the closure's own flag) and a failure there is reported as `customerNotificationError` without undoing the visits. Safe to run twice: only visits still inside the window are touched. Never restores earlier moves.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Optional (X-Idempotency-Key is accepted too). The key is claimed atomically before the handler runs, scoped to the signed-in user: a repeat with the same key and the same route replays the stored 2xx response (`Idempotent-Replay: true`) without running again; a concurrent duplicate gets 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`; the same key on another route is 409 `IDEMPOTENCY_KEY_REUSED`. Failed (non-2xx) responses are not stored, so a corrected request may reuse the key. Keys are kept 7 days. */
+                    "Idempotency-Key"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        notifyCustomers?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Applied. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ClosureApplyResult"];
+                    };
+                };
+                /** @description VALIDATION_FAILED: body is not `{ notifyCustomers?: boolean }`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description CLOSURE_NOT_FOUND. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description CLOSURE_ENDED: the closure's window is entirely in the past; CARRYOVER_TARGET_CLOSED: a target day has already been closed. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/customers/{id}": {
         parameters: {
             query?: never;
@@ -7968,6 +8738,7 @@ export interface paths {
             parameters: {
                 query?: {
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -8187,7 +8958,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/customers/{id}/mandate": {
+    "/customers/{id}/direct-debit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Direct Debit status for a customer
+         * @description Mandate status plus the current GoCardless setup link (while it is still valid) and when a link was last sent.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Status. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DirectDebitStatus"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/direct-debit/link": {
         parameters: {
             query?: never;
             header?: never;
@@ -8199,8 +9016,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Start a GoCardless Direct Debit mandate (redirect flow)
-         * @description Creates a GoCardless redirect flow using the tenant's stored GoCardless token and returns its URL. The customer is sent back to `${FRONTEND_URL}/customers/{id}/mandate/success`, after which the frontend calls POST /customers/{id}/mandate/complete.
+         * Get a Direct Debit setup link to copy
+         * @description Returns the customer's GoCardless setup link (a billing request flow), reusing a stored one with more than an hour left, else making a new one. Sends nothing. When the customer completes it, the `billing_requests.fulfilled` webhook links the new mandate.
          */
         post: {
             parameters: {
@@ -8213,19 +9030,19 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Redirect-flow URL. */
+                /** @description Link. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["MandateRedirectResult"];
+                        "application/json": components["schemas"]["DirectDebitLink"];
                     };
                 };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
-                /** @description Customer already has an active mandate, or GoCardless is not connected. */
+                /** @description `GOCARDLESS_NOT_CONNECTED`, or `MANDATE_EXISTS` (the customer already has an active or pending mandate). */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -8242,7 +9059,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/customers/{id}/mandate/complete": {
+    "/customers/{id}/direct-debit/send": {
         parameters: {
             query?: never;
             header?: never;
@@ -8254,8 +9071,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Complete the GoCardless redirect flow
-         * @description Completes `redirectFlowId` with GoCardless and stores the GoCardless customer + mandate ids on the customer with `gocardlessMandateStatus = pending_customer_approval`. The status moves to `active` (etc.) via POST /webhooks/gocardless mandate events.
+         * Send the Direct Debit setup link to the customer
+         * @description Renders the tenant's 'Direct Debit setup link' template (`{{paymentLink}}` = the link) and sends it by the chosen channel (or the best available). Records the send time and an activity log entry.
          */
         post: {
             parameters: {
@@ -8266,27 +9083,36 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody: {
+            requestBody?: {
                 content: {
-                    "application/json": components["schemas"]["MandateCompleteInput"];
+                    "application/json": components["schemas"]["DirectDebitSendInput"];
                 };
             };
             responses: {
-                /** @description Mandate created. */
+                /** @description Sent. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["MandateCompleteResult"];
+                        "application/json": components["schemas"]["DirectDebitSendResult"];
                     };
                 };
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
-                /** @description GoCardless is not connected. */
+                /** @description `GOCARDLESS_NOT_CONNECTED`, `MANDATE_EXISTS`, or the channel cannot be used. */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description The message provider rejected the send. */
+                502: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -8623,6 +9449,7 @@ export interface paths {
                 query?: {
                     type?: components["schemas"]["PhotoType"];
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -9533,6 +10360,15 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                /** @description Another save of the same round technicians happened at the same time (code ROUND_TECHNICIANS_CONFLICT); reload and retry. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         post?: never;
@@ -10083,6 +10919,7 @@ export interface paths {
                     search?: string;
                     reviewStatus?: components["schemas"]["PhotoReviewStatus"];
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -10205,6 +11042,7 @@ export interface paths {
                     /** @description Inclusive; must not be before `from`. */
                     to?: string;
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -12549,6 +13387,7 @@ export interface paths {
             parameters: {
                 query?: {
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -12600,6 +13439,7 @@ export interface paths {
             parameters: {
                 query?: {
                     page?: number;
+                    /** @description Values above the maximum are clamped to it (no error). */
                     pageSize?: number;
                 };
                 header?: never;
@@ -12809,6 +13649,159 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flo/messages/{id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Flo AI: rate an answer (thumbs up or down)
+         * @description ADMIN only. Rates one ASSISTANT message in one of the caller's own conversations. Rating again overwrites the earlier rating and comment. The rating then appears as `rating` on the message in `done` and in GET /flo/conversations/{id}.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FloFeedbackRequest"];
+                };
+            };
+            responses: {
+                /** @description Saved. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Missing or invalid rating, or a comment over 500 characters (code INVALID_FEEDBACK). */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Not an ASSISTANT message in one of the caller's conversations (code FLO_MESSAGE_NOT_FOUND). */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flo/conversations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Flo AI: one conversation with its messages
+         * @description ADMIN only. USER messages carry `text`; ASSISTANT messages are the final-message shape (ERROR and ABORTED ones carry `status` and `errorCode`). Another admin's id answers 404 `FLO_CONVERSATION_NOT_FOUND`. A client whose stream dropped re-reads the final message here.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The conversation. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FloConversation"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Not one of the caller's conversations (code FLO_CONVERSATION_NOT_FOUND). */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /**
+         * Flo AI: delete one of the caller's conversations
+         * @description ADMIN only. Another admin's id answers 404 `FLO_CONVERSATION_NOT_FOUND`.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description Not one of the caller's conversations (code FLO_CONVERSATION_NOT_FOUND). */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -13607,6 +14600,139 @@ export interface components {
             operator: components["schemas"]["KpiOperator"];
             value: number;
         };
+        /**
+         * @description MOVE: visits due in the closure move to the next open round day. SKIP: those cycles are dropped.
+         * @enum {string}
+         */
+        ClosureMode: "MOVE" | "SKIP";
+        /**
+         * @example {
+         *       "id": "clx1",
+         *       "label": "Christmas",
+         *       "startDate": "2026-12-24",
+         *       "endDate": "2027-01-03",
+         *       "mode": "MOVE",
+         *       "notifyCustomers": false,
+         *       "roundIds": [],
+         *       "appliedAt": null,
+         *       "createdAt": "2026-11-16T09:00:00.000Z",
+         *       "updatedAt": "2026-11-16T09:00:00.000Z"
+         *     }
+         */
+        Closure: {
+            id: string;
+            /** @description Trimmed plain text. */
+            label: string;
+            /**
+             * Format: date
+             * @description YYYY-MM-DD, inclusive.
+             */
+            startDate: string;
+            /**
+             * Format: date
+             * @description YYYY-MM-DD, inclusive; >= startDate; at most 366 days in total.
+             */
+            endDate: string;
+            mode: components["schemas"]["ClosureMode"];
+            notifyCustomers: boolean;
+            /** @description Empty = every round. */
+            roundIds: string[];
+            /**
+             * Format: date-time
+             * @description Last successful apply to existing visits.
+             */
+            appliedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ClosureCreateInput: {
+            /** @description Trimmed; no control characters. */
+            label: string;
+            /** Format: date */
+            startDate: string;
+            /** Format: date */
+            endDate: string;
+            mode: components["schemas"]["ClosureMode"];
+            /** @default false */
+            notifyCustomers: boolean;
+            /** @description Every id must be an existing round (400 UNKNOWN_ROUND). Duplicates are collapsed. Empty or omitted = every round. */
+            roundIds?: string[];
+        };
+        /** @description Any subset of the create fields. `endDate` must not be in the past only when `startDate` or `endDate` is supplied. */
+        ClosureUpdateInput: {
+            label?: string;
+            /** Format: date */
+            startDate?: string;
+            /** Format: date */
+            endDate?: string;
+            mode?: components["schemas"]["ClosureMode"];
+            notifyCustomers?: boolean;
+            roundIds?: string[];
+        };
+        ClosureListResult: {
+            closures: components["schemas"]["Closure"][];
+        };
+        ClosureConflict: {
+            visitId: string;
+            technicianId: string;
+            /** @enum {string} */
+            reason: "TECHNICIAN_UNAVAILABLE" | "TECHNICIAN_INACTIVE";
+        };
+        ClosureApplyPreview: {
+            closureId: string;
+            mode: components["schemas"]["ClosureMode"];
+            totals: {
+                visits: number;
+                rounds: number;
+                customers: number;
+                technicianConflicts: number;
+            };
+            rounds: {
+                roundId: string;
+                roundName: string;
+                visitCount: number;
+                /** @description One entry per (from, to); `to` is null for SKIP. Never one row per visit. */
+                groups: {
+                    /** Format: date */
+                    from: string;
+                    /** Format: date */
+                    to: string | null;
+                    count: number;
+                }[];
+            }[];
+            conflicts: components["schemas"]["ClosureConflict"][];
+            customerMessage: string;
+        };
+        ClosureApplyResult: {
+            closureId: string;
+            mode: components["schemas"]["ClosureMode"];
+            moved: number;
+            skipped: number;
+            conflicts: components["schemas"]["ClosureConflict"][];
+            notifiedTechnicians: number;
+            notifiedCustomers: number;
+            /** @description Set when the customer step failed; the visits ARE already changed. */
+            customerNotificationError?: string;
+            /** Format: date-time */
+            appliedAt: string;
+        };
+        ClosureWarning: {
+            /** @enum {string} */
+            code: "DATE_IN_CLOSURE";
+            closureId: string;
+            label: string;
+            /** Format: date */
+            startDate: string;
+            /** Format: date */
+            endDate: string;
+        };
+        /**
+         * @description Stable `code` values of the closures endpoints: VALIDATION_FAILED (400), INVALID_CLOSURE_RANGE (400: end before start, longer than 366 days, or ends in the past), UNKNOWN_ROUND (400), CLOSURE_NOT_FOUND (404), CLOSURE_ENDED (409, apply only), CLOSURE_RESOLUTION_LIMIT (500, internal guard).
+         * @enum {string}
+         */
+        ClosureErrorCode: "VALIDATION_FAILED" | "INVALID_CLOSURE_RANGE" | "UNKNOWN_ROUND" | "CLOSURE_NOT_FOUND" | "CLOSURE_ENDED" | "CLOSURE_RESOLUTION_LIMIT";
         ProviderStatusResult: {
             /**
              * @example disconnected
@@ -14323,7 +15449,7 @@ export interface components {
             id: string;
             name?: string | null;
         };
-        /** @description One calendar day's aggregate stats for a round (planner calendar view). */
+        /** @description One calendar day's aggregate stats for a round (planner calendar view). May be a forecast (see `projected`). */
         OccurrenceSummary: {
             /**
              * Format: date
@@ -14339,6 +15465,11 @@ export interface components {
             issueCount: number;
             /** @description Every distinct technician with ≥ 1 stop on this date, deduped by id. */
             technicians: components["schemas"]["OccurrenceTechnicianRef"][];
+            /**
+             * @description Present (true) only on a forecast entry: the date is projected from the round's frequency, no visits exist yet, stopCount and totalValue are estimates, and technicians is empty. Real entries omit it. Forecasts run up to 13 weeks past the round's next date, at most 4 entries per round in total (real and projected), only for ACTIVE rounds and only inside the requested date window. Display-only: nothing is created.
+             * @enum {boolean}
+             */
+            projected?: true;
         };
         PlannerStopIssue: {
             id: string;
@@ -14593,6 +15724,8 @@ export interface components {
             notifiedCustomers?: number;
             /** @description Set when notifyCustomers was requested but messaging failed; the close itself succeeded. */
             customerNotificationError?: string;
+            /** @description Closures: present only when push_to_tomorrow carried visits to a day inside an active closure (non-blocking). */
+            warnings?: components["schemas"]["ClosureWarning"][];
         };
         TechnicianServiceAreaRow: {
             serviceAreaId: string;
@@ -14791,6 +15924,11 @@ export interface components {
             /** @example Monday 9 Nov */
             label: string;
             default: boolean;
+            /** @description Closures: present only when this option's date is inside an active business closure. */
+            closure?: {
+                closureId: string;
+                label: string;
+            };
         };
         /** @description On a Friday the options are ALWAYS Saturday and Monday (Sunday is never offered; Monday is the default unless Monday is not a working day and Saturday is). Any other day: just the next working day per BusinessSettings.defaultWorkingDays (Mon–Fri when unset). */
         CarryoverOptions: {
@@ -14851,6 +15989,8 @@ export interface components {
             dryRun: boolean;
             /** @description Present when notifyCustomers failed; the carryover itself is done. */
             customerNotificationError?: string;
+            /** @description Closures: present only when the target day is inside an active closure for a round of the moved visits (non-blocking; also on dryRun). */
+            warnings?: components["schemas"]["ClosureWarning"][];
         };
         /**
          * @description Select by `ids` (max 500) or by `status` (default DRAFT, oldest first, first 500). `filters` narrows a status selection to the current view.
@@ -14965,6 +16105,8 @@ export interface components {
             status: "SCHEDULED";
             /** Format: date */
             date: string;
+            /** @description Closures: present only when the new date is inside an active business closure that applies to the visit's round (non-blocking). */
+            warnings?: components["schemas"]["ClosureWarning"][];
         };
         /**
          * @example {
@@ -15094,6 +16236,11 @@ export interface components {
             servicePlans: components["schemas"]["ServicePlan"][];
             /** @description GAP-010: true when the property was attached to an existing customer (explicit customerId, or matched by mobile/email) instead of creating one. */
             customerMatched?: boolean;
+            /**
+             * @description Present only when sendDdLink was true for a GOCARDLESS customer: queued, or why no link was queued.
+             * @enum {string}
+             */
+            ddSetupLink?: "queued" | "not_connected" | "mandate_exists";
         };
         SetupPropertyRowError: {
             /** @description 0-based index into the submitted properties[] array. */
@@ -15529,6 +16676,8 @@ export interface components {
                 status: components["schemas"]["PaymentStatus"];
                 amount: number;
             } | null;
+            /** @description true when Direct Debit was the method but the customer has no mandate yet: nothing was collected and a GoCardless setup link was queued for the customer. Absent otherwise. */
+            directDebitSetupLinkQueued?: boolean;
         };
         /**
          * @description What the technician collected on site. CASH → PAID payment; CHEQUE → PENDING payment with the cheque number on Payment.reference; BACS / GOCARDLESS / STRIPE → no cash is taken, the normal flow follows (PENDING BACS payment, GoCardless charge on an active mandate, or nothing for STRIPE) and the invoice is left DRAFT/SENT; NONE → fall back to the effective method. The chosen method is recorded on Visit.collectedVia and in the activity log (PAYMENT_METHOD_RECORDED).
@@ -15584,14 +16733,70 @@ export interface components {
             /** @description True when a `roundId` was supplied. */
             assigned: boolean;
         };
-        MandateRedirectResult: {
-            /** @description GoCardless hosted redirect-flow URL to send the customer to. */
-            url: string;
+        DirectDebitStatus: {
+            gocardlessConnected: boolean;
+            /** @description GoCardless mandate status (pending_customer_approval, pending_submission, submitted, active, cancelled, failed, expired, ...); null = no mandate. */
+            mandateStatus: string | null;
+            mandateId: string | null;
+            /**
+             * Format: date-time
+             * @description When a setup link was last sent.
+             */
+            linkSentAt: string | null;
+            /** @description The current setup link while it is still valid. */
+            linkUrl: string | null;
+            /** Format: date-time */
+            linkExpiresAt: string | null;
         };
-        MandateCompleteResult: {
-            mandateId: string;
+        DirectDebitLink: {
+            /** @description GoCardless-hosted Direct Debit sign-up link. */
+            url: string;
+            /** Format: date-time */
+            expiresAt: string | null;
+        };
+        DirectDebitSendResult: {
             /** @enum {string} */
-            status: "pending_customer_approval";
+            status: "sent";
+            /** @enum {string} */
+            channel: "EMAIL" | "SMS" | "WHATSAPP";
+            url: string;
+            /** Format: date-time */
+            expiresAt: string | null;
+        };
+        GcMandateImportCandidates: {
+            rows: {
+                mandateId: string;
+                /** @enum {string} */
+                status: "active" | "pending_submission" | "submitted";
+                reference?: string | null;
+                createdAt?: string | null;
+                gcCustomerId: string;
+                name: string;
+                email?: string | null;
+                phone?: string | null;
+                postcode?: string | null;
+                /** @description RoundFlow customer already linked to this mandate. */
+                linkedCustomerId: string | null;
+                suggestion: {
+                    customerId: string;
+                    customerName: string;
+                    /** @enum {string} */
+                    matchedBy: "email" | "phone";
+                } | null;
+                /** @description More than one RoundFlow customer matched, so nothing is suggested. */
+                ambiguous: boolean;
+            }[];
+        };
+        GcMandateImportResult: {
+            linked: number;
+            failed: number;
+            results: {
+                mandateId: string;
+                customerId: string;
+                /** @enum {string} */
+                status: "linked" | "failed";
+                error?: string;
+            }[];
         };
         /**
          * @example {
@@ -15664,6 +16869,165 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             data: components["schemas"]["NotificationData"];
+        };
+        /** @description A deep link. `screen` is a closed enum the frontend maps to a route; params are validated server-side (roundId, date, visitId, period). */
+        FloLink: {
+            /** @enum {string} */
+            screen: "TODAYS_WORK" | "ROUND" | "CUSTOMERS" | "DEBT_PAYMENT" | "REPORTS" | "COMPLAINTS" | "TECHNICIANS" | "INVOICES";
+            params?: {
+                [key: string]: string;
+            };
+        };
+        FloColumn: {
+            key: string;
+            label: string;
+            /**
+             * @description Currency is decimal GBP (never pence); percent holds a percentage (96.4 = 96.4%).
+             * @enum {string}
+             */
+            format: "text" | "integer" | "currency" | "percent" | "date";
+            /** @enum {string} */
+            align: "left" | "right";
+        };
+        FloCardItem: {
+            label: string;
+            value: (string | number) | null;
+            /** @enum {string} */
+            format: "text" | "integer" | "currency" | "percent" | "date";
+            sub?: string;
+            /** @enum {string} */
+            tone?: "neutral" | "positive" | "negative" | "warning";
+        };
+        /** @description A card row (`type: cards`, with `items`) or a table (`type: table`, with `title`, `sourceId`, `columns`, `rows`, optional `totals` and `link`). Built by the server from stored tool results; the model never supplies a value. Clients must ignore unknown block types. */
+        FloBlock: {
+            /** @enum {string} */
+            type: "cards" | "table";
+            items?: components["schemas"]["FloCardItem"][];
+            title?: string;
+            sourceId?: string;
+            columns?: components["schemas"]["FloColumn"][];
+            rows?: {
+                [key: string]: (string | number) | null;
+            }[];
+            totals?: {
+                [key: string]: (string | number) | null;
+            };
+            link?: components["schemas"]["FloLink"];
+        };
+        FloAnswer: {
+            intro: string;
+            /** @description True when an intro sentence contains a figure that could not be checked against the data. */
+            introUnverified: boolean;
+            dateRange?: {
+                from: string;
+                to: string;
+                label: string;
+            };
+            blocks: components["schemas"]["FloBlock"][];
+            insights: {
+                text: string;
+                unverified: boolean;
+                link?: components["schemas"]["FloLink"];
+            }[];
+            followUps: string[];
+            sources: {
+                id: string;
+                tool: string;
+                label: string;
+                rows: number;
+            }[];
+            truncated: boolean;
+        };
+        /** @description Fixed server-written copy; never model-written. */
+        FloDeclined: {
+            /** @enum {string} */
+            reason: "OUT_OF_SCOPE" | "WRITE_REQUEST" | "UNSAFE" | "NO_DATA_USED" | "CAPABILITY";
+            text: string;
+            suggestions: string[];
+        };
+        /** @description `role: USER` messages carry `text` and `createdAt`. `role: ASSISTANT` messages carry `mode`, `model`, `status`, `declined`, `answer`, `warnings`, `rating` (and `errorCode` when ERROR). The same shape is the `message` of the `done` event. */
+        FloMessage: {
+            id: string;
+            /** @enum {string} */
+            role: "USER" | "ASSISTANT";
+            text?: string;
+            /** @enum {string|null} */
+            mode?: "THOROUGH" | "BALANCED" | "QUICK" | null;
+            model?: string | null;
+            /** @enum {string} */
+            status?: "OK" | "ERROR" | "DECLINED" | "ABORTED";
+            /** Format: date-time */
+            createdAt?: string;
+            declined?: components["schemas"]["FloDeclined"] | null;
+            answer?: components["schemas"]["FloAnswer"] | null;
+            warnings?: "UNVERIFIED_FIGURES"[];
+            errorCode?: string;
+            /**
+             * @description ASSISTANT messages only: the admin's thumbs rating, null until rated (POST /flo/messages/{id}/feedback).
+             * @enum {string|null}
+             */
+            rating?: "UP" | "DOWN" | null;
+        };
+        FloFeedbackRequest: {
+            /** @enum {string} */
+            rating: "UP" | "DOWN";
+            /** @description Optional. Trimmed; an empty comment clears the previous one. */
+            comment?: string;
+        };
+        FloGapList: {
+            /** @description Questions Flo could not answer (NO_DATA_USED), newest first, for the whole business (all admins). */
+            items: {
+                /** @description The admin's own question text (max 500 characters). */
+                question: string;
+                /** Format: date-time */
+                at: string;
+                /** @enum {string} */
+                reason: "NO_DATA_USED";
+            }[];
+        };
+        FloStatus: {
+            /** @description False when ANTHROPIC_API_KEY is unset or FLO_ENABLED=false. */
+            enabled: boolean;
+            modes: {
+                /** @enum {string} */
+                key: "THOROUGH" | "BALANCED" | "QUICK";
+                label: string;
+                description: string;
+            }[];
+            /** @description Questions left today for the whole business (tenant-local day). The limit itself is platform-owned and not exposed. */
+            dailyRemaining: number;
+        };
+        FloSuggestions: {
+            groups: {
+                area: string;
+                questions: string[];
+            }[];
+        };
+        FloConversationList: {
+            conversations: {
+                id: string;
+                title: string;
+                /** Format: date-time */
+                updatedAt: string;
+            }[];
+            /** @description Pass as `?cursor=` for the next page; null on the last page. */
+            nextCursor: string | null;
+        };
+        FloConversation: {
+            id: string;
+            title: string;
+            /** @description Oldest first. */
+            messages: components["schemas"]["FloMessage"][];
+        };
+        FloChatRequest: {
+            /** @description Omit to start a new conversation. */
+            conversationId?: string;
+            message: string;
+            /**
+             * @description Omitted means BALANCED.
+             * @enum {string}
+             */
+            mode?: "THOROUGH" | "BALANCED" | "QUICK";
         };
         AdminNotificationPage: {
             /** @description The caller's own rows, newest first, 30 per page. */
@@ -16951,6 +18315,8 @@ export interface components {
              * @description ISO date; seeds nextDueDate = one cycle later on the round day. 400 / row error if invalid.
              */
             lastCleanedDate?: string | null;
+            /** @description Step 9 only: with paymentMethod GOCARDLESS, queue a GoCardless Direct Debit setup link to the customer (see ddSetupLink in the result). */
+            sendDdLink?: boolean;
         };
         /** @description Setup step 9 bulk import. Accepts up to 1000 rows, processed in batches of 100 (each batch its own transaction) — a row or batch that fails is reported in `errors[]` by its original row index and does not abort the others. */
         SetupPropertyBulkInput: {
@@ -17414,9 +18780,18 @@ export interface components {
             /** @description null = unassigned; an id must exist (404 if not). The plan inherits the round's frequency. */
             roundId?: string | null;
         };
-        MandateCompleteInput: {
-            /** @description The GoCardless redirect flow id returned to the success URL. */
-            redirectFlowId: string;
+        DirectDebitSendInput: {
+            /**
+             * @description Omitted or AUTO = best available (SMS via GHL when connected and the customer has a mobile, else email).
+             * @enum {string}
+             */
+            channel?: "AUTO" | "EMAIL" | "SMS" | "WHATSAPP";
+        };
+        GcMandateImportInput: {
+            links: {
+                mandateId: string;
+                customerId: string;
+            }[];
         };
         /**
          * @example {

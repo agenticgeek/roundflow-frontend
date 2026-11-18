@@ -467,7 +467,7 @@ export default function SetupWizard() {
     }
   }
 
-  async function handleAddProperty(draft: PropertyDraft) {
+  async function handleAddProperty(draft: PropertyDraft & { sendDdLink?: boolean }) {
     if (!canMutate) return
     try {
       await saveStep9.mutateAsync(propertyDraftToStep9Input(draft))

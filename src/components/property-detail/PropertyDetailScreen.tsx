@@ -27,6 +27,7 @@ import {
 } from '@/components/property-detail/PropertyDetailTabs'
 import { BadDebtBadge, BadDebtControl } from '@/components/property-detail/BadDebtControl'
 import { PropertyPhotosTab } from '@/components/property-detail/PropertyPhotosTab'
+import { DirectDebitPanel } from '@/components/property-detail/DirectDebitPanel'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { dashboardPressableClass } from '@/components/dashboard/dashboard-styles'
 import { useResumeProperty } from '@/features/properties/hooks/useProperties'
@@ -273,6 +274,7 @@ export function PropertyDetailScreen({
           />
           <SummaryRow label={summary.outstandingBalance} value={outstandingBalance} />
           <SummaryRow label={summary.paymentMethod} value={paymentMethod} />
+          <DirectDebitPanel customerId={customerId} customerName={property.customerName} canMutate={canMutate} />
           {!isUnassigned ? (
             <SummaryRow label={summary.lastPayment} value={property.lastPayment} />
           ) : null}
