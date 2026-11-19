@@ -35,6 +35,10 @@ export type TodaysWorkJobStatus = 'completed' | 'skipped' | 'scheduled' | 'in-pr
 
 export interface TodaysWorkJob {
   id: string
+  /** "Window clean + Gutter clear" when the property has several services today. */
+  services?: string
+  /** Every visit at the stop (just `id` from an older server): assigning assigns them all. */
+  visitIds?: string[]
   customer: string
   address: string
   latitude?: number | null

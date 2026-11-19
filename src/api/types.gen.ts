@@ -15476,9 +15476,17 @@ export interface components {
             type: components["schemas"]["IssueType"];
             note?: string | null;
         };
-        /** @description One property stop within a planner occurrence (list/map view). */
+        StopServiceRef: {
+            visitId: string;
+            serviceName: string | null;
+            status: components["schemas"]["VisitStatus"];
+            price: number;
+        };
+        /** @description One property stop within a planner occurrence (list/map view): every service due there that day for one technician. The visit fields describe the first service; price, status, holds and issues cover them all. */
         PlannerStop: {
             visitId: string;
+            stopKey: string;
+            services: components["schemas"]["StopServiceRef"][];
             propertyId: string;
             propertyName?: string | null;
             addressLine: string;
@@ -15541,8 +15549,13 @@ export interface components {
             /** @description Visits created for this round right now, instead of waiting for the next nightly generation run. */
             visitsGenerated: number;
         };
+        /** @description One property stop (every service due there today for one technician). */
         TodayPanelStop: {
             visitId: string;
+            stopKey: string;
+            /** @description Total of the stop's services. */
+            price: number;
+            services: components["schemas"]["StopServiceRef"][];
             customerName?: string | null;
             addressLine: string;
             /** @description Null until the property is geocoded (on create/address change, or the backfill). */
@@ -16515,10 +16528,18 @@ export interface components {
             /** @description Sum of SENT invoice amounts (all time, not period-scoped). */
             undonePayments: number;
         };
+        /** @description One service. An invoice covers every service done at a property in one go (one line each); invoices made before 2026-11-19 have one line. */
         InvoiceLineItem: {
             description: string;
             technicianName?: string | null;
+            /** @description Net (before VAT). */
             amount: number;
+            visitId?: string | null;
+            /**
+             * Format: date
+             * @description The service's visit day.
+             */
+            date?: string | null;
         };
         /** @description GHL-10: the supplier block printed on the invoice PDF. */
         InvoiceBusiness: {
@@ -16678,6 +16699,13 @@ export interface components {
             } | null;
             /** @description true when Direct Debit was the method but the customer has no mandate yet: nothing was collected and a GoCardless setup link was queued for the customer. Absent otherwise. */
             directDebitSetupLinkQueued?: boolean;
+            /** @description Stop completion only: every service in the stop after the call. */
+            services?: {
+                visitId: string;
+                status: components["schemas"]["VisitStatus"];
+            }[];
+            /** @description Stop completion only: listed services that were no longer open (done, skipped, moved or cancelled meanwhile). */
+            ignored?: string[];
         };
         /**
          * @description What the technician collected on site. CASH → PAID payment; CHEQUE → PENDING payment with the cheque number on Payment.reference; BACS / GOCARDLESS / STRIPE → no cash is taken, the normal flow follows (PENDING BACS payment, GoCardless charge on an active mandate, or nothing for STRIPE) and the invoice is left DRAFT/SENT; NONE → fall back to the effective method. The chosen method is recorded on Visit.collectedVia and in the activity log (PAYMENT_METHOD_RECORDED).
@@ -17053,6 +17081,9 @@ export interface components {
         };
         MobileVisitRow: {
             visitId: string;
+            propertyId: string;
+            /** @description The visit's stop: every visit with the same property, day and technician ("<propertyId>|<YYYY-MM-DD>|<technicianId or ->"). The app shows one card per stop. */
+            stopKey: string;
             status: components["schemas"]["VisitStatus"];
             price: number;
             /** @description Effective method: visit override → service plan → customer default; null only when none of those is set. */
@@ -17101,8 +17132,36 @@ export interface components {
             completedAt: string | null;
             /** @description Customer.badDebt. */
             hasDebt: boolean;
-            /** @description 1-based order within its round today (date asc, createdAt asc); null for visits with no round. */
+            /** @description 1-based order of the visit's stop within its round today (date asc, createdAt asc); every service at a property shares its stop's number. null for visits with no round. */
             position: number | null;
+        };
+        MobileStopService: {
+            visitId: string;
+            /** @description "Window clean" when the visit has no service. */
+            serviceName: string;
+            status: components["schemas"]["VisitStatus"];
+            /** @description Net. */
+            price: number;
+            originalPrice: number | null;
+            priceAdjustmentReason: string | null;
+            /** @description price + VAT (when the business adds VAT). */
+            grossTotal: number;
+            skipReason: string | null;
+            carriedOver: boolean;
+            /** Format: date */
+            carriedOverFromDate: string | null;
+            isOneOff: boolean;
+        };
+        /** @description Every service due at the visit's property that day for this technician (one door). Complete them together with PATCH /mobile/visits/{id}/complete { services }. */
+        MobileStop: {
+            stopKey: string;
+            /** @description The stop's first visit (the one the app opens). */
+            leadVisitId: string;
+            services: components["schemas"]["MobileStopService"][];
+            /** @description Net total of the services not skipped. */
+            price: number;
+            /** @description The same, VAT included. */
+            grossTotal: number;
         };
         MobileRoundSummary: {
             roundId: string;
@@ -17133,6 +17192,7 @@ export interface components {
         };
         /** @description The raw Visit row (Decimal fields as strings) with `property` (incl. customer + DRAFT/SENT invoices + notes), `round`, `service`, `technician`, `photos` and `_count.issues` included, plus the computed fields below. */
         MobileVisitDetail: {
+            stop?: components["schemas"]["MobileStop"];
             id?: string;
             /** Format: date-time */
             date?: string;
@@ -17246,12 +17306,17 @@ export interface components {
             closed: boolean;
             /** Format: date-time */
             closedAt: string | null;
-            /** @description Stored at close time once closed; live count otherwise. */
+            /** @description Stops (properties) completed. Stored at close time once closed; live count otherwise. */
             completedCount: number;
+            /** @description Stops where every service was skipped. */
             skippedCount: number;
-            /** @description The caller's visits still SCHEDULED or IN_PROGRESS that day (must be completed or skipped before closing). */
+            /** @description The caller's stops still open that day (a property with several services is one entry; must be completed or skipped before closing). */
             remaining: {
+                /** @description The stop's first visit. */
                 visitId: string;
+                stopKey: string;
+                /** @description The services still open there. */
+                serviceNames: string[];
                 /** @enum {string} */
                 status: "SCHEDULED" | "IN_PROGRESS";
                 customerName: string;
@@ -17715,8 +17780,19 @@ export interface components {
             roundName?: string | null;
             status?: components["schemas"]["VisitStatus"];
             cancelReason?: string | null;
+            /** @description The visit's payment, else (for a service billed with others) the shared payment. */
             paymentStatus?: components["schemas"]["PaymentStatus"] | null;
             notes?: string | null;
+            /** @description GET /customers/{id}/visits only. */
+            serviceName?: string | null;
+            /** @description Net. GET /customers/{id}/visits only. */
+            price?: number;
+            /** @description GET /customers/{id}/visits only. */
+            stopKey?: string;
+            /** @description The invoice this visit is on (as its visit or as a line). GET /customers/{id}/visits only. */
+            invoiceId?: string | null;
+            /** @description Set on a service completed together with others: the visit carrying the shared payment and invoice. GET /customers/{id}/visits only. */
+            billedWithVisitId?: string | null;
         };
         CustomerVisitsPage: {
             rows: components["schemas"]["VisitHistoryRow"][];
@@ -18532,7 +18608,10 @@ export interface components {
         };
         InvoiceBulkPreview: {
             items: {
+                /** @description The first visit of the group. */
                 visitId?: string;
+                /** @description Every visit the invoice covers. Exclude them all to leave the invoice out. */
+                visitIds?: string[];
                 customerName?: string;
                 address?: string;
                 amount?: number;
@@ -18802,6 +18881,12 @@ export interface components {
             /** @enum {string} */
             status: "PAID" | "FAILED";
         };
+        StopServiceInput: {
+            visitId: string;
+            done: boolean;
+            /** @description Required when done is false. The service is SKIPPED with this reason and comes round next cycle. */
+            skipReason?: string;
+        };
         VisitCompleteInput: {
             payment?: components["schemas"]["CompletionPaymentInput"];
             /**
@@ -18809,6 +18894,8 @@ export interface components {
              * @description Deprecated alias for payment { method: "CASH" }.
              */
             cashConfirmed?: boolean;
+            /** @description Complete the visit's whole stop (every service at the property that day) in one go: one payment for the total of the done services on the first done visit, one invoice with a line per service, one customer message. Open services not listed are left alone; listed services no longer open are reported in `ignored`. 400 INVALID_SERVICES / NOT_IN_STOP. Omit to complete just this visit. */
+            services?: components["schemas"]["StopServiceInput"][];
         };
         GoCardlessConnectInput: {
             /** @description GoCardless access token — verified by listing creditors before it is stored (encrypted). */
@@ -18864,6 +18951,8 @@ export interface components {
             reason: string;
             /** @description Appended to the stored skipReason as `<reason>: <description>`. */
             description?: string | null;
+            /** @description true skips every open service at the property that day (the whole stop); otherwise just this visit. */
+            stop?: boolean;
         };
         MobilePriceInput: {
             /** @description New price (number or numeric string), ≥ 0. Setting it back to the original price clears the adjustment. */

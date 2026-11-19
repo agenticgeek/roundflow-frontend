@@ -182,7 +182,8 @@ function SummaryCard({
   )
 }
 
-function VisitAssign({ visitId }: { visitId: string }) {
+// Assigns every visit at the stop (a property with several services goes to one technician).
+function VisitAssign({ visitIds }: { visitIds: string[] }) {
   const { detailPanel } = todaysWorkContent
   const { showToast } = useToast()
   const assign = useAssignVisit()
@@ -196,7 +197,12 @@ function VisitAssign({ visitId }: { visitId: string }) {
     if (!value) return
     setError(null)
     try {
-      const result = await assign.mutateAsync({ visitId, technicianId: value === UNASSIGN ? null : value })
+      const technicianId = value === UNASSIGN ? null : value
+      let result: Awaited<ReturnType<typeof assign.mutateAsync>> | undefined
+      for (const visitId of visitIds) {
+        result = await assign.mutateAsync({ visitId, technicianId })
+      }
+      if (!result) return
       showToast(
         result.technicianId
           ? detailPanel.assign.assigned.replace('{name}', result.technicianName ?? '')
@@ -245,6 +251,7 @@ function JobCard({ job, canAssign, highlighted }: { job: TodaysWorkJob; canAssig
         <div className="min-w-0">
           <p className="font-semibold text-foreground">{job.customer}</p>
           <p className="mt-0.5 text-sm text-muted">{job.address}</p>
+          {job.services ? <p className="mt-0.5 text-xs font-medium text-foreground">{job.services}</p> : null}
           <a
             href={mapsDirectionsUrl(job)}
             target="_blank"
@@ -271,7 +278,7 @@ function JobCard({ job, canAssign, highlighted }: { job: TodaysWorkJob; canAssig
         </p>
       ) : null}
 
-      {canAssign && job.status === 'scheduled' ? <VisitAssign visitId={job.id} /> : null}
+      {canAssign && job.status === 'scheduled' ? <VisitAssign visitIds={job.visitIds ?? [job.id]} /> : null}
 
       {job.paymentHold || job.issueNote ? (
         <div className="mt-2 space-y-1 border-t border-border pt-2">

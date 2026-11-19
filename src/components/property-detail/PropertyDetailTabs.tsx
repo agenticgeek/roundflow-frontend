@@ -181,7 +181,10 @@ function VisitHistoryRow({
           </p>
         ) : null}
       </td>
-      <td className="px-4 py-3.5 text-foreground">{visit.price}</td>
+      <td className="px-4 py-3.5 text-foreground">
+        {visit.price}
+        {visit.service && visit.service !== '—' ? <p className="mt-0.5 text-xs text-muted">{visit.service}</p> : null}
+      </td>
       <td className="px-4 py-3.5">
         {canGenerateInvoice(visit) && canMutate ? (
           <button

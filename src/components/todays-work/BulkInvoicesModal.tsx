@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { todaysWorkContent } from '@/content/todays-work'
 import { useBulkInvoicePreview, useCreateBulkInvoices } from '@/features/today/hooks/useBulkInvoices'
 import {
+  excludedVisitIds,
   formatPounds,
   selectedTotals,
   skipReasonLabel,
@@ -50,7 +51,8 @@ export function BulkInvoicesModal({ date, onClose }: { date: string; onClose: ()
     try {
       const created = await create.mutateAsync({
         date,
-        excludeVisitIds: [...excluded],
+        // An unticked row is a whole property visit: leave out every service on it.
+        excludeVisitIds: excludedVisitIds(items, excluded),
         sendNow,
         ...(sendNow ? { channel } : {}),
       })

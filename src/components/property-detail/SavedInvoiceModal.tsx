@@ -290,7 +290,9 @@ function InvoiceDocument({
                 <td className="py-4 pr-4 align-top">
                   <p className={invoiceStrongClass}>{item.description}</p>
                   <p className={cn('mt-1 text-xs', invoiceMetaClass)}>
-                    {invoice.status} · {formatInvoiceDate(invoice.createdAt)}
+                    {'date' in item && item.date
+                      ? formatInvoiceDate(item.date)
+                      : `${invoice.status} · ${formatInvoiceDate(invoice.createdAt)}`}
                   </p>
                 </td>
                 <td className={cn('py-4 pr-4 align-top', invoiceValueClass)}>{item.technicianName || '—'}</td>

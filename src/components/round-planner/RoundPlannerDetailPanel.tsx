@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { OnHoldChip } from '@/components/round-planner/OnHoldChip'
 import type { PlannerStop } from '@/api/rounds.api'
-import { plannerDayStatusLabels, roundPlannerContent } from '@/content/round-planner'
+import { plannerDayStatusLabels, plannerVisitStatusLabels, roundPlannerContent } from '@/content/round-planner'
 import type { PlannerRoundCard } from '@/features/rounds/lib/planner'
 import { formatLongDate, formatMinutes, ESTIMATED_MINUTES_PER_STOP } from '@/features/rounds/lib/planner'
 import { useRoundOccurrenceDay } from '@/features/rounds/hooks/useRounds'
@@ -35,7 +35,8 @@ export function RoundPlannerDetailPanel({
   const { detailPanel } = roundPlannerContent
   const [messageOpen, setMessageOpen] = useState(false)
   const [weatherHoldOpen, setWeatherHoldOpen] = useState(false)
-  const [rescheduleStop, setRescheduleStop] = useState<PlannerStop | null>(null)
+  // The visit being rebooked: a skipped stop, or one skipped service at a property with several.
+  const [rescheduleStop, setRescheduleStop] = useState<{ visitId: string; addressLine: string } | null>(null)
   const dayQuery = useRoundOccurrenceDay(card?.roundId ?? '', card?.date ?? '', Boolean(card))
 
   if (!card) return null
@@ -120,7 +121,7 @@ export function RoundPlannerDetailPanel({
                   stop={stop}
                   index={index + 1}
                   currency={currency}
-                  onReschedule={canMutate && stop.status === 'SKIPPED' ? () => setRescheduleStop(stop) : undefined}
+                  onReschedule={canMutate ? (visitId) => setRescheduleStop({ visitId, addressLine: stop.addressLine }) : undefined}
                 />
               ))}
             </ul>
@@ -173,9 +174,11 @@ function StopCard({
   stop: PlannerStop
   index: number
   currency: string
-  /** Only for skipped stops (e.g. after a manual weather hold). */
-  onReschedule?: () => void
+  /** Rebook a skipped visit (e.g. after a manual weather hold); absent for read-only roles. */
+  onReschedule?: (visitId: string) => void
 }) {
+  // A property with several services lists them, each skipped one with its own Reschedule.
+  const services = stop.services && stop.services.length > 1 ? stop.services : null
   return (
     <li className="relative rounded-xl bg-surface px-3 py-2.5 pr-8 shadow-sm">
       <span
@@ -190,10 +193,32 @@ function StopCard({
         {formatCurrency(stop.price, currency)}
         <OnHoldChip paymentHold={stop.paymentHold} />
       </p>
-      {onReschedule ? (
+      {services ? (
+        <ul className="mt-1 space-y-0.5 text-xs text-foreground">
+          {services.map((service) => {
+            const name = service.serviceName ?? roundPlannerContent.detailPanel.defaultService
+            return (
+              <li key={service.visitId} className="flex items-center gap-2">
+                <span>{name}</span>
+                <span className="text-muted">· {plannerVisitStatusLabels[service.status]}</span>
+                {onReschedule && service.status === 'SKIPPED' ? (
+                  <button
+                    type="button"
+                    aria-label={`${roundPlannerContent.rescheduleModal.action} ${name}`}
+                    onClick={() => onReschedule(service.visitId)}
+                    className="font-semibold text-accent hover:opacity-80"
+                  >
+                    {roundPlannerContent.rescheduleModal.action}
+                  </button>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      ) : onReschedule && stop.status === 'SKIPPED' ? (
         <button
           type="button"
-          onClick={onReschedule}
+          onClick={() => onReschedule(stop.services?.[0]?.visitId ?? stop.visitId)}
           className="mt-1.5 text-xs font-semibold text-accent hover:opacity-80"
         >
           {roundPlannerContent.rescheduleModal.action}
