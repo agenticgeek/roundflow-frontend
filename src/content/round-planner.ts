@@ -116,6 +116,8 @@ export const roundPlannerContent = {
     },
   },
   detailPanel: {
+    /** A service with no name on a property's list of services. */
+    defaultService: 'Window clean',
     metrics: {
       totalStops: 'Total Stops',
       roundValue: 'Round Value',

@@ -2,6 +2,7 @@ import type { PlannerVisitStatus } from '@/content/round-planner'
 import { OnHoldChip } from '@/components/round-planner/OnHoldChip'
 import { plannerVisitStatusLabels, roundPlannerContent } from '@/content/round-planner'
 import type { PlannerListStop } from '@/features/rounds/lib/planner'
+import { stopServiceSummary } from '@/features/stops/lib/stops'
 import { formatLongDate, formatTime } from '@/features/rounds/lib/planner'
 import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { IconButton, PanelCard } from '@/components/dashboard/DashboardControls'
@@ -212,6 +213,9 @@ function ListRow({
         <td className="px-4 py-4 sm:px-5">
           <p className="font-semibold text-foreground">{stop.addressLine}</p>
           <p className="mt-0.5 text-xs text-muted">{stop.customerName}</p>
+          {stop.services && stop.services.length > 1 ? (
+            <p className="mt-0.5 text-xs font-medium text-foreground">{stopServiceSummary(stop.services)}</p>
+          ) : null}
           {stop.paymentHold || stop.issues.length > 0 ? (
             <p className="mt-1.5 flex flex-wrap gap-1.5">
               <OnHoldChip paymentHold={stop.paymentHold} />

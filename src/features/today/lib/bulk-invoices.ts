@@ -16,6 +16,16 @@ export function skipReasonLabel(reason: BulkSkipReason | undefined): string {
   return reason ? copy.skipReasons[reason] : copy.skipReasons.NOT_COMPLETED
 }
 
+/**
+ * The visit ids to leave out of "Create invoices": every visit of each unticked item (one item can cover several
+ * services done together at a property; an older server sends just `visitId`).
+ */
+export function excludedVisitIds(items: readonly BulkPreviewItem[], excluded: ReadonlySet<string>): string[] {
+  return items
+    .filter((item) => excluded.has(item.visitId ?? ''))
+    .flatMap((item) => (item.visitIds?.length ? item.visitIds : [item.visitId ?? '']))
+}
+
 /** Live totals for the ticked items (the preview's own totals ignore client-side unticks). */
 export function selectedTotals(items: readonly BulkPreviewItem[], excluded: ReadonlySet<string>) {
   const selected = items.filter((item) => !excluded.has(item.visitId ?? ''))

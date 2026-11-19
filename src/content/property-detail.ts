@@ -142,6 +142,8 @@ export interface PropertyVisitRecord {
   status: VisitStatus
   payment: VisitPaymentStatus
   price: string
+  /** The service this visit was for ("—" from an older server). */
+  service?: string
   invoice: VisitInvoiceAction
   invoiceId?: string | null
   /** How the technician collected payment on site (`BACS`, `CASH`, ...); null when not recorded. */

@@ -365,7 +365,8 @@ export function step9BundlesToRecords(
 }
 
 /** Single-add extras the draft type doesn't carry: the picked existing customer and last-cleaned date. */
-export type PropertyDraftExtras = { customerId?: string; lastCleanedDate?: string }
+/** `sendDdLink`: the step 9 "Send a Direct Debit setup link now" checkbox (only sent for a Direct Debit customer). */
+export type PropertyDraftExtras = { customerId?: string; lastCleanedDate?: string; sendDdLink?: boolean }
 
 export function propertyDraftToStep9Input(
   draft: PropertyDraft & PropertyDraftExtras,
@@ -406,6 +407,7 @@ export function propertyDraftToStep9Input(
     // GAP-010: attach to an existing customer instead of creating one.
     ...(draft.customerId ? { customerId: draft.customerId } : {}),
     ...(draft.lastCleanedDate ? { lastCleanedDate: draft.lastCleanedDate } : {}),
+    ...(draft.sendDdLink && draft.paymentMethod === 'GOCARDLESS' ? { sendDdLink: true } : {}),
   }
 }
 

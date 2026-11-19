@@ -1519,6 +1519,8 @@ export const setupWizardContent = {
       'roundName',
       'technicianName',
       'businessName',
+      // The services done (or booked) at the property, e.g. "window clean and gutter clear".
+      'services',
     ],
     previewValues: {
       customerName: 'John Smith',
@@ -1532,6 +1534,7 @@ export const setupWizardContent = {
       roundName: 'Alnwick Monday',
       technicianName: 'Sam',
       businessName: 'your business',
+      services: 'window clean and gutter clear',
     },
     // Older wizard names, and the templates the backend seeds for new tenants.
     aliases: {

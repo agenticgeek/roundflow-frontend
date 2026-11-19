@@ -1,4 +1,5 @@
 import { exhaustiveFallback } from '@/lib/visit-status'
+import { stopServiceSummary } from '@/features/stops/lib/stops'
 import type { TodayAggregate, TodayRoundSummary, TodayTechnicianWorkload } from '@/api/today.api'
 import type {
   RoundTodayResult,
@@ -133,6 +134,8 @@ export function todayTechniciansToWorkload(
 export function roundTodayStopsToJobs(stops: RoundTodayStop[] | undefined): TodaysWorkJob[] {
   return (stops ?? []).map((stop) => ({
     id: stop.visitId,
+    services: stop.services?.length ? stopServiceSummary(stop.services) : undefined,
+    visitIds: stop.services?.length ? stop.services.map((s) => s.visitId) : [stop.visitId],
     customer: stop.customerName,
     address: stop.addressLine,
     latitude: stop.latitude,

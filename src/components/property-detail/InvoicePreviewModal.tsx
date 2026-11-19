@@ -223,7 +223,8 @@ export function InvoicePreviewModal({
                   <td className="py-4 pr-4 align-top">
                     <p className={invoiceStrongClass}>{item.description}</p>
                     <p className={cn('mt-1 text-xs', invoiceMetaClass)}>
-                      {formatInvoiceDateLong(preview.visitDate)}
+                      {/* Each service's own day (they differ only when one was carried over). */}
+                      {formatInvoiceDateLong(item.date ?? preview.visitDate)}
                     </p>
                   </td>
                   <td className={cn('py-4 pr-4 align-top', invoiceValueClass)}>

@@ -72,7 +72,8 @@ export const settingsApi = {
   // `200 { status: "connected", stripeConnectAccountId }`. An older API answers with a 302 back to
   // the app instead — `redirect: 'manual'` stops fetch following it cross-origin, and api() treats
   // the opaque redirect as success (resolves undefined).
-  stripeAuthorizeUrl: (): string => beginStripeConnect(),
+  /** `returnTo`: the in-app page to land back on after Stripe (default Settings > Payment Setup). */
+  stripeAuthorizeUrl: (returnTo?: string): string => beginStripeConnect(returnTo),
   completeStripeConnect: (code: string, state: string) =>
     api<StripeCallbackResult | undefined>(
       `/settings/stripe/callback?${new URLSearchParams({ code, state }).toString()}`,

@@ -90,8 +90,10 @@ export function applyCustomerInvoicesToVisits(
 ): PropertyVisitRecord[] {
   if (!invoices?.length) return visits
   const byVisit = new Map(invoices.map((invoice) => [invoice.visitId, invoice]))
+  const byId = new Map(invoices.map((invoice) => [invoice.id, invoice]))
   return visits.map((visit) => {
-    const invoice = byVisit.get(visit.id)
+    // The row's own invoice id (a service billed with others is a line on their invoice), else the invoice's visit.
+    const invoice = (visit.invoiceId ? byId.get(visit.invoiceId) : undefined) ?? byVisit.get(visit.id)
     if (!invoice) return visit
     return {
       ...visit,

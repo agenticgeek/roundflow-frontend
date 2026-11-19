@@ -42,7 +42,7 @@ export type SetupStep4Input = components['schemas']['RoundSettingsInput'] & {
  * adds `customerId` (attach to an existing customer) and `lastCleanedDate`.
  */
 export type SetupStep9PropertyInput = SetupStep9Input &
-  Pick<components['schemas']['SetupPropertyInput'], 'customerId' | 'lastCleanedDate'>
+  Pick<components['schemas']['SetupPropertyInput'], 'customerId' | 'lastCleanedDate' | 'sendDdLink'>
 /** `customerMatched`: the property went onto an existing customer (picked, or same mobile/email). */
 export type SetupStep9SaveResult = SetupStep9Bundle & { customerMatched?: boolean }
 /** GAP-009: row errors are `{ row, field, error }` (`message` is the deprecated copy). */

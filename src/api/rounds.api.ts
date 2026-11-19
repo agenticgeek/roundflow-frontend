@@ -77,6 +77,9 @@ type GeneratedStop = components['schemas']['PlannerStop']
 
 export type PlannerStop = {
   visitId: string
+  /** One stop per property per day: every service due there (older servers send neither). */
+  stopKey?: string
+  services?: GeneratedStop['services']
   propertyId: string
   propertyName?: string | null
   addressLine: string
@@ -121,6 +124,10 @@ export type RoundTodayStatus = 'not_started' | 'in_progress' | 'completed'
 
 export type RoundTodayStop = {
   visitId: string
+  /** One stop per property: its services and their total (older servers send none). */
+  stopKey?: string
+  price?: number
+  services?: GeneratedStop['services']
   customerName: string
   addressLine: string
   status: VisitStatus
