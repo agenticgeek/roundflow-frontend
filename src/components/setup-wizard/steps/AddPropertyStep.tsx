@@ -49,8 +49,8 @@ interface AddPropertyStepProps {
   defaultPaymentMethod: string
   connectedProviders: { gocardless: boolean; stripe: boolean }
   adding?: boolean
-  /** `sendDdLink`: the Direct Debit setup link checkbox (Direct Debit customers only). */
-  onAddProperty: (draft: PropertyDraft & { sendDdLink?: boolean }) => Promise<void> | void
+  /** `sendDdLink`: the Direct Debit setup link checkbox (Direct Debit customers only). `lastCleanedDate`: yyyy-mm-dd. */
+  onAddProperty: (draft: PropertyDraft & { sendDdLink?: boolean; lastCleanedDate?: string }) => Promise<void> | void
   /** Saves a whole CSV import in one request (POST /setup/step/9/bulk). */
   onAddProperties?: (drafts: PropertyDraft[], idempotencyKey: string) => Promise<BulkSaveResult>
   onSubmit: () => void
@@ -58,7 +58,8 @@ interface AddPropertyStepProps {
 
 /**
  * Inputs here that POST /setup/step/9 doesn't accept yet stay in this step only
- * (CONTRACT-DIFF): last cleaned date and internal notes. The Direct Debit link checkbox is sent (sendDdLink).
+ * (CONTRACT-DIFF): internal notes. The last cleaned date (lastCleanedDate) and the Direct Debit link checkbox
+ * (sendDdLink) are sent.
  */
 interface LocalExtras {
   lastCleaned: string
@@ -256,6 +257,7 @@ export function AddPropertyStep({
         // The round decides the frequency — properties inherit it.
         cleaningFrequency: selectedRound?.frequency ?? draft.cleaningFrequency,
         ...(draft.paymentMethod === 'GOCARDLESS' ? { sendDdLink: extras.sendDdLink } : {}),
+        ...(extras.lastCleaned ? { lastCleanedDate: extras.lastCleaned } : {}),
       })
       if (keepContext) {
         setDraft((prev) => ({
