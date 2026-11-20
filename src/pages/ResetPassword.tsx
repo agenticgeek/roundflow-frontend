@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '@/components/AuthLayout'
 import { FullScreenLoader } from '@/components/FullScreenLoader'
+import { sessionFromEmailLink } from '@/lib/email-link'
 import { supabase } from '@/lib/supabase'
 import { ROUTES } from '@/config/routes'
 import { authContent } from '@/content/auth'
@@ -50,10 +51,9 @@ export default function ResetPassword() {
     let active = true
 
     async function establishRecoverySession() {
-      const code = new URLSearchParams(window.location.search).get('code')
-      if (code) {
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-        if (active && exchangeError) setLinkError(exchangeError.message)
+      const result = await sessionFromEmailLink(new URLSearchParams(window.location.search))
+      if (result) {
+        if (active && result.error) setLinkError(result.error)
       } else {
         const { data } = await supabase.auth.getSession()
         if (active && !data.session) {

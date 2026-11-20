@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { FullScreenLoader } from '@/components/FullScreenLoader'
 import { ROUTES } from '@/config/routes'
 import { useAuth } from '@/lib/auth'
+import { sessionFromEmailLink } from '@/lib/email-link'
 import { resolvePendingInviteToken } from '@/lib/pending-invite'
 import { supabase } from '@/lib/supabase'
 import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
@@ -34,8 +35,10 @@ export default function AuthCallback() {
         return
       }
 
-      const code = params.get('code')
-      if (!code) {
+      // Supabase confirms the session; AuthProvider then runs GET /auth/me
+      // and POST /auth/signup on 404 before we navigate.
+      const result = await sessionFromEmailLink(params)
+      if (!result) {
         const { data } = await supabase.auth.getSession()
         if (active && !data.session) {
           setError('This sign-in link is invalid or has expired.')
@@ -44,11 +47,8 @@ export default function AuthCallback() {
         return
       }
 
-      // Supabase confirms the session; AuthProvider then runs GET /auth/me
-      // and POST /auth/signup on 404 before we navigate.
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
       if (active) {
-        setError(exchangeError?.message ?? null)
+        setError(result.error)
         setExchanging(false)
       }
     }

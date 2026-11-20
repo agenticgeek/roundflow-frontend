@@ -10,6 +10,7 @@ import { useAcceptInvite, useInvitePreview } from '@/features/invites/hooks/useI
 import { useAuth } from '@/lib/auth'
 import { isInvitePreviewEnabled, technicianAppStoreLinks } from '@/lib/env'
 import { ApiError, errorMessage } from '@/lib/errors'
+import { EMAIL_LINK_PARAMS, sessionFromEmailLink } from '@/lib/email-link'
 import { stashPendingInvite } from '@/lib/pending-invite'
 import { supabase } from '@/lib/supabase'
 import { cn, fillCopy } from '@/lib/utils'
@@ -28,14 +29,15 @@ const PASSWORD_RULES = [
 /**
  * Sign the person in from their email link before anything else. Supabase's admin invite
  * link returns `#access_token…&refresh_token…` (implicit), a fresh sign-in link returns
- * `?code=` (PKCE), and an expired link returns `#error=…`. The client doesn't read the URL
- * itself (`detectSessionInUrl: false`), so it's done here, then the URL is tidied.
+ * `?token_hash=…&type=…` (any browser) or `?code=` (PKCE, same browser only), and an expired link
+ * returns `#error=…`. The client doesn't read the URL itself (`detectSessionInUrl: false`), so it's
+ * done here, then the URL is tidied.
  */
 async function sessionFromLink(): Promise<'ok' | 'expired' | 'none'> {
   const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
   const query = new URLSearchParams(window.location.search)
   const cleanUrl = () => {
-    query.delete('code')
+    for (const key of EMAIL_LINK_PARAMS) query.delete(key)
     const search = query.toString()
     window.history.replaceState({}, '', `${window.location.pathname}${search ? `?${search}` : ''}`)
   }
@@ -51,13 +53,10 @@ async function sessionFromLink(): Promise<'ok' | 'expired' | 'none'> {
     cleanUrl()
     return error ? 'expired' : 'ok'
   }
-  const code = query.get('code')
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    cleanUrl()
-    return error ? 'expired' : 'ok'
-  }
-  return 'none'
+  const result = await sessionFromEmailLink(query)
+  if (!result) return 'none'
+  cleanUrl()
+  return result.error ? 'expired' : 'ok'
 }
 
 /**
