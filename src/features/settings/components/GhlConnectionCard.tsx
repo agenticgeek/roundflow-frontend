@@ -12,6 +12,12 @@ import {
 import { errorMessage } from '@/lib/errors'
 import { cn, fillCopy } from '@/lib/utils'
 
+/**
+ * A token + ID next to each other looks like a login form, so password managers filled a saved
+ * username and password into it. These tell LastPass, 1Password and Bitwarden to leave it alone.
+ */
+const NOT_A_LOGIN = { 'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true' } as const
+
 const buttonClass =
   'rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60'
 
@@ -237,7 +243,10 @@ export function GhlConnectionCard({ canMutate }: { canMutate: boolean }) {
                 inputSize="sm"
                 type="password"
                 aria-label={copy.tokenLabel}
-                autoComplete="off"
+                {...NOT_A_LOGIN}
+                name="ghl-private-token"
+                // Browsers ignore "off" on password fields; "new-password" stops them filling a saved login.
+                autoComplete="new-password"
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
                 placeholder={copy.tokenPlaceholder}
@@ -249,6 +258,8 @@ export function GhlConnectionCard({ canMutate }: { canMutate: boolean }) {
               <Input
                 inputSize="sm"
                 aria-label={copy.locationLabel}
+                {...NOT_A_LOGIN}
+                name="ghl-location-id"
                 autoComplete="off"
                 value={locationId}
                 onChange={(event) => setLocationId(event.target.value)}
