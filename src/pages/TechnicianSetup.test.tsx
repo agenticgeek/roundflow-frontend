@@ -10,6 +10,7 @@ const { auth, ctx } = vi.hoisted(() => ({
   auth: {
     setSession: vi.fn(),
     exchangeCodeForSession: vi.fn(),
+    verifyOtp: vi.fn(),
     getSession: vi.fn(),
     updateUser: vi.fn(),
     signInWithOtp: vi.fn(),
@@ -88,6 +89,7 @@ beforeEach(() => {
   auth.getSession.mockResolvedValue({ data: { session: null } })
   auth.updateUser.mockResolvedValue({ error: null })
   auth.signInWithOtp.mockResolvedValue({ error: null })
+  auth.verifyOtp.mockResolvedValue({ error: null })
   window.history.replaceState({}, '', '/app-invite?token=tok')
 })
 
@@ -156,6 +158,26 @@ describe('TechnicianSetup (/app-invite)', () => {
     await user.click(await screen.findByRole('button', { name: 'Email me a new link' }))
 
     expect(await screen.findByText('Signups not allowed for otp')).toBeInTheDocument()
+  })
+
+  it('a token-hash email link signs in with verifyOtp (works in any browser) and tidies the URL', async () => {
+    window.history.replaceState({}, '', '/app-invite?token=tok&token_hash=th&type=magiclink')
+    serveInvite()
+    renderWithProviders(<TechnicianSetup />, { route: '/app-invite?token=tok' })
+
+    expect(await screen.findByRole('button', { name: 'Set up my login' })).toBeInTheDocument()
+    expect(auth.verifyOtp).toHaveBeenCalledWith({ token_hash: 'th', type: 'magiclink' })
+    expect(auth.exchangeCodeForSession).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?token=tok')
+  })
+
+  it('a token-hash link Supabase rejects offers a fresh one', async () => {
+    window.history.replaceState({}, '', '/app-invite?token=tok&token_hash=old&type=magiclink')
+    auth.verifyOtp.mockResolvedValue({ error: new Error('Token has expired or is invalid') })
+    serveInvite()
+    renderWithProviders(<TechnicianSetup />, { route: '/app-invite?token=tok' })
+
+    expect(await screen.findByRole('heading', { name: 'Your email link has expired' })).toBeInTheDocument()
   })
 
   it('an expired email link offers a fresh one', async () => {

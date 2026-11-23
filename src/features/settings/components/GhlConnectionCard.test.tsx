@@ -40,6 +40,26 @@ afterEach(() => {
 })
 
 describe('GhlConnectionCard (GAP-017)', () => {
+  it('marks the token and Location ID fields so browsers do not fill a saved login into them', async () => {
+    statusHandler(disconnected)
+    renderWithProviders(<GhlConnectionCard canMutate />)
+    await screen.findByText('Not connected')
+
+    const token = screen.getByLabelText('Private Integration token')
+    const location = screen.getByLabelText('Location ID')
+    expect(token).toHaveAttribute('autocomplete', 'new-password')
+    expect(token).toHaveAttribute('name', 'ghl-private-token')
+    expect(token).toHaveValue('')
+    expect(location).toHaveAttribute('autocomplete', 'off')
+    expect(location).toHaveAttribute('name', 'ghl-location-id')
+    expect(location).toHaveValue('')
+    for (const field of [token, location]) {
+      expect(field).toHaveAttribute('data-lpignore', 'true')
+      expect(field).toHaveAttribute('data-1p-ignore', 'true')
+      expect(field).toHaveAttribute('data-bwignore', 'true')
+    }
+  })
+
   it('validates, connects with a private token, then shows the details and the webhook URL to copy', async () => {
     const state = statusHandler(disconnected)
     server.use(
