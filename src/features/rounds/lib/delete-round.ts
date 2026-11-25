@@ -14,11 +14,15 @@ export type RoundDeletePreview = {
   upcomingVisitCount: number
   /** Older unfinished visits — kept as history with no round. */
   detachedVisitCount: number
-  /** Emergency reports on the round; any blocks the delete. */
+  /** Emergency records on the round (open or not); any blocks the delete. */
   emergencyCount: number
   /** Upcoming visits with an invoice, payment, photo or issue; any blocks the delete. */
   attachedVisitCount: number
   canDelete: boolean
+  /** Closures that only covered this round and haven't ended — deleted with it. Older backends omit it. */
+  closuresToRemove?: number
+  /** Closures that cover other rounds too — they just lose this one. Older backends omit it. */
+  closuresToUpdate?: number
 }
 
 /** DELETE /rounds/:id success body. */
@@ -27,6 +31,9 @@ export type RoundDeleteResult = {
   unassignedProperties: number
   deletedVisits: number
   detachedVisits: number
+  /** Older backends omit the closure counts. */
+  removedClosures?: number
+  updatedClosures?: number
 }
 
 /** 409 codes DELETE /rounds/:id answers with when the round can't go. */
@@ -66,6 +73,16 @@ export function deleteSummary(preview: Pick<RoundDeletePreview, 'propertyCount' 
 /** Older unfinished visits kept as history, or null when there are none. */
 export function detachedNote(count: number) {
   return count > 0 ? counted(count, copy.detachedOne, copy.detachedMany) : null
+}
+
+/** What happens to closures that cover this round — empty when none are affected (or not reported yet). */
+export function closureNotes(preview: Pick<RoundDeletePreview, 'closuresToRemove' | 'closuresToUpdate'>): string[] {
+  const notes: string[] = []
+  const remove = preview.closuresToRemove ?? 0
+  const update = preview.closuresToUpdate ?? 0
+  if (remove > 0) notes.push(counted(remove, copy.closuresRemoveOne, copy.closuresRemoveMany))
+  if (update > 0) notes.push(counted(update, copy.closuresUpdateOne, copy.closuresUpdateMany))
+  return notes
 }
 
 /** Why the round can't be deleted — empty when it can. */

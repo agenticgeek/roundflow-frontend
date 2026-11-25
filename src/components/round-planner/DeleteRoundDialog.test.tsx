@@ -80,11 +80,33 @@ describe('Delete round dialog', () => {
     expect(await screen.findByText('1 earlier unfinished visit stays in history without a round.')).toBeInTheDocument()
   })
 
+  it('says which closures go and which only lose this round', async () => {
+    usePreview({ ...preview, closuresToRemove: 2, closuresToUpdate: 3 })
+    renderDialog()
+    expect(
+      await screen.findByText('2 upcoming closures that only covered this round will be removed.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('This round will be taken out of 3 other closures.')).toBeInTheDocument()
+  })
+
+  it('uses singular closure wording', async () => {
+    usePreview({ ...preview, closuresToRemove: 1, closuresToUpdate: 1 })
+    renderDialog()
+    expect(await screen.findByText('1 upcoming closure that only covered this round will be removed.')).toBeInTheDocument()
+    expect(screen.getByText('This round will be taken out of 1 other closure.')).toBeInTheDocument()
+  })
+
+  it('says nothing about closures when the server doesn’t send them yet', async () => {
+    renderDialog()
+    await screen.findByText(/3 properties will be unassigned/)
+    expect(screen.queryByText(/closure/)).not.toBeInTheDocument()
+  })
+
   it('explains why a round with emergencies or visits with records can’t be deleted', async () => {
     usePreview({ ...preview, canDelete: false, emergencyCount: 2, attachedVisitCount: 4 })
     renderDialog()
     const reasons = await screen.findByRole('list', { name: 'Why this round can’t be deleted' })
-    expect(within(reasons).getByText('This round has 2 open emergency reports.')).toBeInTheDocument()
+    expect(within(reasons).getByText('This round has 2 emergency reports.')).toBeInTheDocument()
     expect(
       within(reasons).getByText('4 upcoming visits already have invoices, payments, photos or issues.'),
     ).toBeInTheDocument()
@@ -94,7 +116,7 @@ describe('Delete round dialog', () => {
   it('uses singular reasons', async () => {
     usePreview({ ...preview, canDelete: false, emergencyCount: 1, attachedVisitCount: 1 })
     renderDialog()
-    expect(await screen.findByText('This round has 1 open emergency report.')).toBeInTheDocument()
+    expect(await screen.findByText('This round has 1 emergency report.')).toBeInTheDocument()
     expect(screen.getByText('1 upcoming visit already has an invoice, payment, photo or issue.')).toBeInTheDocument()
   })
 
@@ -140,9 +162,9 @@ describe('Delete round dialog', () => {
     await screen.findByText(/3 properties will be unassigned/)
     await user.click(deleteButton())
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'This round now has open emergency reports, so it wasn’t deleted.',
+      'This round now has emergency reports, so it wasn’t deleted.',
     )
-    expect(await screen.findByText('This round has 1 open emergency report.')).toBeInTheDocument()
+    expect(await screen.findByText('This round has 1 emergency report.')).toBeInTheDocument()
   })
 
   it('shows the server message for any other failure and stays open', async () => {

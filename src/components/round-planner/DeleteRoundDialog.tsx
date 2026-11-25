@@ -5,6 +5,7 @@ import { confirmDialogContent } from '@/content/confirm-dialog'
 import { useDeleteRound, useRoundDeletePreview } from '@/features/rounds/hooks/useRounds'
 import {
   blockedReasons,
+  closureNotes,
   deleteConflictMessage,
   deleteSummary,
   detachedNote,
@@ -52,7 +53,9 @@ export function DeleteRoundDialog({ round, onClose, onDeleted }: DeleteRoundDial
 
   const data = preview.data
   const reasons = data ? blockedReasons(data) : []
-  const detached = data && reasons.length === 0 ? detachedNote(data.detachedVisitCount) : null
+  const canGo = data !== undefined && reasons.length === 0
+  const detached = canGo ? detachedNote(data.detachedVisitCount) : null
+  const closures = canGo ? closureNotes(data) : []
 
   async function confirm() {
     if (!round || !data?.canDelete) return
@@ -112,6 +115,11 @@ export function DeleteRoundDialog({ round, onClose, onDeleted }: DeleteRoundDial
         </ul>
       ) : null}
       {detached ? <p className="mt-3 text-sm text-muted">{detached}</p> : null}
+      {closures.map((note) => (
+        <p key={note} className="mt-3 text-sm text-muted">
+          {note}
+        </p>
+      ))}
     </ConfirmDialog>
   )
 }
