@@ -287,7 +287,10 @@ export const settingsContent = {
         postcodeInvalid: 'Enter valid UK postcode sectors, comma-separated (e.g. NE66, NE67).',
       },
     },
-    actions: { delete: 'Delete area' },
+    editForm: {
+      actions: { save: 'Save', saving: 'Saving…', cancel: 'Cancel' },
+    },
+    actions: { edit: 'Edit area', delete: 'Delete area' },
   },
   serviceCatalogue: {
     heading: 'Service Catalogue',
@@ -304,6 +307,7 @@ export const settingsContent = {
     templateUpdated: 'Template updated',
     technicianAdded: 'Technician added',
     areaAdded: 'Service area added',
+    areaUpdated: 'Service area updated',
   },
 } as const
 
