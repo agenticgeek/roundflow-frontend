@@ -4,6 +4,7 @@ import {
   canMoveForecastCard,
   canMoveRealCard,
   defaultMoveDate,
+  isNonWorkingDate,
   moveDateBlock,
   nextForecastDates,
   type MoveOccurrencePreview,
@@ -62,8 +63,27 @@ describe('defaultMoveDate', () => {
     ).toBe('2026-11-30')
   })
 
+  it('never defaults to a non-working date (but a missing list means none)', () => {
+    expect(defaultMoveDate(preview({ nonWorkingDates: ['2026-11-25', '2026-11-26'] }), today)).toBe('2026-11-28')
+    expect(defaultMoveDate({ ...preview(), nonWorkingDates: undefined }, today)).toBe(today)
+  })
+
+  it('falls back to a non-working date when it is the only usable one', () => {
+    expect(
+      defaultMoveDate(preview({ earliestDate: '2026-11-26', latestDate: '2026-11-27', nonWorkingDates: ['2026-11-26'] }), today),
+    ).toBe('2026-11-26')
+  })
+
   it('is null when nothing in the window can be picked', () => {
     expect(defaultMoveDate(preview({ earliestDate: '2026-11-27', latestDate: '2026-11-27' }), today)).toBeNull()
+  })
+})
+
+describe('isNonWorkingDate', () => {
+  it('reads the preview list, treating a missing list as empty', () => {
+    expect(isNonWorkingDate('2026-11-28', preview({ nonWorkingDates: ['2026-11-28'] }))).toBe(true)
+    expect(isNonWorkingDate('2026-11-28', preview())).toBe(false)
+    expect(isNonWorkingDate('2026-11-28', { ...preview(), nonWorkingDates: undefined })).toBe(false)
   })
 })
 

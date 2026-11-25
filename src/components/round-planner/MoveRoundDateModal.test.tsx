@@ -145,6 +145,35 @@ describe('MoveRoundDateModal', () => {
     expect(screen.queryByText('2 properties would get two cleans too close')).not.toBeInTheDocument()
   })
 
+  it('non-working dates stay selectable but are marked, and their warning does not block confirm', async () => {
+    mockPreview({
+      preview: { nonWorkingDates: ['2026-11-28'] },
+      check: (toDate) =>
+        toDate === '2026-11-28'
+          ? { ...okCheck(toDate), warning: 'Saturday is not a working day for your business' }
+          : okCheck(toDate),
+    })
+    const { user } = renderModal()
+    await screen.findByText('12 properties will move')
+    expect(day('2026-11-28')).toBeEnabled()
+    expect(day('2026-11-28')).toHaveAccessibleName(/Not a working day/)
+    expect(day('2026-11-28')).toHaveAttribute('title', 'Not a working day')
+    await user.click(day('2026-11-28'))
+    const note = await screen.findByText('Saturday is not a working day for your business')
+    expect(note.closest('[role="alert"]')).toBeNull()
+    expect(note.closest('[role="status"]')).not.toBeNull()
+    await waitFor(() => expect(confirmButton()).toBeEnabled())
+  })
+
+  it('a blocking check hides its non-blocking warning', async () => {
+    mockPreview({
+      check: (toDate) => ({ toDate, ok: false, code: 'DAY_CLOSED', message: 'Closed that day', clashCount: 0, warning: 'Not a working day' }),
+    })
+    renderModal()
+    expect(await screen.findByText('Closed that day')).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
   it('falls back to a generic warning when a failed check has no message', async () => {
     mockPreview({ check: (toDate) => ({ toDate, ok: false, code: 'DAY_CLOSED', message: null, clashCount: 0 }) })
     renderModal()
@@ -218,6 +247,17 @@ describe('MoveRoundDateModal', () => {
     // Picking another date clears the stale warning.
     await user.click(day('2026-11-26'))
     expect(screen.queryByText('Staff holiday covers that date now')).not.toBeInTheDocument()
+  })
+
+  it('adds the move result warning to the toast', async () => {
+    mockPreview()
+    mockMove(() => HttpResponse.json({ ...result({ movedVisits: 2 }), warning: 'Moved onto a non-working day' }))
+    const { user } = renderModal()
+    await screen.findByText('12 properties will move')
+    await waitFor(() => expect(confirmButton()).toBeEnabled())
+    await user.click(confirmButton())
+    expect(await screen.findByText(`Moved 2 visits to ${formatLongDate(TODAY)}`)).toBeInTheDocument()
+    expect(screen.getByText('Moved onto a non-working day')).toBeInTheDocument()
   })
 
   it('toasts any other move failure', async () => {

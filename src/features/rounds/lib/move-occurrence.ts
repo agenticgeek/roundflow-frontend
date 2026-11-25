@@ -24,6 +24,8 @@ export interface MoveOccurrenceCheck {
   /** User-readable; shown as-is. */
   message: string | null
   clashCount: number
+  /** A non-blocking note (e.g. a non-working day); does not affect `ok`. Older servers omit it. */
+  warning?: string | null
 }
 
 export interface MoveOccurrencePreview {
@@ -34,6 +36,8 @@ export interface MoveOccurrencePreview {
   earliestDate: string
   latestDate: string
   blockedDates: MoveOccurrenceBlockedDate[]
+  /** Dates inside the window outside the business's working week: allowed, but warned about. Older servers omit it. */
+  nonWorkingDates?: string[]
   check: MoveOccurrenceCheck | null
 }
 
@@ -52,6 +56,8 @@ export interface MoveOccurrenceResult {
   createdVisits: number
   notifiedCustomers: number
   customerNotificationError: string | null
+  /** A non-blocking note about the move (e.g. it landed on a non-working day). Older servers omit it. */
+  warning?: string | null
 }
 
 export const moveOccurrenceApi = {
@@ -85,16 +91,25 @@ export function moveDateBlock(date: string, preview: MoveOccurrencePreview, toda
   return null
 }
 
+/** A non-working day can still be picked; the server warns about it instead of blocking. */
+export function isNonWorkingDate(date: string, preview: MoveOccurrencePreview): boolean {
+  return (preview.nonWorkingDates ?? []).includes(date)
+}
+
 /**
  * The date the picker starts on: today when today is inside the window, otherwise the earliest date.
- * If that one can't be picked (the current date, a closure…), the next date that can; null if none.
+ * If that one can't be picked (the current date, a closure…) or is a non-working day, the next working date
+ * that can; failing that, the first non-working date that can; null if none.
  */
 export function defaultMoveDate(preview: MoveOccurrencePreview, today: string): string | null {
   const start = today >= preview.earliestDate && today <= preview.latestDate ? today : preview.earliestDate
+  let fallback: string | null = null
   for (let date = start; date <= preview.latestDate; date = addDays(date, 1)) {
-    if (!moveDateBlock(date, preview, today)) return date
+    if (moveDateBlock(date, preview, today)) continue
+    if (!isNonWorkingDate(date, preview)) return date
+    fallback ??= date
   }
-  return null
+  return fallback
 }
 
 /** Each round's next forecast date: its first projected entry on or after today. */

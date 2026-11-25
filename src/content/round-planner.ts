@@ -233,6 +233,8 @@ export const roundPlannerContent = {
       current: 'The current date',
       closure: 'Closed: {label}',
       closedDay: 'Day closed',
+      /** Selectable, but marked: the move is allowed with a warning. */
+      nonWorkingDay: 'Not a working day',
     },
     checking: 'Checking the new date…',
     checkFailed: "This date can't be used for the move.",

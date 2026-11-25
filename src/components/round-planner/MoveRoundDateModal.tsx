@@ -19,6 +19,7 @@ import {
 } from '@/features/rounds/hooks/useMoveOccurrence'
 import {
   defaultMoveDate,
+  isNonWorkingDate,
   moveDateBlock,
   type MoveDateBlock,
   type MoveOccurrencePreview,
@@ -72,6 +73,8 @@ export function MoveRoundDateModal({ target, onClose }: MoveRoundDateModalProps)
   const warning =
     moveConflict ??
     (checkQuery.isError ? errorMessage(checkQuery.error) : check && !check.ok ? (check.message ?? copy.checkFailed) : null)
+  // Only for a date that passes: a blocking banner already says why it can't be used.
+  const note = !warning && check?.ok ? (check.warning ?? null) : null
   const canConfirm = Boolean(movePreview && toDate && check?.ok && !moveConflict && !move.isPending)
 
   function pick(date: string) {
@@ -93,12 +96,20 @@ export function MoveRoundDateModal({ target, onClose }: MoveRoundDateModalProps)
         },
       })
       const count = result.movedVisits + result.createdVisits
+      const notes = [
+        result.warning,
+        result.customerNotificationError ? copy.notifyFailed.replace('{error}', result.customerNotificationError) : null,
+      ].filter(Boolean)
       showToast(
         (count === 1 ? copy.successToastOne : copy.successToast)
           .replace('{count}', String(count))
           .replace('{date}', formatLongDate(result.toDate)),
-        result.customerNotificationError
-          ? { description: copy.notifyFailed.replace('{error}', result.customerNotificationError), tone: 'error', durationMs: 8000 }
+        notes.length > 0
+          ? {
+              description: notes.join(' '),
+              tone: result.customerNotificationError ? 'error' : 'default',
+              durationMs: 8000,
+            }
           : undefined,
       )
       onClose()
@@ -177,6 +188,11 @@ export function MoveRoundDateModal({ target, onClose }: MoveRoundDateModalProps)
               <DashboardIcon name="alert" className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <p>{warning}</p>
             </div>
+          ) : note ? (
+            <p role="status" className="flex gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted">
+              <DashboardIcon name="alert-circle" className="h-4 w-4 shrink-0" />
+              {note}
+            </p>
           ) : toDate && checkQuery.isFetching ? (
             <p className="text-xs text-muted">{copy.checking}</p>
           ) : null}
@@ -287,7 +303,8 @@ function MoveDatePicker({
         {weeks.flat().map((date) => {
           if (date.slice(0, 7) !== month) return <span key={date} aria-hidden="true" />
           const block = moveDateBlock(date, preview, today)
-          const reason = block ? blockText(block) : null
+          const nonWorking = !block && isNonWorkingDate(date, preview)
+          const reason = block ? blockText(block) : nonWorking ? copy.reasons.nonWorkingDay : null
           const isSelected = date === selected
           return (
             <button
@@ -302,7 +319,9 @@ function MoveDatePicker({
                 'rounded-md py-1.5 text-xs font-medium transition-colors',
                 isSelected
                   ? 'bg-primary text-primary-foreground'
-                  : 'text-foreground hover:bg-accent-surface',
+                  : nonWorking
+                    ? 'text-muted italic hover:bg-accent-surface'
+                    : 'text-foreground hover:bg-accent-surface',
                 block && 'cursor-not-allowed text-muted line-through opacity-50 hover:bg-transparent',
                 block?.kind === 'CURRENT' && 'no-underline ring-1 ring-border',
               )}
