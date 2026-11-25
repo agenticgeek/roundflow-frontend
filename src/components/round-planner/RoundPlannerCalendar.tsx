@@ -23,6 +23,9 @@ interface RoundPlannerCalendarProps {
   /** Shown on cards with no technician; omit to hide the action (e.g. read-only users). */
   onAssignCard?: (card: PlannerRoundCard) => void
   assignLabel: string
+  /** "Move date" on forecast cards: shown where `canMoveCard` says so; omit `onMoveCard` to hide it (read-only users). */
+  onMoveCard?: (card: PlannerRoundCard) => void
+  canMoveCard?: (card: PlannerRoundCard) => boolean
   /** Closures overlapping the window (an overlay: omit or pass none and nothing changes). */
   closures?: readonly Closure[]
   /** The round the planner is filtered to; omit for all rounds. */
@@ -43,6 +46,8 @@ export function RoundPlannerCalendar({
   onSelectCard,
   onAssignCard,
   assignLabel,
+  onMoveCard,
+  canMoveCard,
   closures,
   closureRoundId,
 }: RoundPlannerCalendarProps) {
@@ -77,6 +82,8 @@ export function RoundPlannerCalendar({
                   onSelectCard={onSelectCard}
                   onAssignCard={onAssignCard}
                   assignLabel={assignLabel}
+                  onMoveCard={onMoveCard}
+                  canMoveCard={canMoveCard}
                   closures={closuresForDate(date, closures ?? [], closureRoundId)}
                   shadeScoped={closureRoundId !== undefined}
                 />
@@ -112,6 +119,8 @@ function CalendarCell({
   onSelectCard,
   onAssignCard,
   assignLabel,
+  onMoveCard,
+  canMoveCard,
   closures,
   shadeScoped,
 }: {
@@ -126,6 +135,8 @@ function CalendarCell({
   onSelectCard: (card: PlannerRoundCard) => void
   onAssignCard?: (card: PlannerRoundCard) => void
   assignLabel: string
+  onMoveCard?: (card: PlannerRoundCard) => void
+  canMoveCard?: (card: PlannerRoundCard) => boolean
   /** Closures covering this day (already limited to the filtered round, if any). */
   closures: readonly Closure[]
   /** True when filtered to one round: every closure then shades the day; otherwise only all-rounds ones. */
@@ -183,6 +194,7 @@ function CalendarCell({
               onSelect={() => onSelectCard(card)}
               onAssign={onAssignCard ? () => onAssignCard(card) : undefined}
               assignLabel={assignLabel}
+              onMove={onMoveCard && canMoveCard?.(card) ? () => onMoveCard(card) : undefined}
             />
           ))}
         </ul>
@@ -205,6 +217,7 @@ function RoundCard({
   onSelect,
   onAssign,
   assignLabel,
+  onMove,
 }: {
   card: PlannerRoundCard
   stopsLabel: string
@@ -213,6 +226,8 @@ function RoundCard({
   onSelect: () => void
   onAssign?: () => void
   assignLabel: string
+  /** Forecast cards only: the round's next forecast date can be moved. */
+  onMove?: () => void
 }) {
   if (card.projected) {
     const { label, aria, estimatePrefix } = roundPlannerContent.calendar.projected
@@ -230,6 +245,15 @@ function RoundCard({
           {card.stopCount} {stopsLabel} · {estimatePrefix}
           {formatCurrency(card.totalValue, currency)}
         </p>
+        {onMove ? (
+          <button
+            type="button"
+            onClick={onMove}
+            className="mt-1.5 text-[11px] font-semibold text-accent hover:opacity-80"
+          >
+            {roundPlannerContent.moveDateModal.action}
+          </button>
+        ) : null}
       </li>
     )
   }

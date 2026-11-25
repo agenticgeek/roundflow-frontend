@@ -5,6 +5,8 @@ import { ROUTES } from '@/config/routes'
 import { useUnassignedRoundsAlert } from '@/features/rounds/hooks/useUnassignedRoundsAlert'
 import { UnassignedRoundsBanner } from '@/components/round-planner/UnassignedRoundsBanner'
 import { AssignRoundTechnicianModal, type QuickAssignTarget } from '@/components/round-planner/AssignRoundTechnicianModal'
+import { MoveRoundDateModal } from '@/components/round-planner/MoveRoundDateModal'
+import { usePlannerMoveDate } from '@/features/rounds/hooks/useMoveOccurrence'
 import type { RoundPlannerMetric } from '@/content/round-planner'
 import { quickAssignContent, roundPlannerContent } from '@/content/round-planner'
 import type { RoundPlannerInteractions } from '@/hooks/use-round-planner-interactions'
@@ -122,6 +124,7 @@ export function RoundPlannerScreen({
 
   const occurrences = useRoundsOccurrences(roundIds, { from: window.from, to: window.to })
   const details = useRoundDetails(roundIds)
+  const moveDate = usePlannerMoveDate(roundIds, window, occurrences.byRoundId, canMutate)
   // Closures are an overlay: if this request fails the calendar still renders, just without them.
   const closures = useClosures({ from: window.from, to: window.to }).data?.closures
 
@@ -344,6 +347,8 @@ export function RoundPlannerScreen({
             onSelectCard={(card) => interactions.openRoundDetail({ roundId: card.roundId, date: card.date })}
             onAssignCard={canMutate ? openQuickAssign : undefined}
             assignLabel={quickAssignContent.cardAction}
+            onMoveCard={moveDate.onMoveCard}
+            canMoveCard={moveDate.canMoveCard}
             closures={closures}
             closureRoundId={interactions.roundId === 'all' ? undefined : interactions.roundId}
           />
@@ -407,6 +412,7 @@ export function RoundPlannerScreen({
       />
 
       <AssignRoundTechnicianModal target={quickAssign} onClose={() => setQuickAssign(null)} />
+      <MoveRoundDateModal target={moveDate.target} onClose={moveDate.close} />
     </div>
   )
 }
