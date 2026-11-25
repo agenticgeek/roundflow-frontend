@@ -537,3 +537,35 @@ export const quickAssignContent = {
   toastMany: '{count} technicians assigned to {round}',
   failed: 'Couldn’t assign technicians. Try again.',
 } as const
+
+/** Edit / delete the round picked in the planner's round filter. `{name}` is the round's name. */
+export const roundManageContent = {
+  actionsLabel: 'Manage {name}',
+  edit: 'Edit round',
+  delete: 'Delete round',
+  editModal: {
+    title: 'Edit round',
+    area: 'Service area',
+    noAreas: 'No service areas yet — add one in Settings.',
+    sectors: 'Postcode sectors',
+    sectorsHint: 'The sectors in this area that the round covers.',
+    noSectors: 'This area has no postcode sectors.',
+    scheduleNote: 'Changing the day or frequency doesn’t move visits that are already scheduled.',
+    technicianNote: 'To change who does this round, use Assign technician on the planner.',
+    noPermission: 'You don’t have permission to edit rounds.',
+    loading: 'Loading round…',
+    loadError: 'Could not load this round.',
+    cancel: 'Cancel',
+    save: 'Save changes',
+    saving: 'Saving…',
+    saved: 'Round updated',
+    gone: 'This round no longer exists.',
+    errors: {
+      name: 'Enter a round name.',
+      duplicateName: 'Another round is already called “{name}”.',
+      day: 'Pick a day.',
+      frequency: 'Pick a frequency.',
+      area: 'Pick a service area.',
+    },
+  },
+} as const
