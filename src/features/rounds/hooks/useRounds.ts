@@ -14,6 +14,7 @@ import {
   type WeatherHoldInput,
   type WeatherHoldQuery,
 } from '@/api/rounds.api'
+import { isRoundGone, roundDeleteApi } from '@/features/rounds/lib/delete-round'
 import { ApiError } from '@/lib/errors'
 import { invalidateCustomers, invalidateRounds, invalidateToday, queryKeys } from '@/lib/query-keys'
 
@@ -54,6 +55,41 @@ export function useUpdateRound() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.rounds.detail(id) })
       // Round name/status changes are echoed on every property assigned to it.
       void invalidateCustomers(queryClient)
+    },
+  })
+}
+
+/** GET /rounds/:id/delete-preview — always fresh: it decides whether the delete is allowed. */
+export function useRoundDeletePreview(id: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.rounds.deletePreview(id),
+    queryFn: ({ signal }) => roundDeleteApi.preview(id, signal),
+    enabled: enabled && Boolean(id),
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
+/**
+ * DELETE /rounds/:id — the round's properties are unassigned and its upcoming visits removed,
+ * so rounds (planner), customers / properties and Today's Work all refresh.
+ */
+export function useDeleteRound() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => roundDeleteApi.remove(id),
+    onSettled: (_data, error, id) => {
+      // A failure leaves the round in place, unless it was already gone (404).
+      if (error && !isRoundGone(error)) return
+      queryClient.removeQueries({ queryKey: queryKeys.rounds.detail(id) })
+      // Everything under `rounds` (list, planner) — except the preview of the round just deleted,
+      // which would only answer 404 now.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.rounds.all,
+        predicate: (query) => query.queryKey[1] !== 'delete-preview',
+      })
+      void invalidateCustomers(queryClient)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today.all })
     },
   })
 }

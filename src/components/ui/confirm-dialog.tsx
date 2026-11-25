@@ -15,6 +15,10 @@ export interface ConfirmDialogProps {
   pending?: boolean
   /** Shown above the buttons (`role="alert"`) when the action failed; the dialog stays open. */
   error?: string | null
+  /** Keeps the confirm button off, e.g. while a preview loads or when the action isn't allowed. */
+  confirmDisabled?: boolean
+  /** Extra detail under the description (lists, notes). */
+  children?: ReactNode
   onConfirm: () => void
   onClose: () => void
 }
@@ -37,6 +41,8 @@ export function ConfirmDialog({
   tone = 'danger',
   pending = false,
   error = null,
+  confirmDisabled = false,
+  children,
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
@@ -55,7 +61,7 @@ export function ConfirmDialog({
           <ModalButton compact onClick={onClose} disabled={pending} data-autofocus>
             {cancelLabel}
           </ModalButton>
-          <ModalButton compact variant={tone} loading={pending} onClick={onConfirm}>
+          <ModalButton compact variant={tone} loading={pending} disabled={confirmDisabled} onClick={onConfirm}>
             {confirmLabel}
           </ModalButton>
         </ModalFooter>
@@ -64,6 +70,7 @@ export function ConfirmDialog({
       <p id={descriptionId} className="text-sm text-foreground">
         {description}
       </p>
+      {children}
       {error ? (
         <p role="alert" className="mt-3 text-sm text-danger">
           {error}

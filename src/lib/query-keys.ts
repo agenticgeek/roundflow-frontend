@@ -63,6 +63,8 @@ export const queryKeys = {
     /** GET /rounds/:id/allocation (GAP-012). */
     allocation: (id: string) => ['rounds', 'allocation', id] as const,
     today: (id: string) => ['rounds', 'today', id] as const,
+    /** GET /rounds/:id/delete-preview. */
+    deletePreview: (id: string) => ['rounds', 'delete-preview', id] as const,
     weatherHoldPreview: (id: string, date: string, condition: string, rescheduling: string) =>
       ['rounds', 'weather-hold-preview', id, date, condition, rescheduling] as const,
     /** Batch occurrences for a chunk of rounds (ids joined in request order). */

@@ -39,6 +39,7 @@ import { RoundPlannerListView } from '@/components/round-planner/RoundPlannerLis
 import { RoundPlannerMapSection } from '@/components/round-planner/RoundPlannerMapSection'
 import { RoundPlannerMetrics } from '@/components/round-planner/RoundPlannerMetrics'
 import { RoundPlannerToolbar } from '@/components/round-planner/RoundPlannerToolbar'
+import { RoundManageActions } from '@/components/round-planner/RoundManageActions'
 import { PanelCard } from '@/components/dashboard/DashboardControls'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
 import { queryKeys } from '@/lib/query-keys'
@@ -298,6 +299,10 @@ export function RoundPlannerScreen({
         onAddRound={onAddRound}
         canAddRound={canMutate}
       />
+
+      {canMutate && interactions.roundId !== 'all' && selectedRounds[0] ? (
+        <RoundManageActions round={selectedRounds[0]} onDeleted={() => setRoundId('all')} />
+      ) : null}
 
       <RoundPlannerMetrics metrics={metrics} loading={occurrences.isLoading} />
 
