@@ -3,7 +3,7 @@
  * technician's invite is still pending, which the API rejects with 400), undoes the create so
  * no half-made round is left behind (GAP-011). The assignment error is re-thrown for the UI.
  *
- * There is no `DELETE /rounds/:id`; `rollback` archives the round instead.
+ * `rollback` archives the round rather than deleting it.
  */
 export async function createRoundThenAssign<R extends { id?: string }>({
   create,

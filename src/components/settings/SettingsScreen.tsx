@@ -32,6 +32,7 @@ import {
   useUpdatePaymentSettings,
   useUpdateRoundSettings,
   useUpdateService,
+  useUpdateServiceArea,
   useUpdateTechnician,
 } from '@/features/settings/hooks/useSettings'
 import {
@@ -1565,16 +1566,37 @@ function parsePostcodeSectors(value: string): string[] {
     .filter(Boolean)
 }
 
+type ServiceAreaForm = { name: string; postcodeSectors: string }
+
+/** Shared by add and edit: a trimmed name plus upper-cased, comma-joined sectors, or the first problem. */
+function validateServiceAreaForm(
+  form: ServiceAreaForm,
+): { error: string } | { name: string; postcodeSector: string } {
+  const { validation } = settingsContent.serviceArea.addForm
+  const name = form.name.trim()
+  const postcodeSectors = parsePostcodeSectors(form.postcodeSectors)
+  if (!name) return { error: validation.nameRequired }
+  if (postcodeSectors.length === 0) return { error: validation.postcodeRequired }
+  if (postcodeSectors.some((sector) => !isValidPostcodeSector(sector))) {
+    return { error: validation.postcodeInvalid }
+  }
+  return { name, postcodeSector: postcodeSectors.join(',') }
+}
+
 function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
   const query = useServiceAreas()
   const create = useCreateServiceArea()
+  const update = useUpdateServiceArea()
   const remove = useDeleteServiceArea()
   const { showToast } = useToast()
-  const { addForm, actions } = settingsContent.serviceArea
+  const { addForm, editForm, actions } = settingsContent.serviceArea
 
   const [showAddForm, setShowAddForm] = useState(false)
-  const [form, setForm] = useState({ name: '', postcodeSectors: '' })
+  const [form, setForm] = useState<ServiceAreaForm>({ name: '', postcodeSectors: '' })
   const [formError, setFormError] = useState<string | null>(null)
+  /** One area is edited at a time; the draft holds its values until Save or Cancel. */
+  const [editing, setEditing] = useState<(ServiceAreaForm & { id: string }) | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
   /** WEB-02: deleting an area asks first. */
   const [pendingDelete, setPendingDelete] = useState<SettingsServiceAreaRow | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -1593,29 +1615,49 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
 
   async function addArea() {
     if (!canMutate) return
-    const name = form.name.trim()
-    const postcodeSectors = parsePostcodeSectors(form.postcodeSectors)
-    if (!name) {
-      setFormError(addForm.validation.nameRequired)
-      return
-    }
-    if (postcodeSectors.length === 0) {
-      setFormError(addForm.validation.postcodeRequired)
-      return
-    }
-    if (postcodeSectors.some((sector) => !isValidPostcodeSector(sector))) {
-      setFormError(addForm.validation.postcodeInvalid)
+    const parsed = validateServiceAreaForm(form)
+    if ('error' in parsed) {
+      setFormError(parsed.error)
       return
     }
     setFormError(null)
-    await create.mutateAsync({
-      name,
-      postcodeSector: postcodeSectors.join(','),
-      isDefault: areas.length === 0,
-    })
+    await create.mutateAsync({ ...parsed, isDefault: areas.length === 0 })
     setForm({ name: '', postcodeSectors: '' })
     setShowAddForm(false)
     showToast(settingsContent.toasts.areaAdded)
+  }
+
+  function startEditArea(area: SettingsServiceAreaRow) {
+    setEditing({ id: area.id, name: area.name, postcodeSectors: area.postcodeSectors.join(', ') })
+    setEditError(null)
+  }
+
+  function cancelEditArea() {
+    setEditing(null)
+    setEditError(null)
+  }
+
+  async function saveEditArea(draft: ServiceAreaForm & { id: string }) {
+    const parsed = validateServiceAreaForm(draft)
+    if ('error' in parsed) {
+      setEditError(parsed.error)
+      return
+    }
+    setEditError(null)
+    try {
+      await update.mutateAsync({ id: draft.id, input: parsed })
+      cancelEditArea()
+      showToast(settingsContent.toasts.areaUpdated)
+    } catch (error) {
+      // The area was removed elsewhere: close the editor, say so, and refresh the list.
+      if (error instanceof ApiError && error.status === 404) {
+        cancelEditArea()
+        showToast(confirmDialogContent.serviceArea.gone)
+        void query.refetch()
+        return
+      }
+      setEditError(errorMessage(error))
+    }
   }
 
   async function confirmDeleteArea() {
@@ -1718,6 +1760,60 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {areas.map((area) => {
             const linked = area.linkedRounds.count > 0
+            if (canMutate && editing?.id === area.id) {
+              return (
+                <li
+                  key={area.id}
+                  className="rounded-xl border border-primary/20 bg-accent-surface p-4 shadow-sm"
+                >
+                  <form
+                    className="space-y-3"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      void saveEditArea(editing)
+                    }}
+                  >
+                    <Input
+                      inputSize="sm"
+                      aria-label={addForm.fields.areaName.label}
+                      value={editing.name}
+                      onChange={(e) => {
+                        setEditing({ ...editing, name: e.target.value })
+                      }}
+                      placeholder={addForm.fields.areaName.placeholder}
+                      className="rounded-lg bg-card"
+                    />
+                    <Input
+                      inputSize="sm"
+                      aria-label={addForm.fields.postcodeSectors.label}
+                      value={editing.postcodeSectors}
+                      onChange={(e) => {
+                        setEditing({ ...editing, postcodeSectors: e.target.value })
+                      }}
+                      placeholder={addForm.fields.postcodeSectors.placeholder}
+                      className="rounded-lg bg-card"
+                    />
+                    {editError ? <FieldError message={editError} size="sm" /> : null}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="submit"
+                        disabled={update.isPending}
+                        className={cn(dashboardCtaClass, 'px-4 py-2 text-sm disabled:opacity-60')}
+                      >
+                        {update.isPending ? editForm.actions.saving : editForm.actions.save}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditArea}
+                        className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold"
+                      >
+                        {editForm.actions.cancel}
+                      </button>
+                    </div>
+                  </form>
+                </li>
+              )
+            }
             return (
               <li
                 key={area.id}
@@ -1726,25 +1822,36 @@ function ServiceAreasPanel({ canMutate }: { canMutate: boolean }) {
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="text-sm font-semibold text-foreground">{area.name}</h3>
                   {canMutate ? (
-                    <button
-                      type="button"
-                      onClick={() => setPendingDelete(area)}
-                      disabled={linked || remove.isPending}
-                      title={
-                        linked
-                          ? 'Cannot delete: linked to one or more rounds'
-                          : actions.delete
-                      }
-                      aria-label={actions.delete}
-                      className={cn(
-                        '-mt-0.5 -mr-0.5 shrink-0 rounded-md p-1 transition-colors',
-                        linked
-                          ? 'cursor-not-allowed text-muted/40'
-                          : 'text-muted hover:bg-surface hover:text-danger',
-                      )}
-                    >
-                      <DashboardIcon name="trash" className="h-4 w-4" />
-                    </button>
+                    <div className="-mt-0.5 -mr-0.5 flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => startEditArea(area)}
+                        title={actions.edit}
+                        aria-label={actions.edit}
+                        className="shrink-0 rounded-md p-1 text-muted transition-colors hover:bg-surface hover:text-foreground"
+                      >
+                        <DashboardIcon name="edit" className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingDelete(area)}
+                        disabled={linked || remove.isPending}
+                        title={
+                          linked
+                            ? 'Cannot delete: linked to one or more rounds'
+                            : actions.delete
+                        }
+                        aria-label={actions.delete}
+                        className={cn(
+                          'shrink-0 rounded-md p-1 transition-colors',
+                          linked
+                            ? 'cursor-not-allowed text-muted/40'
+                            : 'text-muted hover:bg-surface hover:text-danger',
+                        )}
+                      >
+                        <DashboardIcon name="trash" className="h-4 w-4" />
+                      </button>
+                    </div>
                   ) : null}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">

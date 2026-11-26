@@ -1,7 +1,7 @@
 import type { BankDetailsForm } from '@/types/setup-wizard'
 import { setupWizardContent } from '@/content/setup-wizard'
 import { Field, FieldError, Input } from '@/components/ui'
-import { formatSortCode, stripSpaces, type BankDetailsFieldErrors } from '@/lib/bank-details'
+import { formatSortCode, type BankDetailsFieldErrors } from '@/lib/bank-details'
 
 interface BankDetailsFieldsProps {
   values: BankDetailsForm
@@ -42,7 +42,7 @@ export function BankDetailsFields({
           <Input
             aria-invalid={Boolean(fieldErrors.accountName)}
             value={values.accountName}
-            onChange={(event) => set('accountName', stripSpaces(event.target.value))}
+            onChange={(event) => set('accountName', event.target.value)}
             placeholder={fields.accountName.placeholder}
             disabled={disabled}
             autoComplete="off"

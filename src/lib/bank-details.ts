@@ -24,10 +24,6 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-export function stripSpaces(value: string): string {
-  return value.replace(/\s+/g, '')
-}
-
 /** "308012" or "30-80-12" typed as the user goes → "30-80-12". */
 export function formatSortCode(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 6)

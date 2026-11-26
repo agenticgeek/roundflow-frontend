@@ -9,6 +9,9 @@ import { DashboardIcon } from '@/components/dashboard/DashboardIcon'
 import { MessageCustomersModal } from '@/components/round-planner/MessageCustomersModal'
 import { WeatherHoldModal } from '@/components/round-planner/WeatherHoldModal'
 import { RescheduleVisitModal } from '@/components/round-planner/RescheduleVisitModal'
+import { MoveRoundDateModal } from '@/components/round-planner/MoveRoundDateModal'
+import { canMoveRealCard } from '@/features/rounds/lib/move-occurrence'
+import { todayIsoDate } from '@/features/rounds/lib/planner'
 import { SidePanel } from '@/components/ui/side-panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { dashboardCtaClass } from '@/components/dashboard/dashboard-styles'
@@ -35,6 +38,7 @@ export function RoundPlannerDetailPanel({
   const { detailPanel } = roundPlannerContent
   const [messageOpen, setMessageOpen] = useState(false)
   const [weatherHoldOpen, setWeatherHoldOpen] = useState(false)
+  const [moveOpen, setMoveOpen] = useState(false)
   // The visit being rebooked: a skipped stop, or one skipped service at a property with several.
   const [rescheduleStop, setRescheduleStop] = useState<{ visitId: string; addressLine: string } | null>(null)
   const dayQuery = useRoundOccurrenceDay(card?.roundId ?? '', card?.date ?? '', Boolean(card))
@@ -68,6 +72,7 @@ export function RoundPlannerDetailPanel({
             onOpenMap={() => onOpenMap(card)}
             onMessage={() => setMessageOpen(true)}
             onWeatherHold={() => setWeatherHoldOpen(true)}
+            onMoveDate={canMoveRealCard(card, todayIsoDate()) ? () => setMoveOpen(true) : undefined}
           />
         }
       >
@@ -144,6 +149,11 @@ export function RoundPlannerDetailPanel({
         date={card.date}
         dateLabel={dateLabel}
         onClose={() => setWeatherHoldOpen(false)}
+      />
+
+      <MoveRoundDateModal
+        target={moveOpen ? { roundId: card.roundId, roundName: card.roundName, date: card.date, projected: false } : null}
+        onClose={() => setMoveOpen(false)}
       />
     </>
   )
@@ -235,6 +245,7 @@ function RoundDetailActions({
   onOpenMap,
   onMessage,
   onWeatherHold,
+  onMoveDate,
 }: {
   actions: typeof roundPlannerContent.detailPanel.actions
   canMutate: boolean
@@ -242,6 +253,8 @@ function RoundDetailActions({
   onOpenMap: () => void
   onMessage: () => void
   onWeatherHold: () => void
+  /** Present only when this date can move (today or later). */
+  onMoveDate?: () => void
 }) {
   return (
     <div className="space-y-2">
@@ -271,6 +284,16 @@ function RoundDetailActions({
             <DashboardIcon name="cloud" className="h-4 w-4" />
             {actions.weatherHold}
           </button>
+          {onMoveDate ? (
+            <button
+              type="button"
+              onClick={onMoveDate}
+              className="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-accent-surface px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/10"
+            >
+              <DashboardIcon name="calendar" className="h-4 w-4" />
+              {roundPlannerContent.moveDateModal.action}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

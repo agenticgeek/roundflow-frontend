@@ -17,6 +17,7 @@ import { useAppBootstrap } from '@/providers/AppBootstrapProvider'
 import { useToast } from '@/components/ui/toast'
 import { ApiError, errorMessage } from '@/lib/errors'
 import { cn, formatCurrency } from '@/lib/utils'
+import { DAYS, FREQUENCIES, type Frequency } from '@/features/rounds/lib/round-form'
 
 interface CreateRoundModalProps {
   open: boolean
@@ -24,7 +25,6 @@ interface CreateRoundModalProps {
 }
 
 type Step = 1 | 2 | 3 | 4 | 5
-type Frequency = 'FOUR_WEEKLY' | 'SIX_WEEKLY' | 'EIGHT_WEEKLY' | 'TWELVE_WEEKLY'
 
 const STEPS = [
   { label: 'Round Details', icon: 'file' },
@@ -33,15 +33,6 @@ const STEPS = [
   { label: 'Assign Technician', icon: 'technicians' },
   { label: 'Review & Save', icon: 'check' },
 ] as const
-
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
-
-const FREQUENCIES: { value: Frequency; label: string; default?: boolean }[] = [
-  { value: 'FOUR_WEEKLY', label: 'Every 4 weeks', default: true },
-  { value: 'SIX_WEEKLY', label: 'Every 6 weeks' },
-  { value: 'EIGHT_WEEKLY', label: 'Every 8 weeks' },
-  { value: 'TWELVE_WEEKLY', label: 'Every 12 weeks' },
-]
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -182,7 +173,8 @@ function ModalFooter({
   )
 }
 
-function RoundDetailsStep({
+/** Name, day, frequency and notes — shared with the Edit round modal. */
+export function RoundDetailsStep({
   roundName,
   day,
   frequency,
@@ -219,6 +211,7 @@ function RoundDetailsStep({
               <button
                 key={item}
                 type="button"
+                aria-pressed={day === item}
                 onClick={() => onDay(item)}
                 className={cn(
                   'rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors',
@@ -239,6 +232,7 @@ function RoundDetailsStep({
               <button
                 key={item.value}
                 type="button"
+                aria-pressed={frequency === item.value}
                 onClick={() => onFrequency(item.value)}
                 className={cn(
                   'flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-sm',
